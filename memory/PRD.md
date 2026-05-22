@@ -40,6 +40,15 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **P0 (siguiente sesión)** — **Watchlist con snapshots manuales** (spec confirmada por usuario Feb 2026):
+  - localStorage pasa de `["AAPL"]` a `[{ticker, mode: "auto"|"manual", overrides: {...inputs} | null, saved_at}]`.
+  - Botón "Añadir a watchlist" actúa como "Guardar snapshot": si el usuario ha editado inputs, se guardan con `mode: manual`; si no, se guarda solo el ticker en `mode: auto`.
+  - Al volver a clicar "Añadir a watchlist" sobre un ticker ya guardado: modal de confirmación de sobrescritura.
+  - En la página Company, al cargar un ticker MANUAL desde watchlist: aplicar los `overrides` a `inputs`, recalcular ratios. Inputs editados en sesión actual con color ámbar/cursiva; valores guardados (no editados) en verde; auto en negro.
+  - Aviso al navegar fuera de la página con cambios pendientes (React Router `useBlocker` + opcional `beforeunload` para cerrar pestaña).
+  - Badge "MANUAL" en la tabla de watchlist junto al ticker.
+  - Endpoint `/api/compare` debe aceptar overrides por ticker, O recomputar en frontend cuando hay overrides.
+  - Decisiones tomadas: snapshot **completo** de los 10 inputs (no solo deltas); precio actual **NO** se guarda (siempre desde Yahoo, para que ratios % se actualicen con el mercado); confirmar tipo de aviso `beforeunload` con usuario.
 - **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).
 - **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
 - **P1** — Aviso visual cuando una proyección automática viene de un CAGR extremo (capado), para que el usuario sepa que debe revisar manualmente.
