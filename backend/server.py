@@ -170,6 +170,9 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             fcf_series = ocf + capex
     fcf_history = _series_to_pairs(fcf_series, limit=6)
 
+    # TTM (trailing 12 months) FCF from Yahoo's pre-computed field — more current than last annual
+    fcf_ttm = _safe_float(info.get("freeCashflow"))
+
     # Margins (most recent)
     gross_margin = _safe_float(info.get("grossMargins"))
     operating_margin = _safe_float(info.get("operatingMargins"))
@@ -209,7 +212,12 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
 
     # Auto-compute projections (2y forward)
     latest_revenue = revenue_history[-1]["value"] if revenue_history else None
-    latest_fcf = fcf_history[-1]["value"] if fcf_history else None
+    latest_fcf_annual = fcf_history[-1]["value"] if fcf_history else None
+    # Use TTM as the base for FCF projections when it's positive and more recent than last annual
+    if fcf_ttm is not None and fcf_ttm > 0:
+        latest_fcf = fcf_ttm
+    else:
+        latest_fcf = latest_fcf_annual
 
     def _clamp(x, lo, hi):
         if x is None:
@@ -380,7 +388,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "revenue_history": revenue_history,
         "fcf_history": fcf_history,
         "analyst_revenue_plus1y": revenue_plus1y,
-        "revenue_growth_yoy": revenue_growth_yoy,
+        "fcf_ttm": fcf_ttm,
         "auto_projections": {
             "revenue_1y": revenue_1y,
             "revenue_2y": revenue_2y,
