@@ -204,30 +204,60 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     except Exception as e:
         logger.info(f"revenue_estimate not available: {e}")
 
-    # Earnings growth estimates - to extrapolate +2y
-    growth_next5y = _safe_float(info.get("earningsGrowth")) or _safe_float(info.get("revenueGrowth"))
+    # Revenue growth (annualized) — DO NOT use earningsGrowth (EPS, volatile)
+    revenue_growth_yoy = _safe_float(info.get("revenueGrowth"))
 
     # Auto-compute projections (2y forward)
     latest_revenue = revenue_history[-1]["value"] if revenue_history else None
     latest_fcf = fcf_history[-1]["value"] if fcf_history else None
 
-    # Revenue 2y: prefer analyst +1y * (1+growth)
-    revenue_2y = None
-    if revenue_plus1y and growth_next5y:
-        revenue_2y = revenue_plus1y * (1 + growth_next5y)
-    elif revenue_plus1y and latest_revenue:
-        # estimate growth from analyst +1y vs latest
-        implied_g = (revenue_plus1y / latest_revenue) - 1 if latest_revenue > 0 else None
-        if implied_g is not None:
-            revenue_2y = revenue_plus1y * (1 + implied_g)
-    elif latest_revenue and growth_next5y:
-        revenue_2y = latest_revenue * (1 + growth_next5y) ** 2
+    def _clamp(x, lo, hi):
+        if x is None:
+            return None
+        return max(lo, min(hi, x))
 
-    # FCF 2y projection: latest_fcf * (1+growth)^2
+    # ----- Revenue 2y projection -----
+    # Strategy: prefer analyst +1y → derive implied growth vs latest realized → extrapolate +1 more year.
+    # Fallback to revenueGrowth or historical revenue CAGR.
+    revenue_2y = None
+    implied_rev_growth = None
+    if revenue_plus1y and latest_revenue and latest_revenue > 0:
+        implied_rev_growth = revenue_plus1y / latest_revenue - 1
+    rev_growth_fwd = _clamp(implied_rev_growth, -0.30, 0.50) if implied_rev_growth is not None else _clamp(revenue_growth_yoy, -0.30, 0.50)
+
+    if revenue_plus1y and rev_growth_fwd is not None:
+        revenue_2y = revenue_plus1y * (1 + rev_growth_fwd)
+    elif latest_revenue and rev_growth_fwd is not None:
+        revenue_2y = latest_revenue * (1 + rev_growth_fwd) ** 2
+    else:
+        # Last resort: historical CAGR from revenue_history
+        try:
+            vals = [p["value"] for p in revenue_history if p["value"] and p["value"] > 0]
+            if len(vals) >= 2:
+                hist_cagr = (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
+                hist_cagr = _clamp(hist_cagr, -0.30, 0.50)
+                if latest_revenue:
+                    revenue_2y = latest_revenue * (1 + hist_cagr) ** 2
+        except Exception:
+            pass
+
+    # ----- FCF 2y projection -----
+    # Use historical FCF CAGR (NOT earningsGrowth). Capped to avoid wild extrapolations.
     fcf_2y = None
-    if latest_fcf and growth_next5y is not None:
-        fcf_2y = latest_fcf * (1 + growth_next5y) ** 2
+    fcf_growth_fwd = None
+    try:
+        fvals = [p["value"] for p in fcf_history if p["value"] and p["value"] > 0]
+        if len(fvals) >= 2:
+            n = len(fvals) - 1
+            fcf_growth_fwd = (fvals[-1] / fvals[0]) ** (1 / n) - 1
+            fcf_growth_fwd = _clamp(fcf_growth_fwd, -0.30, 0.50)
+    except Exception:
+        pass
+
+    if latest_fcf and fcf_growth_fwd is not None:
+        fcf_2y = latest_fcf * (1 + fcf_growth_fwd) ** 2
     elif latest_fcf:
+        # If we can't compute growth (e.g., negative FCF in history), assume flat
         fcf_2y = latest_fcf
 
     # CAGR ingresos 4 años (2 atrás + 2 adelante)
@@ -292,7 +322,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "revenue_history": revenue_history,
         "fcf_history": fcf_history,
         "analyst_revenue_plus1y": revenue_plus1y,
-        "growth_estimate": growth_next5y,
+        "revenue_growth_yoy": revenue_growth_yoy,
         "auto_projections": {
             "revenue_2y": revenue_2y,
             "fcf_2y": fcf_2y,
