@@ -24,13 +24,27 @@
 - `GET /api/search?q=...` — autocompletado de tickers.
 - Frontend: Home (hero + accesos rápidos), Company (KPIs hero, inputs editables, ratios clásicos, gráficos de ingresos/FCF, breakdown POC), Watchlist (localStorage), Compare (tabla densa).
 - Soporte global: AAPL, SAP.DE, SAN.MC, VOD.L, ASML.AS, etc.
+- Formato europeo es-ES en todos los números: miles con `.`, decimales con `,`. Ratios % a 1 decimal; resto a 2 decimales. Inputs editables aceptan formato europeo y se parsean automáticamente.
+
+## Decisiones de diseño / pitfalls (no romper)
+- **Proyecciones automáticas (`fetch_fundamentals_sync` en server.py)**:
+  - **NO usar `info["earningsGrowth"]`** como proxy de crecimiento. Es el cambio de BPA interanual del último trimestre, muy volátil (ej. Uber Feb 2026: −84,6% que rompe completamente las proyecciones). Usar solo `revenueGrowth` (anualizado) si hace falta fallback.
+  - **Revenue 2y**: derivar crecimiento implícito de (`revenue_estimate['+1y']` / último año real) y proyectar +1 año más con ese mismo crecimiento. Capado a ±50% y mínimo −30%.
+  - **FCF 2y**: usar CAGR histórico real del propio FCF (no de EPS). Capado a ±50% / −30% para evitar extrapolaciones absurdas cuando la base histórica es muy pequeña (ej. Uber: FCF de 390M→9.763M en 3 años = CAGR real +193% pero capado al +50% para la proyección).
+  - **CAGR 4y para la fórmula POC**: 2 años hacia atrás (revenue_history[-3]) y 2 hacia delante (revenue_2y proyectado), n=4.
+- **Cálculo de ratios custom** (`compute_custom_ratios`): la fórmula POC del usuario es:
+  `POC = (revenue_2y/shares) × (1+gross_margin) × ((fcf_2y - net_debt)/market_cap × 100) × (1+rev_cagr_4y) × (1+fcf_cagr_4y)`
+  Si se modifica algún parámetro (cap, fórmula, fields fuente), validar con AAPL (rev_cagr_4y debe ser positivo ~+13%) y UBER (ambos CAGR positivos).
+- **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
 - **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).
 - **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
+- **P1** — Aviso visual cuando una proyección automática viene de un CAGR extremo (capado), para que el usuario sepa que debe revisar manualmente.
 - **P2** — Exportar análisis a PDF / Excel.
 - **P2** — Modo "Sensibilidad": cómo cambia POC al variar márgenes/crecimientos ±10%.
 - **P2** — Login (Emergent Google Auth) para sincronizar watchlist entre dispositivos.
 - **P2** — Alertas por email cuando Ratio Compra cruza un umbral (SendGrid/Resend).
+- **P2** — Screener nocturno sobre watchlist: notifica solo cuando una empresa cruza de rojo a verde.
 - **P3** — Soporte multimoneda con conversión FX para comparar empresas globales.
 - **P3** — Modo oscuro alternativo.
