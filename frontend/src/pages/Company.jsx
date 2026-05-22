@@ -117,16 +117,16 @@ export default function Company() {
     const cr = customRatios || {};
     const cur = data.currency || "USD";
 
-    const buildChartData = (history, proj1, proj2) => {
+    const buildChartData = (history, proj1, proj2, bridge = true) => {
         if (!history || history.length === 0) return [];
         const out = history.map(p => ({
             year: p.date.slice(0, 4),
             historical: p.value / 1e9,
             projection: null,
         }));
-        // Bridge: last historical point also serves as start of projection
         const last = out[out.length - 1];
-        last.projection = last.historical;
+        // Bridge: only for line charts, to visually connect historical->projection
+        if (bridge) last.projection = last.historical;
         const lastYear = parseInt(last.year, 10) || new Date().getFullYear();
         if (proj1 != null && !isNaN(proj1)) {
             out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1 / 1e9 });
@@ -137,8 +137,8 @@ export default function Company() {
         return out;
     };
 
-    const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y);
-    const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y);
+    const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, true);
+    const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, false);
 
     return (
         <div data-testid="company-page">

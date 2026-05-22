@@ -282,6 +282,9 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
                 revenue_cagr_4y = (revenue_2y / start_val) ** (1.0 / 4) - 1
         except Exception:
             pass
+    # Fallback: use forward growth (already capped) if 4y calc failed
+    if revenue_cagr_4y is None and rev_growth_fwd is not None:
+        revenue_cagr_4y = rev_growth_fwd
 
     fcf_cagr_4y = None
     if fcf_history and len(fcf_history) >= 3 and fcf_2y:
@@ -292,6 +295,20 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
                 fcf_cagr_4y = (fcf_2y / start_val) ** (1.0 / 4) - 1
         except Exception:
             pass
+    # Fallback: if any historical FCF is non-positive, use latest_fcf -> fcf_2y over 2 years
+    if fcf_cagr_4y is None and latest_fcf and fcf_2y and latest_fcf > 0 and fcf_2y > 0:
+        try:
+            fcf_cagr_4y = (fcf_2y / latest_fcf) ** (1.0 / 2) - 1
+        except Exception:
+            pass
+    # Last resort: use forward growth (capped)
+    if fcf_cagr_4y is None and fcf_growth_fwd is not None:
+        fcf_cagr_4y = fcf_growth_fwd
+    # Absolute last fallback: assume flat growth so the formula still computes
+    if fcf_cagr_4y is None:
+        fcf_cagr_4y = 0.0
+    if revenue_cagr_4y is None:
+        revenue_cagr_4y = 0.0
 
     # Classic ratios from info
     classic_ratios = {
