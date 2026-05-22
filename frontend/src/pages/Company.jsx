@@ -117,7 +117,26 @@ export default function Company() {
     const cr = customRatios || {};
     const cur = data.currency || "USD";
 
-    const buildChartData = (history, proj1, proj2, bridge = true) => {
+    // Determine if user has edited the 2y projection vs the auto value (small epsilon to avoid float jitter)
+    const isEdited = (a, b) => {
+        if (a == null || b == null) return false;
+        if (a === 0 && b === 0) return false;
+        const diff = Math.abs(a - b);
+        const scale = Math.max(Math.abs(a), Math.abs(b), 1);
+        return diff / scale > 0.001;
+    };
+    const revEdited = isEdited(inputs?.revenue_2y, data.auto_projections.revenue_2y);
+    const fcfEdited = isEdited(inputs?.fcf_2y, data.auto_projections.fcf_2y);
+
+    // Geometric midpoint (smooth compound growth) for the intermediate year.
+    // Falls back to linear midpoint if either value is non-positive.
+    const interpolate = (a, b) => {
+        if (a == null || b == null) return null;
+        if (a > 0 && b > 0) return Math.sqrt(a * b);
+        return (a + b) / 2;
+    };
+
+    const buildChartData = (history, proj1Auto, proj2Auto, userProj2, userEdited, bridge = true) => {
         if (!history || history.length === 0) return [];
         const out = history.map(p => ({
             year: p.date.slice(0, 4),
@@ -127,20 +146,30 @@ export default function Company() {
             value: p.value / 1e9,
         }));
         const last = out[out.length - 1];
-        // Bridge: only for line charts, to visually connect historical->projection
         if (bridge) last.projection = last.historical;
         const lastYear = parseInt(last.year, 10) || new Date().getFullYear();
+        const lastVal = last.historical;
+
+        // Use user value when edited; otherwise the auto projection.
+        const proj2 = userEdited ? userProj2 : proj2Auto;
+        // For +1y: if user edited the +2y, interpolate between last real and user proj2 to avoid a visual jump.
+        // Otherwise use the model's auto +1y projection.
+        const proj1 = userEdited
+            ? (lastVal != null && proj2 != null ? interpolate(lastVal, proj2 / 1e9) : null)
+            : (proj1Auto != null ? proj1Auto / 1e9 : null);
+
         if (proj1 != null && !isNaN(proj1)) {
-            out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1 / 1e9, kind: "proj", value: proj1 / 1e9 });
+            out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1, kind: "proj", value: proj1 });
         }
         if (proj2 != null && !isNaN(proj2)) {
-            out.push({ year: String(lastYear + 2) + "E", historical: null, projection: proj2 / 1e9, kind: "proj", value: proj2 / 1e9 });
+            const v = userEdited ? proj2 / 1e9 : proj2 / 1e9;
+            out.push({ year: String(lastYear + 2) + "E", historical: null, projection: v, kind: "proj", value: v });
         }
         return out;
     };
 
-    const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, true);
-    const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, false);
+    const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, true);
+    const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, false);
 
     return (
         <div data-testid="company-page">
@@ -303,8 +332,8 @@ export default function Company() {
                 </div>
 
                 <div className="space-y-6">
-                    <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" />
-                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" />
+                    <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
+                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
                 </div>
             </div>
 
@@ -334,7 +363,7 @@ function Stat({ label, value }) {
     );
 }
 
-function ChartBlock({ title, data, unit, color, type = "line", testid }) {
+function ChartBlock({ title, data, unit, color, type = "line", testid, userEdited = false }) {
     if (!data || data.length === 0) {
         return (
             <div className="border border-black bg-white p-4" data-testid={testid}>
@@ -343,7 +372,8 @@ function ChartBlock({ title, data, unit, color, type = "line", testid }) {
             </div>
         );
     }
-    const projColor = "#B32A22";
+    const projColor = userEdited ? "#052049" : "#B32A22";
+    const projLabel = userEdited ? "Estimado por usuario" : "Proyección";
     return (
         <div className="border border-black bg-white p-4" data-testid={testid}>
             <div className="flex items-start justify-between mb-1">
@@ -351,9 +381,9 @@ function ChartBlock({ title, data, unit, color, type = "line", testid }) {
                     <div className="overline text-[#4A4A4A]">{title}</div>
                     <div className="font-serif text-xl">en miles de millones ({unit})</div>
                 </div>
-                <div className="flex gap-3 text-[10px] font-mono mt-1">
+                <div className="flex gap-3 text-[10px] font-mono mt-1" data-testid={`${testid}-legend`}>
                     <span className="flex items-center gap-1"><span className="inline-block w-3 h-[2px]" style={{ background: color }} />Real</span>
-                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />Proyección</span>
+                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />{projLabel}</span>
                 </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
