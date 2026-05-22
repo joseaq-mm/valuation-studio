@@ -113,6 +113,13 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     if not info:
         raise ValueError(f"No data found for ticker '{ticker}'")
 
+    # Validate that we have at least one usable identifier/price field
+    has_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    has_mcap = info.get("marketCap")
+    has_symbol = info.get("symbol") or info.get("shortName") or info.get("longName")
+    if not (has_price or has_mcap or has_symbol):
+        raise ValueError(f"No data found for ticker '{ticker}'")
+
     # Price
     current_price = _safe_float(info.get("currentPrice")) or _safe_float(info.get("regularMarketPrice"))
     if current_price is None:
