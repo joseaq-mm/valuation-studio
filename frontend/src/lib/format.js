@@ -94,3 +94,26 @@ export const fmtInputDisplay = (n) => {
     if (Number.isInteger(n)) return nfFull.format(n);
     return nfFull2.format(n);
 };
+
+// Smart compact format for tooltips/labels: 3 significant figures + auto unit
+// Input is in billions (chart unit). Switches to M for values < 1B.
+export const fmtCompact = (vInBillions) => {
+    if (vInBillions === null || vInBillions === undefined || isNaN(vInBillions)) return "—";
+    let v = vInBillions;
+    let unit = "B";
+    if (Math.abs(v) < 1) {
+        v = v * 1000;
+        unit = "M";
+    }
+    if (Math.abs(v) < 1 && unit === "M") {
+        v = v * 1000;
+        unit = "K";
+    }
+    const abs = Math.abs(v);
+    let decimals;
+    if (abs >= 100) decimals = 0;
+    else if (abs >= 10) decimals = 1;
+    else decimals = 2;
+    const nf = new Intl.NumberFormat("es-ES", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return nf.format(v) + " " + unit;
+};

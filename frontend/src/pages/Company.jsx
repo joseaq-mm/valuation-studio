@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getCompany, recalc } from "@/lib/api";
-import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtInputDisplay, parseLocaleNumber, ratioColor, signalLabel } from "@/lib/format";
+import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, parseLocaleNumber, ratioColor, signalLabel } from "@/lib/format";
+import LocaleNumberInput from "@/components/LocaleNumberInput";
 import { addToWatchlist, removeFromWatchlist, isInWatchlist } from "@/lib/storage";
 import { Star, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -286,12 +287,10 @@ export default function Company() {
                     ].map(([label, key, hint]) => (
                         <div key={key} className="p-4 grid-cell">
                             <label className="overline text-[#4A4A4A] block mb-1">{label}</label>
-                            <input
-                                type="text"
-                                inputMode="decimal"
+                            <LocaleNumberInput
                                 className="input-paper text-base"
-                                value={fmtInputDisplay(inputs?.[key])}
-                                onChange={(e) => updateInput(key, e.target.value)}
+                                value={inputs?.[key]}
+                                onChange={(num) => { setInputs(prev => ({ ...prev, [key]: num })); setEdited(true); }}
                                 data-testid={`input-${key}`}
                             />
                             <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono">{hint}</div>
@@ -363,6 +362,19 @@ function Stat({ label, value }) {
     );
 }
 
+function CompactTooltip({ active, payload, label }) {
+    if (!active || !payload || !payload.length) return null;
+    // Find the first non-null value across all series at this point
+    const p = payload.find(x => x && x.value != null) || payload[0];
+    const v = p?.value;
+    return (
+        <div className="bg-white border border-black px-2 py-1 font-mono text-xs">
+            <div className="text-[#4A4A4A]">{label}</div>
+            <div className="text-black">{fmtCompact(v)}</div>
+        </div>
+    );
+}
+
 function ChartBlock({ title, data, unit, color, type = "line", testid, userEdited = false }) {
     if (!data || data.length === 0) {
         return (
@@ -391,8 +403,8 @@ function ChartBlock({ title, data, unit, color, type = "line", testid, userEdite
                     <BarChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
                         <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <Tooltip contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "IBM Plex Mono", fontSize: 12 }} />
+                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
+                        <Tooltip content={<CompactTooltip />} cursor={{ fill: "#11111110" }} />
                         <Bar dataKey="value" name="FCF">
                             {data.map((entry, i) => (
                                 <Cell key={i} fill={entry.kind === "proj" ? projColor : color} fillOpacity={entry.kind === "proj" ? 0.45 : 1} stroke={entry.kind === "proj" ? projColor : "none"} strokeDasharray={entry.kind === "proj" ? "3 3" : "0"} />
@@ -403,10 +415,10 @@ function ChartBlock({ title, data, unit, color, type = "line", testid, userEdite
                     <LineChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
                         <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <Tooltip contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "IBM Plex Mono", fontSize: 12 }} />
+                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
+                        <Tooltip content={<CompactTooltip />} />
                         <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} name="Real" connectNulls={false} />
-                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 4, fill: projColor }} name="Proyección" connectNulls={false} />
+                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 4, fill: projColor }} name={projLabel} connectNulls={false} />
                     </LineChart>
                 )}
             </ResponsiveContainer>
