@@ -30,8 +30,10 @@
 - **Proyecciones automáticas (`fetch_fundamentals_sync` en server.py)**:
   - **NO usar `info["earningsGrowth"]`** como proxy de crecimiento. Es el cambio de BPA interanual del último trimestre, muy volátil (ej. Uber Feb 2026: −84,6% que rompe completamente las proyecciones). Usar solo `revenueGrowth` (anualizado) si hace falta fallback.
   - **Revenue 2y**: derivar crecimiento implícito de (`revenue_estimate['+1y']` / último año real) y proyectar +1 año más con ese mismo crecimiento. Capado a ±50% y mínimo −30%.
-  - **FCF 2y**: usar CAGR histórico real del propio FCF (no de EPS). Capado a ±50% / −30% para evitar extrapolaciones absurdas cuando la base histórica es muy pequeña (ej. Uber: FCF de 390M→9.763M en 3 años = CAGR real +193% pero capado al +50% para la proyección).
-  - **CAGR 4y para la fórmula POC**: 2 años hacia atrás (revenue_history[-3]) y 2 hacia delante (revenue_2y proyectado), n=4.
+  - **FCF base — usar TTM, NO anual cerrado** (decisión Feb 2026, opción B confirmada por usuario). `latest_fcf = info["freeCashflow"]` (TTM) cuando es positivo; fallback a `fcf_history[-1]` solo si TTM no está disponible. Razón: TTM es más actual y captura el ritmo reciente del negocio, especialmente importante en empresas cíclicas como Micron donde el último FY cerrado puede no reflejar la situación actual.
+  - **FCF 2y**: `latest_fcf × (1 + fcf_growth_fwd)²`. Crecimiento usa CAGR histórico real del propio FCF (no de EPS). Capado a ±50% / −30% para evitar extrapolaciones absurdas cuando la base histórica es muy pequeña.
+  - **CAGR 4y para la fórmula POC**: 2 años hacia atrás (revenue_history[-3]) y 2 hacia delante (revenue_2y proyectado), n=4. Si falla por valores negativos en histórico, fallback en cascada: (a) `latest → fcf_2y` sobre 2y, (b) `fcf_growth_fwd` capado, (c) 0% (plano).
+  - **Flags de proyección extrema**: `auto_projections.flags` expone `revenue_projection_capped`, `revenue_analyst_suspicious`, `fcf_projection_capped`, `fcf_history_has_negatives`, `fcf_cagr_fallback`, `revenue_cagr_fallback`. El frontend muestra avisos visuales cuando alguno es true.
 - **Cálculo de ratios custom** (`compute_custom_ratios`): la fórmula POC del usuario es:
   `POC = (revenue_2y/shares) × (1+gross_margin) × ((fcf_2y - net_debt)/market_cap × 100) × (1+rev_cagr_4y) × (1+fcf_cagr_4y)`
   Si se modifica algún parámetro (cap, fórmula, fields fuente), validar con AAPL (rev_cagr_4y debe ser positivo ~+13%) y UBER (ambos CAGR positivos).
