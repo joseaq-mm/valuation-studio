@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getWatchlist, removeFromWatchlist } from "@/lib/storage";
 import { compare } from "@/lib/api";
-import { fmtPrice, fmtNum, ratioColor, signalLabel } from "@/lib/format";
+import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -87,10 +87,10 @@ export default function Watchlist() {
                                         <td className="px-4 py-3 text-right font-mono">{fmtPrice(r.current_price, r.currency)}</td>
                                         <td className="px-4 py-3 text-right font-mono">{fmtNum(r.market_cap)}</td>
                                         <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>
-                                            {cr.ratio_compra_pct == null ? "—" : (cr.ratio_compra_pct > 0 ? "+" : "") + cr.ratio_compra_pct.toFixed(1) + "%"}
+                                            {fmtPctSigned(cr.ratio_compra_pct)}
                                         </td>
                                         <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct) }}>
-                                            {cr.ratio_venta_pct == null ? "—" : (cr.ratio_venta_pct > 0 ? "+" : "") + cr.ratio_venta_pct.toFixed(1) + "%"}
+                                            {fmtPctSigned(cr.ratio_venta_pct)}
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }}>

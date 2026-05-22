@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { compare } from "@/lib/api";
-import { fmtPrice, fmtPct, fmtNum, ratioColor, signalLabel } from "@/lib/format";
+import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { getWatchlist } from "@/lib/storage";
 import { X, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -46,13 +46,13 @@ export default function Compare() {
         { label: "Ratio Compra", get: r => {
             const v = r.custom_ratios?.ratio_compra_pct;
             return v == null ? "—" : (
-                <span style={{ color: ratioColor(v) }}>{(v > 0 ? "+" : "") + v.toFixed(1) + "%"}</span>
+                <span style={{ color: ratioColor(v) }}>{fmtPctSigned(v)}</span>
             );
         }, align: "right" },
         { label: "Ratio Venta", get: r => {
             const v = r.custom_ratios?.ratio_venta_pct;
             return v == null ? "—" : (
-                <span style={{ color: ratioColor(v) }}>{(v > 0 ? "+" : "") + v.toFixed(1) + "%"}</span>
+                <span style={{ color: ratioColor(v) }}>{fmtPctSigned(v)}</span>
             );
         }, align: "right" },
         { label: "Señal", get: r => {

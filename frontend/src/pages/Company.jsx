@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getCompany, recalc } from "@/lib/api";
-import { fmtNum, fmtPct, fmtPctRaw, fmtPrice, ratioColor, signalLabel } from "@/lib/format";
+import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtInputDisplay, parseLocaleNumber, ratioColor, signalLabel } from "@/lib/format";
 import { addToWatchlist, removeFromWatchlist, isInWatchlist } from "@/lib/storage";
 import { Star, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -72,9 +72,8 @@ export default function Company() {
     };
 
     const updateInput = (key, val) => {
-        const num = val === "" ? null : parseFloat(val);
-        const next = { ...inputs, [key]: isNaN(num) ? null : num };
-        setInputs(next);
+        const num = parseLocaleNumber(val);
+        setInputs({ ...inputs, [key]: num });
         setEdited(true);
     };
 
@@ -155,7 +154,7 @@ export default function Company() {
                 <div className="bg-white p-6 md:border-r border-black border-b md:border-b-0" data-testid="ratio-compra-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Compra</div>
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="ratio-compra-value">
-                        {cr.ratio_compra_pct == null ? "—" : (cr.ratio_compra_pct > 0 ? "+" : "") + cr.ratio_compra_pct.toFixed(1) + "%"}
+                        {fmtPctSigned(cr.ratio_compra_pct)}
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="signal-compra">{signalLabel(cr.ratio_compra_pct)}</span>
@@ -166,7 +165,7 @@ export default function Company() {
                 <div className="bg-white p-6" data-testid="ratio-venta-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Venta</div>
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="ratio-venta-value">
-                        {cr.ratio_venta_pct == null ? "—" : (cr.ratio_venta_pct > 0 ? "+" : "") + cr.ratio_venta_pct.toFixed(1) + "%"}
+                        {fmtPctSigned(cr.ratio_venta_pct)}
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct)}</span>
@@ -211,10 +210,10 @@ export default function Company() {
                         <div key={key} className="p-4 grid-cell">
                             <label className="overline text-[#4A4A4A] block mb-1">{label}</label>
                             <input
-                                type="number"
-                                step="any"
+                                type="text"
+                                inputMode="decimal"
                                 className="input-paper text-base"
-                                value={inputs?.[key] ?? ""}
+                                value={fmtInputDisplay(inputs?.[key])}
                                 onChange={(e) => updateInput(key, e.target.value)}
                                 data-testid={`input-${key}`}
                             />
@@ -235,7 +234,7 @@ export default function Company() {
                         <tbody>
                             {ratioRows.map(([label, key, fmt]) => {
                                 const v = data.classic_ratios?.[key];
-                                const display = v == null ? "—" : fmt === "pct" ? fmtPct(v) : fmtNum(v, 2);
+                                const display = v == null ? "—" : fmt === "pct" ? fmtPct(v) : fmtNum(v);
                                 return (
                                     <tr key={key} className="border-b border-black/10 hover:bg-[#F5E4D4]">
                                         <td className="px-4 py-2 text-[#4A4A4A]">{label}</td>
@@ -266,11 +265,11 @@ export default function Company() {
                 <div className="border border-black bg-white p-4" data-testid="breakdown-section">
                     <div className="overline text-[#4A4A4A] mb-2">Desglose del cálculo POC</div>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm font-mono">
-                        <Stat label="Rev/Acción 2y" value={fmtNum(cr.breakdown.rev_per_share_2y, 3)} />
-                        <Stat label="× Margen bruto" value={fmtNum(cr.breakdown.margin_factor, 3)} />
-                        <Stat label="× (FCF-NetDebt)/MCap %" value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct, 3)} />
-                        <Stat label="× CAGR Ingresos 4y" value={fmtNum(cr.breakdown.rev_growth_factor, 3)} />
-                        <Stat label="× CAGR FCF 4y" value={fmtNum(cr.breakdown.fcf_growth_factor, 3)} />
+                        <Stat label="Rev/Acción 2y" value={fmtNum(cr.breakdown.rev_per_share_2y)} />
+                        <Stat label="× Margen bruto" value={fmtNum(cr.breakdown.margin_factor)} />
+                        <Stat label="× (FCF-NetDebt)/MCap %" value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)} />
+                        <Stat label="× CAGR Ingresos 4y" value={fmtNum(cr.breakdown.rev_growth_factor)} />
+                        <Stat label="× CAGR FCF 4y" value={fmtNum(cr.breakdown.fcf_growth_factor)} />
                     </div>
                 </div>
             )}
