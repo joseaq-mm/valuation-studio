@@ -1,0 +1,95 @@
+{
+  "theme": "LIGHT",
+  "archetype": "Archetype 4: Swiss & High-Contrast (Editorial Institutional Variant)",
+  "emotional_tone": "Authoritative, Objective, Data-Dense, Classic",
+  "design_philosophy": "Combine the dense calculation environment of a Bloomberg Terminal with the elegant, trustworthy aesthetic of the Financial Times. Reject the modern 'SaaS' look (no gradients, no rounded corners). Use pure geometry, sharp borders, and high-contrast typography.",
+  "colors": {
+    "background_base": "#FDF1E6", 
+    "background_surface": "#FFFFFF",
+    "background_surface_alt": "#F5E4D4",
+    "border_default": "#11111120",
+    "border_strong": "#111111",
+    "text_primary": "#111111",
+    "text_secondary": "#4A4A4A",
+    "brand_primary": "#052049", 
+    "accent_crimson": "#B32A22",
+    "status": {
+      "cheap_green": "#1D7044",
+      "neutral_yellow": "#D97706",
+      "expensive_red": "#B32A22"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Cormorant Garamond, serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "data_and_mono": "IBM Plex Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tight leading-none font-medium",
+      "h2": "text-2xl sm:text-3xl tracking-tight leading-tight font-medium",
+      "h3": "text-xl sm:text-2xl tracking-tight",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold",
+      "body": "text-base leading-relaxed",
+      "data_large": "text-3xl sm:text-4xl font-mono tracking-tight",
+      "data_regular": "text-sm sm:text-base font-mono"
+    },
+    "rules": [
+      "Headings must use Cormorant Garamond.",
+      "ALL numbers, inputs, and tabular data MUST use IBM Plex Mono.",
+      "Never use Inter or generic sans for headings.",
+      "Right-align all numeric data in tables."
+    ]
+  },
+  "layout_and_spacing": {
+    "grid_system": "MODE B: THE CONTROL ROOM GRID",
+    "spacing_scale": "Tailwind standard, but highly dense for data. Use p-2, p-4 for widgets. p-6, p-8 for outer wrappers.",
+    "surface_strategy": "GRID BORDERS (The 'Technical' Look). Expose the skeleton. Containers have border-collapse style layout. Items have border-r border-b border-black/20.",
+    "border_radius": "rounded-none (0px) everywhere. Sharp edges only.",
+    "shadows": "No soft shadows. Use sharp 4px offset solid shadows (shadow-[4px_4px_0px_#111111]) ONLY for primary CTAs or active floating elements. Everything else is flat."
+  },
+  "components": {
+    "hero_kpis": {
+      "description": "Ratio de Compra and Ratio de Venta must be the largest numbers on the screen.",
+      "style": "Massive monospace text (text-5xl), color-coded based on cheap/expensive status, sitting in a stark white box with a 1px black border."
+    },
+    "data_inputs": {
+      "description": "Editable fields for projections (revenue 2y, fcf 2y, etc).",
+      "style": "HTML inputs styled via Tailwind. bg-white, border-b border-black border-dashed. Focus: bg-[#F5E4D4] outline-none. No rounded borders. Must feel like a paper form."
+    },
+    "tables": {
+      "style": "w-full border-collapse text-left text-sm. Headers in uppercase overline style. Data rows with border-b border-black/10. Hover state: bg-[#F5E4D4]."
+    },
+    "charts": {
+      "library": "recharts",
+      "style": "Monochrome lines (#052049) with status-colored areas. CartesianGrid must have strokeDasharray='3 3' and stroke='#11111120'. Tooltips must have sharp borders."
+    },
+    "navigation": {
+      "style": "Solid top bar. bg-[#FDF1E6] border-b border-black. Include the app logo and a dense search bar for tickers (USA, .MC, etc)."
+    }
+  },
+  "interaction_and_motion": {
+    "hover_states": "Invert colors for buttons (bg-black text-white to bg-white text-black). Subdued background shift for table rows.",
+    "focus_states": "ring-1 ring-black ring-offset-1 ring-offset-[#FDF1E6] for accessibility.",
+    "animation": "Minimalist. Only use for charts (Recharts default) and micro-interactions (instant state changes). No bouncy Framer Motion effects."
+  },
+  "image_urls": {
+    "app_logo": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/e63a1b49-fdc1-4b26-9a24-ef17fee65962/images/511d8a4139916d37d69ea9b1fbb62834bb0b0a1ca6063dc026e4dcbecae6cedc.png",
+      "description": "Minimalist abstract logo for the editorial financial dashboard.",
+      "placement": "Header / Navigation bar, top left."
+    }
+  },
+  "testing_requirements": {
+    "data_testid_rules": "All interactive elements, input fields, ticker search, watchlist buttons, and dynamic ratio outputs MUST have data-testid attributes (e.g., data-testid='search-input', data-testid='ratio-compra-value')."
+  },
+  "instructions_to_main_agent": [
+    "Install and configure Recharts for charting.",
+    "Use standard HTML/Tailwind for dense layout structures instead of Shadcn Cards to maintain the strict 1px border grid look without rounded corners.",
+    "Use Shadcn for complex logic (Dialogs, Selects) but strip out all border-radius (rounded-md -> rounded-none).",
+    "Implement the specific formulas for Ratio de Compra and Ratio de Venta exactly as described.",
+    "Ensure the layout supports a side-by-side comparison mode for multiple companies.",
+    "Use localStorage for the watchlist functionality.",
+    "Build the editable input grid to allow the user to override auto-fetched data and instantly recalculate the heroes (Ratio de Compra/Venta)."
+  ]
+}
