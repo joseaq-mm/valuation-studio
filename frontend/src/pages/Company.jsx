@@ -5,7 +5,7 @@ import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtInputDisplay, parseLocaleNum
 import { addToWatchlist, removeFromWatchlist, isInWatchlist } from "@/lib/storage";
 import { Star, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 const ratioRows = [
     ["Trailing P/E", "trailing_pe"],
@@ -123,16 +123,18 @@ export default function Company() {
             year: p.date.slice(0, 4),
             historical: p.value / 1e9,
             projection: null,
+            kind: "real",
+            value: p.value / 1e9,
         }));
         const last = out[out.length - 1];
         // Bridge: only for line charts, to visually connect historical->projection
         if (bridge) last.projection = last.historical;
         const lastYear = parseInt(last.year, 10) || new Date().getFullYear();
         if (proj1 != null && !isNaN(proj1)) {
-            out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1 / 1e9 });
+            out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1 / 1e9, kind: "proj", value: proj1 / 1e9 });
         }
         if (proj2 != null && !isNaN(proj2)) {
-            out.push({ year: String(lastYear + 2) + "E", historical: null, projection: proj2 / 1e9 });
+            out.push({ year: String(lastYear + 2) + "E", historical: null, projection: proj2 / 1e9, kind: "proj", value: proj2 / 1e9 });
         }
         return out;
     };
@@ -201,6 +203,32 @@ export default function Company() {
                     Faltan datos para calcular: {cr.missing_inputs.join(", ")}. Edita manualmente los inputs abajo.
                 </div>
             )}
+
+            {data.auto_projections?.flags && (() => {
+                const f = data.auto_projections.flags;
+                const warnings = [];
+                if (f.revenue_analyst_suspicious) warnings.push("La estimación de ingresos de analistas parece anómala (muy distinta del último año real). Revisa Ingresos 2y.");
+                if (f.revenue_projection_capped) warnings.push("El crecimiento implícito de ingresos se ha capado (>+50% o <−30%). La proyección puede ser conservadora.");
+                if (f.fcf_history_has_negatives) warnings.push("El histórico de FCF contiene años negativos. La proyección usa un fallback simplificado.");
+                if (f.fcf_projection_capped) warnings.push("El crecimiento histórico del FCF se ha capado para evitar extrapolaciones extremas.");
+                if (f.fcf_cagr_fallback) warnings.push("CAGR del FCF a 4 años calculado por fallback (no por la fórmula estándar 2y atrás → 2y adelante).");
+                if (f.revenue_cagr_fallback) warnings.push("CAGR de ingresos a 4 años calculado por fallback.");
+                if (!warnings.length) return null;
+                return (
+                    <div className="border border-[#D97706] bg-white p-4 mb-6" data-testid="projection-warnings">
+                        <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle size={16} className="text-[#D97706]" />
+                            <div className="overline text-[#D97706]">Avisos sobre las proyecciones automáticas</div>
+                        </div>
+                        <ul className="text-xs text-[#4A4A4A] space-y-1 list-disc pl-5 font-sans">
+                            {warnings.map((w, i) => <li key={i} data-testid={`warning-${i}`}>{w}</li>)}
+                        </ul>
+                        <div className="text-[10px] text-[#4A4A4A] mt-2 font-mono">
+                            Recomendación: revisa los inputs abajo y ajústalos a tu criterio antes de tomar decisiones.
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Inputs grid */}
             <div className="border border-black bg-white mb-6" data-testid="inputs-section">
@@ -335,8 +363,11 @@ function ChartBlock({ title, data, unit, color, type = "line", testid }) {
                         <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <Tooltip contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "IBM Plex Mono", fontSize: 12 }} />
-                        <Bar dataKey="historical" fill={color} name="Real" />
-                        <Bar dataKey="projection" fill={projColor} fillOpacity={0.4} stroke={projColor} strokeDasharray="3 3" name="Proyección" />
+                        <Bar dataKey="value" name="FCF">
+                            {data.map((entry, i) => (
+                                <Cell key={i} fill={entry.kind === "proj" ? projColor : color} fillOpacity={entry.kind === "proj" ? 0.45 : 1} stroke={entry.kind === "proj" ? projColor : "none"} strokeDasharray={entry.kind === "proj" ? "3 3" : "0"} />
+                            ))}
+                        </Bar>
                     </BarChart>
                 ) : (
                     <LineChart data={data}>

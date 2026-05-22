@@ -216,6 +216,16 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             return None
         return max(lo, min(hi, x))
 
+    # Track flags for extreme/suspicious projections so the UI can warn the user
+    projection_flags = {
+        "revenue_projection_capped": False,
+        "revenue_analyst_suspicious": False,
+        "fcf_projection_capped": False,
+        "fcf_history_has_negatives": False,
+        "fcf_cagr_fallback": False,
+        "revenue_cagr_fallback": False,
+    }
+
     # ----- Revenue 2y projection -----
     # Strategy: prefer analyst +1y → derive implied growth vs latest realized → extrapolate +1 more year.
     # Fallback to revenueGrowth or historical revenue CAGR.
@@ -223,7 +233,15 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     implied_rev_growth = None
     if revenue_plus1y and latest_revenue and latest_revenue > 0:
         implied_rev_growth = revenue_plus1y / latest_revenue - 1
-    rev_growth_fwd = _clamp(implied_rev_growth, -0.30, 0.50) if implied_rev_growth is not None else _clamp(revenue_growth_yoy, -0.30, 0.50)
+        # Flag analyst estimate that is suspiciously off (>3x or <0.4x of latest)
+        ratio = revenue_plus1y / latest_revenue
+        if ratio > 3.0 or ratio < 0.4:
+            projection_flags["revenue_analyst_suspicious"] = True
+
+    raw_g = implied_rev_growth if implied_rev_growth is not None else revenue_growth_yoy
+    rev_growth_fwd = _clamp(raw_g, -0.30, 0.50) if raw_g is not None else None
+    if raw_g is not None and rev_growth_fwd is not None and raw_g != rev_growth_fwd:
+        projection_flags["revenue_projection_capped"] = True
 
     if revenue_plus1y and rev_growth_fwd is not None:
         revenue_2y = revenue_plus1y * (1 + rev_growth_fwd)
@@ -235,9 +253,11 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             vals = [p["value"] for p in revenue_history if p["value"] and p["value"] > 0]
             if len(vals) >= 2:
                 hist_cagr = (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
-                hist_cagr = _clamp(hist_cagr, -0.30, 0.50)
+                hist_cagr_capped = _clamp(hist_cagr, -0.30, 0.50)
+                if hist_cagr != hist_cagr_capped:
+                    projection_flags["revenue_projection_capped"] = True
                 if latest_revenue:
-                    revenue_2y = latest_revenue * (1 + hist_cagr) ** 2
+                    revenue_2y = latest_revenue * (1 + hist_cagr_capped) ** 2
         except Exception:
             pass
 
@@ -246,11 +266,16 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     fcf_2y = None
     fcf_growth_fwd = None
     try:
-        fvals = [p["value"] for p in fcf_history if p["value"] and p["value"] > 0]
-        if len(fvals) >= 2:
-            n = len(fvals) - 1
-            fcf_growth_fwd = (fvals[-1] / fvals[0]) ** (1 / n) - 1
-            fcf_growth_fwd = _clamp(fcf_growth_fwd, -0.30, 0.50)
+        fvals = [p["value"] for p in fcf_history if p["value"] is not None]
+        if any(v <= 0 for v in fvals):
+            projection_flags["fcf_history_has_negatives"] = True
+        pos_vals = [v for v in fvals if v > 0]
+        if len(pos_vals) >= 2:
+            n = len(pos_vals) - 1
+            raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
+            fcf_growth_fwd = _clamp(raw_fg, -0.30, 0.50)
+            if raw_fg != fcf_growth_fwd:
+                projection_flags["fcf_projection_capped"] = True
     except Exception:
         pass
 
@@ -285,6 +310,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     # Fallback: use forward growth (already capped) if 4y calc failed
     if revenue_cagr_4y is None and rev_growth_fwd is not None:
         revenue_cagr_4y = rev_growth_fwd
+        projection_flags["revenue_cagr_fallback"] = True
 
     fcf_cagr_4y = None
     if fcf_history and len(fcf_history) >= 3 and fcf_2y:
@@ -299,16 +325,20 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     if fcf_cagr_4y is None and latest_fcf and fcf_2y and latest_fcf > 0 and fcf_2y > 0:
         try:
             fcf_cagr_4y = (fcf_2y / latest_fcf) ** (1.0 / 2) - 1
+            projection_flags["fcf_cagr_fallback"] = True
         except Exception:
             pass
     # Last resort: use forward growth (capped)
     if fcf_cagr_4y is None and fcf_growth_fwd is not None:
         fcf_cagr_4y = fcf_growth_fwd
+        projection_flags["fcf_cagr_fallback"] = True
     # Absolute last fallback: assume flat growth so the formula still computes
     if fcf_cagr_4y is None:
         fcf_cagr_4y = 0.0
+        projection_flags["fcf_cagr_fallback"] = True
     if revenue_cagr_4y is None:
         revenue_cagr_4y = 0.0
+        projection_flags["revenue_cagr_fallback"] = True
 
     # Classic ratios from info
     classic_ratios = {
@@ -358,6 +388,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "fcf_2y": fcf_2y,
             "revenue_cagr_4y": revenue_cagr_4y,
             "fcf_cagr_4y": fcf_cagr_4y,
+            "flags": projection_flags,
         },
         "classic_ratios": classic_ratios,
         "as_of": datetime.now(timezone.utc).isoformat(),
