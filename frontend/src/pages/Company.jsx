@@ -117,8 +117,28 @@ export default function Company() {
     const cr = customRatios || {};
     const cur = data.currency || "USD";
 
-    const revChart = (data.revenue_history || []).map(p => ({ date: p.date.slice(0, 4), value: p.value / 1e9 }));
-    const fcfChart = (data.fcf_history || []).map(p => ({ date: p.date.slice(0, 4), value: p.value / 1e9 }));
+    const buildChartData = (history, proj1, proj2) => {
+        if (!history || history.length === 0) return [];
+        const out = history.map(p => ({
+            year: p.date.slice(0, 4),
+            historical: p.value / 1e9,
+            projection: null,
+        }));
+        // Bridge: last historical point also serves as start of projection
+        const last = out[out.length - 1];
+        last.projection = last.historical;
+        const lastYear = parseInt(last.year, 10) || new Date().getFullYear();
+        if (proj1 != null && !isNaN(proj1)) {
+            out.push({ year: String(lastYear + 1) + "E", historical: null, projection: proj1 / 1e9 });
+        }
+        if (proj2 != null && !isNaN(proj2)) {
+            out.push({ year: String(lastYear + 2) + "E", historical: null, projection: proj2 / 1e9 });
+        }
+        return out;
+    };
+
+    const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y);
+    const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y);
 
     return (
         <div data-testid="company-page">
@@ -295,26 +315,37 @@ function ChartBlock({ title, data, unit, color, type = "line", testid }) {
             </div>
         );
     }
+    const projColor = "#B32A22";
     return (
         <div className="border border-black bg-white p-4" data-testid={testid}>
-            <div className="overline text-[#4A4A4A] mb-1">{title}</div>
-            <div className="font-serif text-xl mb-3">en miles de millones ({unit})</div>
-            <ResponsiveContainer width="100%" height={180}>
+            <div className="flex items-start justify-between mb-1">
+                <div>
+                    <div className="overline text-[#4A4A4A]">{title}</div>
+                    <div className="font-serif text-xl">en miles de millones ({unit})</div>
+                </div>
+                <div className="flex gap-3 text-[10px] font-mono mt-1">
+                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-[2px]" style={{ background: color }} />Real</span>
+                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />Proyección</span>
+                </div>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
                 {type === "bar" ? (
                     <BarChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="date" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <Tooltip contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "IBM Plex Mono", fontSize: 12 }} />
-                        <Bar dataKey="value" fill={color} />
+                        <Bar dataKey="historical" fill={color} name="Real" />
+                        <Bar dataKey="projection" fill={projColor} fillOpacity={0.4} stroke={projColor} strokeDasharray="3 3" name="Proyección" />
                     </BarChart>
                 ) : (
                     <LineChart data={data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="date" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <Tooltip contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "IBM Plex Mono", fontSize: 12 }} />
-                        <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} />
+                        <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} name="Real" connectNulls={false} />
+                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 4, fill: projColor }} name="Proyección" connectNulls={false} />
                     </LineChart>
                 )}
             </ResponsiveContainer>

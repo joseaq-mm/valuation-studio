@@ -260,6 +260,17 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         # If we can't compute growth (e.g., negative FCF in history), assume flat
         fcf_2y = latest_fcf
 
+    # ----- 1y forward values (for charting projections) -----
+    revenue_1y = revenue_plus1y
+    if revenue_1y is None and latest_revenue and rev_growth_fwd is not None:
+        revenue_1y = latest_revenue * (1 + rev_growth_fwd)
+
+    fcf_1y = None
+    if latest_fcf and fcf_growth_fwd is not None:
+        fcf_1y = latest_fcf * (1 + fcf_growth_fwd)
+    elif latest_fcf:
+        fcf_1y = latest_fcf
+
     # CAGR ingresos 4 años (2 atrás + 2 adelante)
     revenue_cagr_4y = None
     if revenue_history and len(revenue_history) >= 3 and revenue_2y:
@@ -324,7 +335,9 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "analyst_revenue_plus1y": revenue_plus1y,
         "revenue_growth_yoy": revenue_growth_yoy,
         "auto_projections": {
+            "revenue_1y": revenue_1y,
             "revenue_2y": revenue_2y,
+            "fcf_1y": fcf_1y,
             "fcf_2y": fcf_2y,
             "revenue_cagr_4y": revenue_cagr_4y,
             "fcf_cagr_4y": fcf_cagr_4y,
