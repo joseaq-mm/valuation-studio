@@ -48,7 +48,10 @@
   - Aviso al navegar fuera de la página con cambios pendientes (React Router `useBlocker` + opcional `beforeunload` para cerrar pestaña).
   - Badge "MANUAL" en la tabla de watchlist junto al ticker.
   - Endpoint `/api/compare` debe aceptar overrides por ticker, O recomputar en frontend cuando hay overrides.
-  - Decisiones tomadas: snapshot **completo** de los 10 inputs (no solo deltas); precio actual **NO** se guarda (siempre desde Yahoo, para que ratios % se actualicen con el mercado); confirmar tipo de aviso `beforeunload` con usuario.
+  - Decisiones finales (confirmadas por usuario):
+    - **Solo se guardan los campos editados** (deltas, no snapshot completo). Razón: si Yahoo actualiza el resto de datos, los ratios se actualizan automáticamente con los nuevos valores buenos de Yahoo, manteniendo solo los overrides del usuario.
+    - **NO se guarda el precio actual** — siempre se refresca desde Yahoo para que los ratios % evolucionen con el movimiento de la acción.
+    - **SÍ avisar con `beforeunload`** al cerrar la pestaña, además del modal interno al navegar dentro de la app.
 - **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).
 - **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
 - **P1** — Aviso visual cuando una proyección automática viene de un CAGR extremo (capado), para que el usuario sepa que debe revisar manualmente.
