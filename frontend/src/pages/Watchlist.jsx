@@ -5,6 +5,9 @@ import { compare } from "@/lib/api";
 import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
+import { useAuth } from "@/lib/auth";
+import { useFx } from "@/lib/fx";
+import { notifyGet, notifyPut } from "@/lib/api";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,7 +34,22 @@ export default function Watchlist() {
     const [entries, setEntries] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    const { user } = useAuth();
+    const [notify, setNotify] = useState(null);
+    const { display: displayCur, convert: fxConvert } = useFx();
     useThresholds(); // re-render on threshold changes
+
+    useEffect(() => {
+        if (!user) { setNotify(null); return; }
+        notifyGet().then(setNotify).catch(() => setNotify({ enabled: false, cross_buy_zone: true, cross_sell_zone: true }));
+    }, [user]);
+
+    const updateNotify = async (patch) => {
+        const next = { ...(notify || {}), ...patch };
+        setNotify(next);
+        try { await notifyPut(next); toast.success("Preferencias guardadas"); }
+        catch { toast.error("No se pudieron guardar las preferencias"); }
+    };
 
     const load = async (es) => {
         if (!es.length) { setRows([]); return; }
@@ -71,6 +89,60 @@ export default function Watchlist() {
                 </div>
                 <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">Comparar todas <ArrowRight size={12} className="inline ml-1" /></Link>
             </div>
+
+            {!user && (
+                <div className="border border-[#052049] bg-white p-4 mb-6 text-sm flex flex-wrap items-center justify-between gap-3" data-testid="login-prompt">
+                    <div>
+                        <div className="overline text-[#052049] mb-1">¿Cambias entre móvil y ordenador?</div>
+                        <div className="text-[#4A4A4A]">
+                            Tu watchlist se guarda solo en este navegador. <span className="font-semibold">Inicia sesión con Google</span> (botón <span className="font-mono">Entrar</span> arriba) para sincronizarla automáticamente entre tus dispositivos y activar alertas opcionales por email cuando una acción cruce tu zona de compra/venta.
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {user && notify && (
+                <div className="border border-black bg-white p-4 mb-6" data-testid="notify-card">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <div className="overline text-[#4A4A4A]">Alertas por email</div>
+                            <div className="text-xs text-[#4A4A4A] max-w-md">
+                                Cada noche (06:00 UTC) revisamos tu watchlist con datos frescos. Te avisamos solo cuando una acción <span className="text-[#1D7044] font-semibold">cruza a barata</span> o <span className="text-[#B32A22] font-semibold">deja de estar barata</span>.
+                            </div>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer" data-testid="notify-enabled">
+                            <input
+                                type="checkbox"
+                                checked={!!notify.enabled}
+                                onChange={(e) => updateNotify({ enabled: e.target.checked })}
+                            />
+                            <span className="overline">{notify.enabled ? "Activadas" : "Desactivadas"}</span>
+                        </label>
+                    </div>
+                    {notify.enabled && (
+                        <div className="flex flex-wrap gap-4 mt-3 text-xs">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={!!notify.cross_buy_zone}
+                                    onChange={(e) => updateNotify({ cross_buy_zone: e.target.checked })}
+                                    data-testid="notify-buy"
+                                />
+                                <span>Avisarme cuando cruza a <span className="text-[#1D7044] font-semibold">BARATA</span></span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={!!notify.cross_sell_zone}
+                                    onChange={(e) => updateNotify({ cross_sell_zone: e.target.checked })}
+                                    data-testid="notify-sell"
+                                />
+                                <span>Avisarme cuando <span className="text-[#B32A22] font-semibold">deja de estar barata</span></span>
+                            </label>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {!entries.length ? (
                 <div className="border border-black bg-white p-12 text-center" data-testid="watchlist-empty">
@@ -121,8 +193,8 @@ export default function Watchlist() {
                                                 <span className="overline px-2 py-1 border border-black/30 text-[#4A4A4A] bg-white" data-testid={`mode-${r.ticker}`}>AUTO</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono">{fmtPrice(r.current_price, r.currency)}</td>
-                                        <td className="px-4 py-3 text-right font-mono">{fmtNum(r.market_cap)}</td>
+                                        <td className="px-4 py-3 text-right font-mono">{fmtPrice(displayCur && displayCur !== "NATIVE" ? fxConvert(r.current_price, r.currency) : r.current_price, displayCur && displayCur !== "NATIVE" ? displayCur : r.currency)}</td>
+                                        <td className="px-4 py-3 text-right font-mono">{fmtNum(displayCur && displayCur !== "NATIVE" ? fxConvert(r.market_cap, r.currency) : r.market_cap)}</td>
                                         <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid={`rc-${r.ticker}`}>
                                             {fmtPctSigned(cr.ratio_compra_pct)}
                                         </td>

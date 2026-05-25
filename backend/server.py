@@ -12,6 +12,11 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import yfinance as yf
 import pandas as pd
+from auth import make_router as make_auth_router
+import fx as fx_service
+from screener import run_screener
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -22,6 +27,8 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Valuation Studio API")
 api_router = APIRouter(prefix="/api")
+auth_router, _auth_required, _auth_optional = make_auth_router(db)
+api_router.include_router(auth_router)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -700,6 +707,34 @@ async def get_company(ticker: str, refresh: bool = False):
     return payload
 
 
+@api_router.get("/fx/rates")
+async def fx_rates():
+    """Latest FX rates (base = USD). Cached 6h server-side."""
+    rates = await fx_service.get_rates()
+    return {"base": "USD", "rates": rates, "count": len(rates)}
+
+
+@api_router.post("/admin/run-screener")
+async def admin_run_screener():
+    """Manual trigger for the nightly screener — useful for QA."""
+    async def _fetch(ticker: str, force_refresh: bool = False):
+        # Reuse the same pipeline as GET /company/{ticker}
+        try:
+            payload = await run_in_threadpool(fetch_fundamentals_sync, ticker)
+            await db.fundamentals.update_one(
+                {"ticker": ticker.upper()},
+                {"$set": {"ticker": ticker.upper(), "data": payload, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+            return payload
+        except Exception as e:
+            logger.warning(f"fetch_fundamentals_sync({ticker}) failed: {e}")
+            cached = await db.fundamentals.find_one({"ticker": ticker.upper()}, {"_id": 0})
+            return cached.get("data") if cached else None
+
+    return await run_screener(db, _fetch, compute_custom_ratios)
+
+
 @api_router.post("/company/{ticker}/calculate")
 async def recalculate(ticker: str, inputs: CalcInputs):
     """Recompute custom ratios with user-overridden inputs."""
@@ -949,6 +984,44 @@ app.add_middleware(
 )
 
 
+# Nightly screener (runs at 06:00 UTC every day) — guarded so the scheduler
+# only starts when running under uvicorn (not during test imports).
+_scheduler: Optional[AsyncIOScheduler] = None
+
+
+async def _scheduled_screener_run():
+    async def _fetch(ticker: str, force_refresh: bool = False):
+        try:
+            payload = await run_in_threadpool(fetch_fundamentals_sync, ticker)
+            await db.fundamentals.update_one(
+                {"ticker": ticker.upper()},
+                {"$set": {"ticker": ticker.upper(), "data": payload, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+            return payload
+        except Exception as e:
+            logger.warning(f"scheduled screener fetch {ticker} failed: {e}")
+            cached = await db.fundamentals.find_one({"ticker": ticker.upper()}, {"_id": 0})
+            return cached.get("data") if cached else None
+    try:
+        await run_screener(db, _fetch, compute_custom_ratios)
+    except Exception as e:
+        logger.error(f"scheduled screener crashed: {e}")
+
+
+@app.on_event("startup")
+async def _startup_scheduler():
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = AsyncIOScheduler(timezone="UTC")
+        _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
+        _scheduler.start()
+        logger.info("Screener scheduler started (06:00 UTC daily).")
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    global _scheduler
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)
     client.close()

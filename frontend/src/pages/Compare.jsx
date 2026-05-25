@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { compare } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
+import { useFx } from "@/lib/fx";
 import { getWatchlistTickers } from "@/lib/storage";
 import { X, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -11,7 +12,13 @@ export default function Compare() {
     const [tickers, setTickers] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    const { display: displayCur, convert: fxConvert } = useFx();
     useThresholds();
+
+    const useDisplay = displayCur && displayCur !== "NATIVE";
+    const convPrice = (r) => useDisplay ? fxConvert(r.current_price, r.currency) : r.current_price;
+    const convMcap = (r) => useDisplay ? fxConvert(r.market_cap, r.currency) : r.market_cap;
+    const displayCurFor = (r) => useDisplay ? displayCur : r.currency;
 
     const add = (t) => {
         const sym = t.trim().toUpperCase();
@@ -42,9 +49,9 @@ export default function Compare() {
     };
 
     const metricRows = [
-        { label: "Precio", get: r => fmtPrice(r.current_price, r.currency), align: "right" },
-        { label: "Market Cap", get: r => fmtNum(r.market_cap), align: "right" },
-        { label: "Currency", get: r => r.currency || "—", align: "center" },
+        { label: "Precio", get: r => fmtPrice(convPrice(r), displayCurFor(r)), align: "right" },
+        { label: "Market Cap", get: r => fmtNum(convMcap(r)), align: "right" },
+        { label: "Currency", get: r => useDisplay ? `${r.currency} → ${displayCur}` : (r.currency || "—"), align: "center" },
         { label: "Ratio Compra", get: r => {
             const v = r.custom_ratios?.ratio_compra_pct;
             return v == null ? "—" : (

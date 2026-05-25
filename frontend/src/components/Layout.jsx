@@ -4,6 +4,8 @@ import { searchTickers } from "@/lib/api";
 import { Search } from "lucide-react";
 import ThresholdsDialog from "./ThresholdsDialog";
 import ThemeToggle from "./ThemeToggle";
+import AuthButton from "./AuthButton";
+import CurrencySelector from "./CurrencySelector";
 
 export default function Layout({ children }) {
     const navigate = useNavigate();
@@ -105,6 +107,8 @@ export default function Layout({ children }) {
                         <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">Comparar</Link>
                         <ThresholdsDialog />
                         <ThemeToggle />
+                        <CurrencySelector />
+                        <AuthButton />
                     </nav>
                 </div>
             </header>

@@ -27,6 +27,14 @@ const _read = () => {
 
 const _write = (list) => {
     localStorage.setItem(KEY, JSON.stringify(list));
+    // Notify subscribers (e.g. cloud sync hook) about the change
+    try { window.dispatchEvent(new CustomEvent("vs:watchlist-changed", { detail: list })); } catch { /* ignore */ }
+};
+
+export const replaceWatchlist = (list) => {
+    const safe = Array.isArray(list) ? list : [];
+    _write(safe);
+    return safe;
 };
 
 export const getWatchlist = () => _read();

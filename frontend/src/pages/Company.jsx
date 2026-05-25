@@ -7,6 +7,7 @@ import LocaleNumberInput from "@/components/LocaleNumberInput";
 import { saveToWatchlist, removeFromWatchlist, getWatchlistEntry } from "@/lib/storage";
 import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
 import { useThresholds } from "@/lib/useThresholds";
+import { useFx } from "@/lib/fx";
 import { Star, RefreshCw, AlertCircle, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
@@ -243,6 +244,7 @@ export default function Company() {
     const [translating, setTranslating] = useState(false);
     const [ratioHistory, setRatioHistory] = useState([]); // [{year, price, ratio_compra_pct, ratio_venta_pct}]
     useThresholds(); // subscribe to threshold changes so colours/labels live-update
+    const { display: displayCur, convert: fxConvert } = useFx();
 
     const hasSessionEdits = Object.keys(sessionEdits).length > 0;
 
@@ -452,7 +454,11 @@ export default function Company() {
     if (!data) return null;
 
     const cr = customRatios || {};
-    const cur = data.currency || "USD";
+    const nativeCur = data.currency || "USD";
+    // Effective currency for ALL price/monetary displays
+    const cur = (displayCur === "NATIVE" || !displayCur) ? nativeCur : displayCur;
+    // Convert a value from native currency to display currency; null-safe.
+    const convertCur = (v) => (v == null || isNaN(v)) ? v : fxConvert(v, nativeCur);
 
     // Smart unit suffix for magnitude values (B/M/K)
     const unitFor = (v) => {
@@ -573,7 +579,7 @@ export default function Company() {
             }
             if (!reasons.length) reasons.push("La combinación de factores deja un POC ≤ 0. Revisa manualmente Ingresos 2y, márgenes y CAGRs.");
             anomalies.push({
-                title: `POC ≤ 0 → ${fmtPrice(poc, cur)}`,
+                title: `POC ≤ 0 → ${fmtPrice(convertCur(poc), cur)}`,
                 detail: "El precio objetivo de compra no es utilizable porque uno o más factores de la fórmula están colapsando el resultado:",
                 bullets: reasons,
             });
@@ -583,7 +589,7 @@ export default function Company() {
         if (poc > 0 && pov > 0 && pov < poc) {
             const yPct = (om ?? 0) * 100;
             anomalies.push({
-                title: `POV (${fmtPrice(pov, cur)}) < POC (${fmtPrice(poc, cur)})`,
+                title: `POV (${fmtPrice(convertCur(pov), cur)}) < POC (${fmtPrice(convertCur(poc), cur)})`,
                 detail: "Tu precio objetivo de venta queda por debajo del de compra, lo que invierte la lógica esperada. Causa concreta según la fórmula:",
                 bullets: [
                     `Margen operativo = ${yPct.toFixed(2)}% → factor ajustado y = ${b.y_factor != null ? b.y_factor.toFixed(3) : "—"} (cuando y < 0%, el factor se aplica como 1 + y/100, que es < 1, así que POV = POC × y_factor termina menor que POC).`,
@@ -597,7 +603,7 @@ export default function Company() {
         if (poc > 0 && pov <= 0) {
             const yPct = (om ?? 0) * 100;
             anomalies.push({
-                title: `POV ≤ 0 → ${fmtPrice(pov, cur)}`,
+                title: `POV ≤ 0 → ${fmtPrice(convertCur(pov), cur)}`,
                 detail: "El precio objetivo de venta colapsa por culpa del margen operativo:",
                 bullets: [
                     `Margen operativo = ${yPct.toFixed(2)}%. Como es < −100%, el factor (1 + y/100) es ≤ 0 y arrastra POV a territorio negativo.`,
@@ -691,8 +697,8 @@ export default function Company() {
                     </div>
                     <div className="text-right">
                         <div className="overline text-[#4A4A4A]">Precio actual</div>
-                        <div className="font-mono text-4xl sm:text-5xl font-medium" data-testid="company-price">{fmtPrice(data.current_price, cur)}</div>
-                        <div className="text-xs text-[#4A4A4A] font-mono mt-1">MCap {fmtNum(data.market_cap)}</div>
+                        <div className="font-mono text-4xl sm:text-5xl font-medium" data-testid="company-price">{fmtPrice(convertCur(data.current_price), cur)}</div>
+                        <div className="text-xs text-[#4A4A4A] font-mono mt-1">MCap {fmtNum(convertCur(data.market_cap))} {cur !== nativeCur && <span className="text-[10px]">({cur})</span>}</div>
                     </div>
                 </div>
                 <div className="flex gap-2 mt-4 flex-wrap items-center">
@@ -753,7 +759,7 @@ export default function Company() {
                     <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="signal-compra">{signalLabel(cr.ratio_compra_pct)}</span>
                         <HoverTip text="POC = Precio Objetivo de Compra. Precio al que la acción te parecería barata según tu fórmula.">
-                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="poc-label">POC {cr.poc != null ? fmtPrice(cr.poc, cur) : "—"}</span>
+                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="poc-label">POC {cr.poc != null ? fmtPrice(convertCur(cr.poc), cur) : "—"}</span>
                         </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de compra.</div>
@@ -766,7 +772,7 @@ export default function Company() {
                     <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct, "venta")}</span>
                         <HoverTip text="POV = Precio Objetivo de Venta. Precio al que la acción te parecería cara según tu fórmula.">
-                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
+                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(convertCur(cr.pov), cur) : "—"}</span>
                         </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de venta.</div>
@@ -964,7 +970,7 @@ export default function Company() {
                 <div className="space-y-6">
                     <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
                     <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
-                    <RatioHistoryChart series={ratioHistory} currency={cur} />
+                    <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price) }))} currency={cur} />
                 </div>
             </div>
 
@@ -1002,7 +1008,7 @@ export default function Company() {
             )}
 
             {inputs && cr.poc != null && (
-                <SensitivityMatrix inputs={inputs} basePoc={cr.poc} basePov={cr.pov} basePrice={inputs.current_price} currency={cur} />
+                <SensitivityMatrix inputs={inputs} basePoc={cr.poc} basePov={cr.pov} basePrice={inputs.current_price} currency={cur} convertCur={convertCur} />
             )}
 
             {/* Navigation guard modal */}
@@ -1342,7 +1348,7 @@ const SENS_AXES = [
     { key: "fcf_cagr_4y", label: "CAGR FCF 4y", isPercent: true },
 ];
 
-function SensitivityMatrix({ inputs, basePoc, basePov, basePrice, currency }) {
+function SensitivityMatrix({ inputs, basePoc, basePov, basePrice, currency, convertCur }) {
     const [axisX, setAxisX] = useState("operating_margin");
     const [axisY, setAxisY] = useState("revenue_cagr_4y");
     const [delta, setDelta] = useState(10); // ±%
@@ -1378,7 +1384,8 @@ function SensitivityMatrix({ inputs, basePoc, basePov, basePrice, currency }) {
     const fmtCell = (v) => {
         if (v == null || isNaN(v)) return "—";
         if (metric === "ratio_compra" || metric === "ratio_venta") return fmtPctSigned(v);
-        return fmtPrice(v, currency);
+        const conv = convertCur ? convertCur(v) : v;
+        return fmtPrice(conv, currency);
     };
     const cellColor = (v) => {
         if (v == null || isNaN(v)) return "#4A4A4A";
