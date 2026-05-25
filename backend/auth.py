@@ -42,10 +42,26 @@ class WatchlistEntry(BaseModel):
     mode: str = "auto"  # "auto" | "manual"
     overrides: Optional[Dict[str, Any]] = None
     saved_at: Optional[str] = None
+    # Per-entry email alert opt-in (overrides nothing — combined with notify.enabled in the screener)
+    alert_enabled: Optional[bool] = False
 
 
 class WatchlistPayload(BaseModel):
     entries: List[WatchlistEntry]
+
+
+class PortfolioEntry(BaseModel):
+    ticker: str
+    shares: float
+    buy_price: float                  # in `buy_currency`
+    buy_currency: Optional[str] = None  # if None, treat as the native currency of the ticker
+    buy_date: Optional[str] = None    # ISO date
+    note: Optional[str] = None
+    alert_enabled: Optional[bool] = False
+
+
+class PortfolioPayload(BaseModel):
+    positions: List[PortfolioEntry]
 
 
 class NotificationPreferences(BaseModel):
@@ -197,6 +213,26 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             upsert=True,
         )
         return {"ok": True, "count": len(entries)}
+
+    # ---------------- Portfolio (real positions) ----------------
+    @router.get("/portfolio")
+    async def get_portfolio(user: Dict[str, Any] = Depends(get_current_user)):
+        doc = await db.user_portfolios.find_one({"user_id": user["user_id"]}, {"_id": 0})
+        return {"positions": (doc or {}).get("positions", [])}
+
+    @router.put("/portfolio")
+    async def put_portfolio(payload: PortfolioPayload, user: Dict[str, Any] = Depends(get_current_user)):
+        positions = [p.model_dump() for p in payload.positions]
+        await db.user_portfolios.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {
+                "user_id": user["user_id"],
+                "positions": positions,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        return {"ok": True, "count": len(positions)}
 
     # ---------------- Notification preferences ----------------
     @router.get("/notify")

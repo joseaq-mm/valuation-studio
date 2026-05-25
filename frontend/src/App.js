@@ -6,10 +6,12 @@ import Layout from "@/components/Layout";
 import Home from "@/pages/Home";
 import Company from "@/pages/Company";
 import Watchlist from "@/pages/Watchlist";
+import Portfolio from "@/pages/Portfolio";
 import Compare from "@/pages/Compare";
 import AuthCallback from "@/pages/AuthCallback";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
+import { I18nProvider } from "@/lib/i18n";
 import WatchlistCloudSync from "@/components/WatchlistCloudSync";
 
 // Detect OAuth callback synchronously during render — running this in useEffect
@@ -25,6 +27,7 @@ function AppRouter() {
                 <Route path="/" element={<Home />} />
                 <Route path="/company/:ticker" element={<Company />} />
                 <Route path="/watchlist" element={<Watchlist />} />
+                <Route path="/portfolio" element={<Portfolio />} />
                 <Route path="/compare" element={<Compare />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
             </Routes>
@@ -38,9 +41,11 @@ function App() {
             <BrowserRouter>
                 <AuthProvider>
                     <FxProvider>
-                        <WatchlistCloudSync />
-                        <AppRouter />
-                        <Toaster position="bottom-right" toastOptions={{ style: { borderRadius: 0, border: "1px solid #111", fontFamily: "IBM Plex Sans" } }} />
+                        <I18nProvider>
+                            <WatchlistCloudSync />
+                            <AppRouter />
+                            <Toaster position="bottom-right" toastOptions={{ style: { borderRadius: 0, border: "1px solid #111", fontFamily: "IBM Plex Sans" } }} />
+                        </I18nProvider>
                     </FxProvider>
                 </AuthProvider>
             </BrowserRouter>

@@ -6,10 +6,13 @@ import ThresholdsDialog from "./ThresholdsDialog";
 import ThemeToggle from "./ThemeToggle";
 import AuthButton from "./AuthButton";
 import CurrencySelector from "./CurrencySelector";
+import LanguageToggle from "./LanguageToggle";
+import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
     const navigate = useNavigate();
     const location = useLocation();
+    const { t } = useI18n();
     const [query, setQuery] = useState("");
     const [results, setResults] = useState([]);
     const [showResults, setShowResults] = useState(false);
@@ -74,12 +77,12 @@ export default function Layout({ children }) {
                             <input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Buscar ticker (AAPL, SAN.MC, SAP.DE, VOD.L)..."
+                                placeholder={t("nav.search_placeholder")}
                                 className="flex-1 px-3 py-2 outline-none font-mono text-sm bg-transparent"
                                 data-testid="search-input"
                                 onFocus={() => results.length && setShowResults(true)}
                             />
-                            <button type="submit" className="btn-primary !py-2 !px-3" data-testid="search-submit">Ir</button>
+                            <button type="submit" className="btn-primary !py-2 !px-3" data-testid="search-submit">{t("nav.search_button")}</button>
                         </form>
                         {showResults && results.length > 0 && (
                             <div className="absolute left-0 right-0 top-full bg-white border border-black border-t-0 max-h-80 overflow-auto z-50" data-testid="search-results">
@@ -102,10 +105,12 @@ export default function Layout({ children }) {
                     </div>
 
                     <nav className="flex items-center gap-1">
-                        <Link to="/" className={navClass("/")} data-testid="nav-link-home">Inicio</Link>
-                        <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">Watchlist</Link>
-                        <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">Comparar</Link>
+                        <Link to="/" className={navClass("/")} data-testid="nav-link-home">{t("nav.home")}</Link>
+                        <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
+                        <Link to="/portfolio" className={navClass("/portfolio")} data-testid="nav-link-portfolio">{t("nav.portfolio")}</Link>
+                        <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">{t("nav.compare")}</Link>
                         <ThresholdsDialog />
+                        <LanguageToggle />
                         <ThemeToggle />
                         <CurrencySelector />
                         <AuthButton />
@@ -118,8 +123,8 @@ export default function Layout({ children }) {
             <footer className="border-t border-black/30 py-4 px-6 text-xs text-[#4A4A4A]" data-testid="footer">
                 <div className="max-w-[1400px] mx-auto space-y-2">
                     <div className="border border-[#B32A22]/40 bg-white/60 px-3 py-2 text-[11px] leading-relaxed" data-testid="legal-disclaimer">
-                        <span className="font-mono font-semibold text-[#B32A22] mr-1">AVISO LEGAL ·</span>
-                        Esta aplicación tiene fines exclusivamente <span className="font-semibold">didácticos y orientativos</span>. La información mostrada <span className="font-semibold">no constituye recomendación, asesoramiento ni invitación a operar</span> con valores. Los cálculos se basan en una fórmula propia del usuario y en datos automáticos de Yahoo Finance que pueden contener errores o estar desactualizados. Cada inversor debe realizar su propio análisis y, si procede, consultar a un profesional registrado. Invertir conlleva riesgo de pérdida del capital.
+                        <span className="font-mono font-semibold text-[#B32A22] mr-1">{t("footer.legal_tag")}</span>
+                        {t("footer.legal")}
                     </div>
                     <div className="flex justify-between">
                         <span>Valuation Studio · Datos: Yahoo Finance</span>

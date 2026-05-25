@@ -31,6 +31,13 @@ const _write = (list) => {
     try { window.dispatchEvent(new CustomEvent("vs:watchlist-changed", { detail: list })); } catch { /* ignore */ }
 };
 
+export const setWatchlistAlert = (ticker, enabled) => {
+    const t = (ticker || "").toUpperCase();
+    const list = _read().map(e => (e.ticker || "").toUpperCase() === t ? { ...e, alert_enabled: !!enabled } : e);
+    _write(list);
+    return list;
+};
+
 export const replaceWatchlist = (list) => {
     const safe = Array.isArray(list) ? list : [];
     _write(safe);

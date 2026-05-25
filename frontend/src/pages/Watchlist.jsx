@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getWatchlist, getWatchlistTickers, removeFromWatchlist } from "@/lib/storage";
+import { getWatchlist, getWatchlistTickers, removeFromWatchlist, setWatchlistAlert } from "@/lib/storage";
 import { compare } from "@/lib/api";
 import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
 import { useAuth } from "@/lib/auth";
 import { useFx } from "@/lib/fx";
+import { useI18n } from "@/lib/i18n";
 import { notifyGet, notifyPut } from "@/lib/api";
+import AlertToggle from "@/components/AlertToggle";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,6 +39,7 @@ export default function Watchlist() {
     const { user } = useAuth();
     const [notify, setNotify] = useState(null);
     const { display: displayCur, convert: fxConvert } = useFx();
+    const { t } = useI18n();
     useThresholds(); // re-render on threshold changes
 
     useEffect(() => {
@@ -84,19 +87,17 @@ export default function Watchlist() {
         <div data-testid="watchlist-page">
             <div className="flex justify-between items-end mb-6">
                 <div>
-                    <div className="overline text-[#B32A22]">Tu cartera de seguimiento</div>
-                    <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">Watchlist</h1>
+                    <div className="overline text-[#B32A22]">{t("watchlist.tag")}</div>
+                    <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("watchlist.title")}</h1>
                 </div>
-                <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">Comparar todas <ArrowRight size={12} className="inline ml-1" /></Link>
+                <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">{t("nav.compare")} <ArrowRight size={12} className="inline ml-1" /></Link>
             </div>
 
             {!user && (
                 <div className="border border-[#052049] bg-white p-4 mb-6 text-sm flex flex-wrap items-center justify-between gap-3" data-testid="login-prompt">
                     <div>
-                        <div className="overline text-[#052049] mb-1">¿Cambias entre móvil y ordenador?</div>
-                        <div className="text-[#4A4A4A]">
-                            Tu watchlist se guarda solo en este navegador. <span className="font-semibold">Inicia sesión con Google</span> (botón <span className="font-mono">Entrar</span> arriba) para sincronizarla automáticamente entre tus dispositivos y activar alertas opcionales por email cuando una acción cruce tu zona de compra/venta.
-                        </div>
+                        <div className="overline text-[#052049] mb-1">{t("watchlist.login_prompt_tag")}</div>
+                        <div className="text-[#4A4A4A]">{t("watchlist.login_prompt_text")}</div>
                     </div>
                 </div>
             )}
@@ -105,9 +106,9 @@ export default function Watchlist() {
                 <div className="border border-black bg-white p-4 mb-6" data-testid="notify-card">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <div className="overline text-[#4A4A4A]">Alertas por email</div>
+                            <div className="overline text-[#4A4A4A]">{t("alerts.tag")}</div>
                             <div className="text-xs text-[#4A4A4A] max-w-md">
-                                Cada noche (06:00 UTC) revisamos tu watchlist con datos frescos. Te avisamos solo cuando una acción <span className="text-[#1D7044] font-semibold">cruza a barata</span> o <span className="text-[#B32A22] font-semibold">deja de estar barata</span>.
+                                Cada noche (06:00 UTC) revisamos los tickers que tengan la <span className="font-semibold">campana activada</span> en tu watchlist y cartera. Te avisamos solo cuando una acción <span className="text-[#1D7044] font-semibold">cruza a barata</span> o <span className="text-[#B32A22] font-semibold">deja de estar barata</span>.
                             </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer" data-testid="notify-enabled">
@@ -146,33 +147,34 @@ export default function Watchlist() {
 
             {!entries.length ? (
                 <div className="border border-black bg-white p-12 text-center" data-testid="watchlist-empty">
-                    <div className="font-serif text-3xl mb-2">Aún no hay empresas guardadas</div>
-                    <div className="text-sm text-[#4A4A4A] mb-6">Busca un ticker arriba y guarda empresas con el botón ★</div>
-                    <Link to="/" className="btn-primary">Empezar</Link>
+                    <div className="font-serif text-3xl mb-2">{t("watchlist.empty_title")}</div>
+                    <div className="text-sm text-[#4A4A4A] mb-6">{t("watchlist.empty_sub")}</div>
+                    <Link to="/" className="btn-primary">{t("watchlist.empty_cta")}</Link>
                 </div>
             ) : (
                 <div className="border border-black bg-white overflow-x-auto" data-testid="watchlist-table">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-4 py-3">Ticker</th>
-                                <th className="overline text-left px-4 py-3">Empresa</th>
-                                <th className="overline text-center px-4 py-3">Modo</th>
-                                <th className="overline text-right px-4 py-3">Precio</th>
-                                <th className="overline text-right px-4 py-3">Mcap</th>
-                                <th className="overline text-right px-4 py-3">R. Compra</th>
-                                <th className="overline text-right px-4 py-3">R. Venta</th>
-                                <th className="overline text-center px-4 py-3">Señal</th>
+                                <th className="overline text-left px-4 py-3">{t("watchlist.col_ticker")}</th>
+                                <th className="overline text-left px-4 py-3">{t("watchlist.col_company")}</th>
+                                <th className="overline text-center px-4 py-3">{t("watchlist.col_mode")}</th>
+                                <th className="overline text-right px-4 py-3">{t("watchlist.col_price")}</th>
+                                <th className="overline text-right px-4 py-3">{t("watchlist.col_mcap")}</th>
+                                <th className="overline text-right px-4 py-3">{t("watchlist.col_rc")}</th>
+                                <th className="overline text-right px-4 py-3">{t("watchlist.col_rv")}</th>
+                                <th className="overline text-center px-4 py-3">{t("watchlist.col_signal")}</th>
+                                <th className="overline text-center px-4 py-3">{t("watchlist.col_alert")}</th>
                                 <th className="px-4 py-3" />
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="9" className="px-4 py-6 text-center font-mono text-[#4A4A4A]">Cargando…</td></tr>}
+                            {loading && <tr><td colSpan="10" className="px-4 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {rows.map(({ entry, data: r }) => {
                                 if (r.error) return (
                                     <tr key={r.ticker} className="border-b border-black/10">
                                         <td className="px-4 py-3 font-mono">{r.ticker}</td>
-                                        <td colSpan="7" className="px-4 py-3 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td colSpan="8" className="px-4 py-3 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-4 py-3 text-right">
                                             <button onClick={() => handleRemove(r.ticker)} data-testid={`remove-${r.ticker}`}><Trash2 size={14} /></button>
                                         </td>
@@ -205,6 +207,13 @@ export default function Watchlist() {
                                             <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }}>
                                                 {signalLabel(cr.ratio_compra_pct)}
                                             </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <AlertToggle
+                                                enabled={!!entry.alert_enabled}
+                                                onChange={(v) => { setWatchlistAlert(r.ticker, v); toast.success(v ? t("alerts.row_on") : t("alerts.row_off")); }}
+                                                testid={r.ticker}
+                                            />
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <button onClick={() => handleRemove(r.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${r.ticker}`}>

@@ -123,7 +123,37 @@ async def run_screener(db, get_company_data, compute_custom_ratios) -> Dict[str,
         summary["users_scanned"] += 1
 
         wl_doc = await db.user_watchlists.find_one({"user_id": user_id}, {"_id": 0})
-        entries = (wl_doc or {}).get("entries", [])
+        wl_entries = (wl_doc or {}).get("entries", [])
+        pf_doc = await db.user_portfolios.find_one({"user_id": user_id}, {"_id": 0})
+        pf_positions = (pf_doc or {}).get("positions", [])
+
+        # Build a unified [{ticker, overrides, alert_enabled, source}] list. Portfolio
+        # entries override watchlist entries for the same ticker (positions are the
+        # higher-priority signal — the user actually owns these shares).
+        combined: Dict[str, Dict[str, Any]] = {}
+        for e in wl_entries:
+            tk = (e.get("ticker") or "").upper()
+            if not tk:
+                continue
+            combined[tk] = {
+                "ticker": tk,
+                "overrides": e.get("overrides") or {},
+                "alert_enabled": bool(e.get("alert_enabled")),
+                "source": "watchlist",
+            }
+        for p in pf_positions:
+            tk = (p.get("ticker") or "").upper()
+            if not tk:
+                continue
+            prev = combined.get(tk, {})
+            combined[tk] = {
+                "ticker": tk,
+                "overrides": prev.get("overrides") or {},
+                "alert_enabled": bool(p.get("alert_enabled")) or prev.get("alert_enabled", False),
+                "source": "portfolio" if not prev else "both",
+            }
+        # Keep only entries with per-entry alerts enabled
+        entries = [c for c in combined.values() if c["alert_enabled"]]
         if not entries:
             continue
 

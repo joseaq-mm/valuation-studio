@@ -31,6 +31,10 @@ export const authLogout = () => api.post(`/auth/logout`).then(r => r.data);
 export const cloudWatchlistGet = () => api.get(`/auth/watchlist`).then(r => r.data);
 export const cloudWatchlistPut = (entries) => api.put(`/auth/watchlist`, { entries }).then(r => r.data);
 
+// ---------------- Cloud portfolio ----------------
+export const cloudPortfolioGet = () => api.get(`/auth/portfolio`).then(r => r.data);
+export const cloudPortfolioPut = (positions) => api.put(`/auth/portfolio`, { positions }).then(r => r.data);
+
 // ---------------- Notification prefs ----------------
 export const notifyGet = () => api.get(`/auth/notify`).then(r => r.data);
 export const notifyPut = (prefs) => api.put(`/auth/notify`, prefs).then(r => r.data);

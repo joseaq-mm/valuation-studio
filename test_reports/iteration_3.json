@@ -1,0 +1,41 @@
+{
+  "summary": "Tested new features: Portfolio page (cartera real), per-row email alert toggle (BellOff/Bell icon) on watchlist and portfolio rows, and ES/EN language toggle. Backend: 12/12 tests pass — auth gating (401 without token), watchlist alert_enabled persists, portfolio CRUD + alert persists, screener still runs, existing endpoints (fx/rates, /company/AAPL) still work. Frontend: 11/11 flows pass — empty state, add/edit/remove position, P/L correct ($308.82×10 − $150×10 = $1588.20 = +105.9%), KPIs, AlertToggle greyed (opacity 0.55) and toasts 'Inicia sesión para activar alertas por email' when anonymous, lang toggle flips nav (HOME/WATCHLIST/PORTFOLIO/COMPARE) + page title + column headers + footer (DISCLAIMER ·) and persists in localStorage across reload.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/run-screener", "issue": "Review request stated response would include 'ok=true', but actual response is {users_scanned, emails_sent, events} only — no 'ok' field. Functionally fine; consider adding 'ok': true to the response for consistency with /auth/watchlist and /auth/portfolio which do return ok=true."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_portfolio_alerts.py",
+    "/app/test_reports/pytest/pytest_portfolio.xml"
+  ],
+  "action_items": [
+    "(Optional) Add `ok: true` to the /api/admin/run-screener response payload for consistency with the other admin/auth endpoints."
+  ],
+  "critical_code_review_comments": [
+    "Portfolio.jsx P/L % calculation uses native-currency ratio (line 185: (r.current_price / p.buy_price - 1) * 100) which is correct and currency-agnostic, but the per-row P/L absolute value is computed in display currency via fxConvert — if the user bought in EUR and the display is USD, the absolute P/L will include FX drift, while the % won't. This is a deliberate design choice but worth documenting in a tooltip.",
+    "Portfolio totals KPI block uses fxConvert to add cross-ticker invested/now. If fxConvert returns null for any row (FX rate missing), it sets anyError flag and shows '(parcial)' on P/L % only — invested/now totals silently drop the missing row. Consider also flagging totalInvested/totalNow when partial.",
+    "AlertToggle uses inline-style opacity:0.55 when anonymous — good a11y visual, but the button is still enabled and tabbable. If a screen-reader user tabs to it and activates, the toast nudges them to sign in (acceptable), but `aria-disabled` could be set for clarity.",
+    "/app/backend/auth.py is now 250 lines with Portfolio + Watchlist + Notify routes — still maintainable but trending toward needing a split (e.g., routers/portfolio.py).",
+    "i18n dictionary in /app/frontend/src/lib/i18n.jsx only covers nav/headers/columns/footer — many in-page strings (tooltips, error messages, dialog field placeholders) remain Spanish-only. Acceptable for first pass; flag for future translation pass."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_portfolio_alerts.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 new + previous 21/22 regression suite, the 1 pre-existing failure is the LLM-budget issue from iteration_2 not related to this iteration's changes)",
+    "frontend": "100% on all requested flows"
+  },
+  "test_credentials": "None required. Auth tests seeded a TEST_pf_<uuid> user + session row directly in MongoDB; teardown cleans up users/user_sessions/user_watchlists/user_portfolios rows for that user_id.",
+  "seed_data_creation": "Per-test ephemeral: one TEST_pf_<uuid> user + session + watchlist + portfolio doc, all deleted in module teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run all backend tests with: pytest /app/backend/tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml. The new test_portfolio_alerts.py uses motor (already a backend dep) to seed an auth session directly in MongoDB and call protected endpoints with Authorization: Bearer <token>. This pattern can be reused for any future protected endpoint without going through Emergent Google OAuth. Frontend: AlertToggle uses data-testid `alert-toggle-<TICKER>`; portfolio rows use `portfolio-row-<TICKER>`; lang toggle uses `lang-toggle` and shows the CURRENT language (so 'EN' on the button means UI is currently English). Default lang is ES; setting persists via localStorage key 'vs.lang'.",
+  "rca of the issue": "N/A — no functional issues found."
+}
