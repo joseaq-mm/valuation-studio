@@ -88,6 +88,30 @@ def _cagr(values: List[float], years: int) -> Optional[float]:
         return None
 
 
+def _find_annual_for_year(history, target_year: int):
+    """Find the annual data point whose fiscal-year-end falls in `target_year`.
+    Falls back to the closest year ≤ target if exact match not found."""
+    if not history:
+        return None
+    exact = None
+    best_below = None
+    for r in history:
+        try:
+            y = int(str(r.get("date", ""))[:4])
+        except ValueError:
+            continue
+        v = r.get("value")
+        if v is None:
+            continue
+        if y == target_year:
+            exact = v
+        elif y < target_year and (best_below is None or y > best_below[0]):
+            best_below = (y, v)
+    if exact is not None:
+        return exact
+    return best_below[1] if best_below else None
+
+
 def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     """Synchronously fetch and normalize fundamentals from yfinance."""
     t = yf.Ticker(ticker)
@@ -304,31 +328,33 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     elif latest_fcf:
         fcf_1y = latest_fcf
 
-    # CAGR ingresos 4 años (2 atrás + 2 adelante)
+    # CAGR ingresos 4 años. Window anchored on calendar year:
+    # backward boundary = end of (current_year - 3)   → e.g., today=2026 → FY2023
+    # forward boundary  = projected revenue at end of (current_year + 1) ≈ revenue_2y (TTM-based)
+    # span n = 4 years
+    current_year = datetime.now(timezone.utc).year
+    backward_year_rev = current_year - 3
     revenue_cagr_4y = None
-    if revenue_history and len(revenue_history) >= 3 and revenue_2y:
-        # Take 3rd-from-last (2y ago) as start, project end = revenue_2y, n=4 years
-        try:
-            start_idx = max(0, len(revenue_history) - 3)
-            start_val = revenue_history[start_idx]["value"]
-            if start_val and start_val > 0 and revenue_2y > 0:
+    if revenue_2y:
+        start_val = _find_annual_for_year(revenue_history, backward_year_rev)
+        if start_val and start_val > 0 and revenue_2y > 0:
+            try:
                 revenue_cagr_4y = (revenue_2y / start_val) ** (1.0 / 4) - 1
-        except Exception:
-            pass
+            except Exception:
+                pass
     # Fallback: use forward growth (already capped) if 4y calc failed
     if revenue_cagr_4y is None and rev_growth_fwd is not None:
         revenue_cagr_4y = rev_growth_fwd
         projection_flags["revenue_cagr_fallback"] = True
 
     fcf_cagr_4y = None
-    if fcf_history and len(fcf_history) >= 3 and fcf_2y:
-        try:
-            start_idx = max(0, len(fcf_history) - 3)
-            start_val = fcf_history[start_idx]["value"]
-            if start_val and start_val > 0 and fcf_2y > 0:
+    if fcf_2y:
+        start_val = _find_annual_for_year(fcf_history, backward_year_rev)
+        if start_val and start_val > 0 and fcf_2y > 0:
+            try:
                 fcf_cagr_4y = (fcf_2y / start_val) ** (1.0 / 4) - 1
-        except Exception:
-            pass
+            except Exception:
+                pass
     # Fallback: if any historical FCF is non-positive, use latest_fcf -> fcf_2y over 2 years
     if fcf_cagr_4y is None and latest_fcf and fcf_2y and latest_fcf > 0 and fcf_2y > 0:
         try:
@@ -409,12 +435,26 @@ def compute_custom_ratios(inputs: Dict[str, Any]) -> Dict[str, Any]:
     Compute user's custom Ratio Compra and Ratio Venta.
 
     POC = (revenue_2y / shares) * (1 + gross_margin) *
-          ((fcf_2y - net_debt) / market_cap * 100) *
+          x_factor *
           (1 + revenue_cagr_4y) * (1 + fcf_cagr_4y)
 
-    Ratio Compra = (POC / current_price - 1) * 100
-    POV = POC * (1 + operating_margin)
-    Ratio Venta = (POV / current_price - 1) * 100
+    where:
+      x = ((fcf_2y - net_debt) / market_cap) * 100   (raw FCF-yield-after-netdebt in %)
+      x_factor =
+          1 + x/100   if x < 0       (penalizes but bounded; never zeros out the formula)
+          1           if 0 <= x <= 1 (financial neutrality — tiny yields don't dominate)
+          x           if x > 1       (standard formula for healthy companies)
+
+    Ratio Compra = (POC / current_price − 1) * 100
+    POV = POC * y_factor
+    where:
+      y = operating_margin * 100  (in %)
+      y_factor =
+          1 + y/100   if y < 0
+          1           if 0 <= y <= 1
+          1 + y/100   if y > 1 (same as raw, equivalent to 1 + operating_margin)
+
+    Ratio Venta = (POV / current_price − 1) * 100
     """
     fields = ["revenue_2y", "fcf_2y", "shares_outstanding", "gross_margin",
               "operating_margin", "net_debt", "market_cap",
@@ -437,12 +477,31 @@ def compute_custom_ratios(inputs: Dict[str, Any]) -> Dict[str, Any]:
 
     rev_per_share_2y = vals["revenue_2y"] / vals["shares_outstanding"]
     margin_factor = 1.0 + vals["gross_margin"]
-    fcf_ratio_pct = ((vals["fcf_2y"] - vals["net_debt"]) / vals["market_cap"]) * 100.0
+
+    # Raw FCF-yield-after-netdebt, in % units
+    x_raw = ((vals["fcf_2y"] - vals["net_debt"]) / vals["market_cap"]) * 100.0
+    if x_raw < 0:
+        x_factor = 1.0 + (x_raw / 100.0)
+    elif x_raw <= 1.0:
+        x_factor = 1.0
+    else:
+        x_factor = x_raw
+
     rev_growth_factor = 1.0 + vals["revenue_cagr_4y"]
     fcf_growth_factor = 1.0 + vals["fcf_cagr_4y"]
 
-    poc = rev_per_share_2y * margin_factor * fcf_ratio_pct * rev_growth_factor * fcf_growth_factor
-    pov = poc * (1.0 + vals["operating_margin"])
+    poc = rev_per_share_2y * margin_factor * x_factor * rev_growth_factor * fcf_growth_factor
+
+    # Operating margin factor for POV: same shape as x_factor
+    y_pct = vals["operating_margin"] * 100.0
+    if y_pct < 0:
+        y_factor = 1.0 + (y_pct / 100.0)  # == 1 + operating_margin
+    elif y_pct <= 1.0:
+        y_factor = 1.0
+    else:
+        y_factor = 1.0 + (y_pct / 100.0)  # == 1 + operating_margin
+
+    pov = poc * y_factor
 
     ratio_compra_pct = (poc / vals["current_price"] - 1.0) * 100.0
     ratio_venta_pct = (pov / vals["current_price"] - 1.0) * 100.0
@@ -455,9 +514,11 @@ def compute_custom_ratios(inputs: Dict[str, Any]) -> Dict[str, Any]:
         "breakdown": {
             "rev_per_share_2y": rev_per_share_2y,
             "margin_factor": margin_factor,
-            "fcf_minus_netdebt_over_mcap_pct": fcf_ratio_pct,
+            "x_raw_pct": x_raw,
+            "fcf_minus_netdebt_over_mcap_pct": x_factor,  # the value actually used in the formula
             "rev_growth_factor": rev_growth_factor,
             "fcf_growth_factor": fcf_growth_factor,
+            "y_factor": y_factor,
         },
         "missing_inputs": [],
     }

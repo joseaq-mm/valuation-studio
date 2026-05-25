@@ -410,17 +410,17 @@ export default function Company() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {[
-                        ["Ingresos proyectados 2y", "revenue_2y", "(magnitud)"],
-                        ["FCF proyectado 2y", "fcf_2y", "(magnitud)"],
-                        ["Acciones en circulación", "shares_outstanding", "(número)"],
-                        ["Margen bruto", "gross_margin", "(decimal, 0.70=70%)"],
-                        ["Margen operativo", "operating_margin", "(decimal)"],
-                        ["Deuda neta", "net_debt", "(magnitud)"],
-                        ["Capitalización", "market_cap", "(magnitud)"],
-                        ["CAGR ingresos 4y", "revenue_cagr_4y", "(decimal, 0.40=40%)"],
-                        ["CAGR FCF 4y", "fcf_cagr_4y", "(decimal)"],
-                        ["Precio acción", "current_price", `(${cur})`],
-                    ].map(([label, key, hint]) => {
+                        ["Ingresos proyectados 2y", "revenue_2y", "(magnitud)", false],
+                        ["FCF proyectado 2y", "fcf_2y", "(magnitud)", false],
+                        ["Acciones en circulación", "shares_outstanding", "(número)", false],
+                        ["Margen bruto", "gross_margin", "(en %, p.ej. 70,00)", true],
+                        ["Margen operativo", "operating_margin", "(en %, p.ej. 20,00)", true],
+                        ["Deuda neta", "net_debt", "(magnitud)", false],
+                        ["Capitalización", "market_cap", "(magnitud)", false],
+                        ["CAGR ingresos 4y", "revenue_cagr_4y", "(en %, p.ej. 23,40)", true],
+                        ["CAGR FCF 4y", "fcf_cagr_4y", "(en %, p.ej. 12,30)", true],
+                        ["Precio acción", "current_price", `(${cur})`, false],
+                    ].map(([label, key, hint, isPercent]) => {
                         const status = fieldStatus(key);
                         const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "#111111";
                         const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
@@ -435,6 +435,7 @@ export default function Company() {
                                     className="input-paper text-base"
                                     style={{ color: statusColor, fontStyle: status === "session" ? "italic" : "normal", fontWeight: status === "saved" ? 600 : 400 }}
                                     value={inputs?.[key]}
+                                    percent={isPercent}
                                     onChange={(num) => updateInput(key, num)}
                                     data-testid={`input-${key}`}
                                 />
@@ -485,13 +486,15 @@ export default function Company() {
             {/* Breakdown */}
             {cr.breakdown && (
                 <div className="border border-black bg-white p-4" data-testid="breakdown-section">
-                    <div className="overline text-[#4A4A4A] mb-2">Desglose del cálculo POC</div>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm font-mono">
+                    <div className="overline text-[#4A4A4A] mb-2">Desglose del cálculo POC / POV</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4 text-sm font-mono">
                         <Stat label="Rev/Acción 2y" value={fmtNum(cr.breakdown.rev_per_share_2y)} />
                         <Stat label="× Margen bruto" value={fmtNum(cr.breakdown.margin_factor)} />
-                        <Stat label="× (FCF-NetDebt)/MCap %" value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)} />
+                        <Stat label="x bruto (FCF-NetDebt)/MCap %" value={cr.breakdown.x_raw_pct != null ? fmtNum(cr.breakdown.x_raw_pct) : "—"} />
+                        <Stat label="× x factor (ajustado)" value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)} />
                         <Stat label="× CAGR Ingresos 4y" value={fmtNum(cr.breakdown.rev_growth_factor)} />
                         <Stat label="× CAGR FCF 4y" value={fmtNum(cr.breakdown.fcf_growth_factor)} />
+                        <Stat label="× Factor MgOp (POV)" value={cr.breakdown.y_factor != null ? fmtNum(cr.breakdown.y_factor) : "—"} />
                     </div>
                 </div>
             )}

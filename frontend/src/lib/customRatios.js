@@ -37,12 +37,27 @@ export const computeCustomRatios = (inputs) => {
 
     const revPerShare2y = vals.revenue_2y / vals.shares_outstanding;
     const marginFactor = 1 + vals.gross_margin;
-    const fcfRatioPct = ((vals.fcf_2y - vals.net_debt) / vals.market_cap) * 100;
+
+    // Raw FCF yield after net debt, in %
+    const xRaw = ((vals.fcf_2y - vals.net_debt) / vals.market_cap) * 100;
+    let xFactor;
+    if (xRaw < 0) xFactor = 1 + xRaw / 100;
+    else if (xRaw <= 1) xFactor = 1;
+    else xFactor = xRaw;
+
     const revGrowthFactor = 1 + vals.revenue_cagr_4y;
     const fcfGrowthFactor = 1 + vals.fcf_cagr_4y;
 
-    const poc = revPerShare2y * marginFactor * fcfRatioPct * revGrowthFactor * fcfGrowthFactor;
-    const pov = poc * (1 + vals.operating_margin);
+    const poc = revPerShare2y * marginFactor * xFactor * revGrowthFactor * fcfGrowthFactor;
+
+    // Operating margin factor (same shape as xFactor)
+    const yPct = vals.operating_margin * 100;
+    let yFactor;
+    if (yPct < 0) yFactor = 1 + yPct / 100;
+    else if (yPct <= 1) yFactor = 1;
+    else yFactor = 1 + yPct / 100;
+
+    const pov = poc * yFactor;
 
     return {
         poc,
@@ -52,9 +67,11 @@ export const computeCustomRatios = (inputs) => {
         breakdown: {
             rev_per_share_2y: revPerShare2y,
             margin_factor: marginFactor,
-            fcf_minus_netdebt_over_mcap_pct: fcfRatioPct,
+            x_raw_pct: xRaw,
+            fcf_minus_netdebt_over_mcap_pct: xFactor,
             rev_growth_factor: revGrowthFactor,
             fcf_growth_factor: fcfGrowthFactor,
+            y_factor: yFactor,
         },
         missing_inputs: [],
     };
