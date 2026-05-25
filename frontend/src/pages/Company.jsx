@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { getCompany, recalc } from "@/lib/api";
-import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, parseLocaleNumber, ratioColor, signalLabel } from "@/lib/format";
+import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, ratioColor, signalLabel } from "@/lib/format";
 import LocaleNumberInput from "@/components/LocaleNumberInput";
-import { addToWatchlist, removeFromWatchlist, isInWatchlist } from "@/lib/storage";
-import { Star, RefreshCw, AlertCircle } from "lucide-react";
+import { saveToWatchlist, removeFromWatchlist, getWatchlistEntry } from "@/lib/storage";
+import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
+import { Star, RefreshCw, AlertCircle, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
@@ -32,53 +33,146 @@ export default function Company() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [inWl, setInWl] = useState(false);
 
-    // editable inputs
-    const [inputs, setInputs] = useState(null);
+    // Watchlist state
+    const [wlEntry, setWlEntry] = useState(null); // {ticker, mode, overrides, saved_at} or null
+    const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+
+    // Inputs lifecycle
+    const [autoInputs, setAutoInputs] = useState(null);    // pure Yahoo values
+    const [inputs, setInputs] = useState(null);            // current shown values (auto + saved overrides + session edits)
+    const [sessionEdits, setSessionEdits] = useState({});  // {field: true} for fields edited this session
     const [customRatios, setCustomRatios] = useState(null);
-    const [edited, setEdited] = useState(false);
+
+    const hasSessionEdits = Object.keys(sessionEdits).length > 0;
 
     const load = useCallback(async (refresh = false) => {
         try {
             setLoading(true); setError(null);
             const d = await getCompany(ticker, refresh);
+            const auto = autoInputsFromData(d);
+            const entry = getWatchlistEntry(ticker);
+            setWlEntry(entry);
+            // Apply saved overrides (if any) on top of auto values. Price always from Yahoo.
+            const merged = { ...auto };
+            if (entry && entry.overrides) {
+                for (const [k, v] of Object.entries(entry.overrides)) {
+                    if (k === "current_price") continue; // never apply saved price
+                    merged[k] = v;
+                }
+            }
             setData(d);
-            setInputs({
-                revenue_2y: d.auto_projections.revenue_2y,
-                fcf_2y: d.auto_projections.fcf_2y,
-                shares_outstanding: d.shares_outstanding,
-                gross_margin: d.gross_margin,
-                operating_margin: d.operating_margin,
-                net_debt: d.net_debt,
-                market_cap: d.market_cap,
-                revenue_cagr_4y: d.auto_projections.revenue_cagr_4y,
-                fcf_cagr_4y: d.auto_projections.fcf_cagr_4y,
-                current_price: d.current_price,
-            });
-            setCustomRatios(d.custom_ratios);
-            setEdited(false);
+            setAutoInputs(auto);
+            setInputs(merged);
+            setSessionEdits({});
+            // Compute ratios with merged inputs (will match auto if no overrides)
+            setCustomRatios(computeCustomRatios(merged));
         } catch (e) {
             setError(e?.response?.data?.detail || e.message || "Error al cargar");
         } finally { setLoading(false); }
     }, [ticker]);
 
-    useEffect(() => { load(); setInWl(isInWatchlist(ticker)); }, [load, ticker]);
+    useEffect(() => { load(); }, [load]);
 
-    const handleRefresh = async () => { setRefreshing(true); await load(true); setRefreshing(false); toast.success("Datos actualizados"); };
+    // Navigation guard for unsaved session edits.
+    // - Internal links: intercept anchor clicks; show modal.
+    // - Tab close / external nav: beforeunload (below).
+    const navigate = useNavigate();
+    const [pendingNav, setPendingNav] = useState(null);
 
-    const handleWl = () => {
-        if (inWl) { removeFromWatchlist(ticker); setInWl(false); toast("Quitada de watchlist"); }
-        else { addToWatchlist(ticker); setInWl(true); toast.success("Añadida a watchlist"); }
+    useEffect(() => {
+        if (!hasSessionEdits) return;
+        const handler = (e) => {
+            const anchor = e.target.closest && e.target.closest("a");
+            if (!anchor) return;
+            const href = anchor.getAttribute("href");
+            if (!href) return;
+            if (href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto")) return;
+            if (anchor.target && anchor.target !== "" && anchor.target !== "_self") return;
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            if (href === window.location.pathname) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setPendingNav(href);
+        };
+        document.addEventListener("click", handler, true);
+        return () => document.removeEventListener("click", handler, true);
+    }, [hasSessionEdits]);
+
+    // beforeunload (tab close, refresh, external nav)
+    useEffect(() => {
+        const handler = (e) => {
+            if (hasSessionEdits) {
+                e.preventDefault();
+                e.returnValue = "";
+                return "";
+            }
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [hasSessionEdits]);
+
+    const handleRefresh = async () => {
+        if (hasSessionEdits) {
+            if (!window.confirm("Tienes cambios sin guardar. ¿Refrescar igualmente? Se perderán.")) return;
+        }
+        setRefreshing(true);
+        await load(true);
+        setRefreshing(false);
+        toast.success("Datos actualizados");
     };
 
-    const updateInput = (key, val) => {
-        const num = parseLocaleNumber(val);
-        setInputs({ ...inputs, [key]: num });
-        setEdited(true);
+    // "Save snapshot" — captures current overrides (diff vs auto) and stores in watchlist
+    const handleSaveToWatchlist = () => {
+        if (!inputs || !autoInputs) return;
+        const overrides = computeOverrides(inputs, autoInputs);
+        // If already in watchlist, ask before overwriting
+        if (wlEntry && (wlEntry.overrides || hasSessionEdits)) {
+            setConfirmOverwrite(true);
+            return;
+        }
+        const list = saveToWatchlist(ticker, overrides);
+        const newEntry = list.find(e => e.ticker === ticker.toUpperCase());
+        setWlEntry(newEntry);
+        setSessionEdits({});
+        toast.success(Object.keys(overrides).length ? "Guardada con tus overrides" : "Añadida a watchlist");
+    };
+
+    const doConfirmOverwrite = () => {
+        const overrides = computeOverrides(inputs, autoInputs);
+        const list = saveToWatchlist(ticker, overrides);
+        const newEntry = list.find(e => e.ticker === ticker.toUpperCase());
+        setWlEntry(newEntry);
+        setSessionEdits({});
+        setConfirmOverwrite(false);
+        toast.success("Watchlist actualizada");
+    };
+
+    const handleRemoveFromWatchlist = () => {
+        removeFromWatchlist(ticker);
+        setWlEntry(null);
+        toast("Quitada de watchlist");
+    };
+
+    const updateInput = (key, num) => {
+        setInputs(prev => {
+            const next = { ...prev, [key]: num };
+            // Track as session edit only if it differs from the "loaded" value
+            const loaded = wlEntry?.overrides?.[key] !== undefined ? wlEntry.overrides[key] : autoInputs?.[key];
+            setSessionEdits(prevEdits => {
+                const ne = { ...prevEdits };
+                if (!valuesEqual(num, loaded)) ne[key] = true;
+                else delete ne[key];
+                return ne;
+            });
+            // Live recompute ratios
+            setCustomRatios(computeCustomRatios(next));
+            return next;
+        });
     };
 
     const handleRecalc = async () => {
+        // Recompute via backend for parity check (and to keep breakdown in sync)
         try {
             const r = await recalc(ticker, inputs);
             setCustomRatios(r);
@@ -87,21 +181,25 @@ export default function Company() {
     };
 
     const handleReset = () => {
-        if (!data) return;
-        setInputs({
-            revenue_2y: data.auto_projections.revenue_2y,
-            fcf_2y: data.auto_projections.fcf_2y,
-            shares_outstanding: data.shares_outstanding,
-            gross_margin: data.gross_margin,
-            operating_margin: data.operating_margin,
-            net_debt: data.net_debt,
-            market_cap: data.market_cap,
-            revenue_cagr_4y: data.auto_projections.revenue_cagr_4y,
-            fcf_cagr_4y: data.auto_projections.fcf_cagr_4y,
-            current_price: data.current_price,
-        });
-        setCustomRatios(data.custom_ratios);
-        setEdited(false);
+        if (!data || !autoInputs) return;
+        // Reset to the "loaded" state: auto + saved overrides (if any)
+        const merged = { ...autoInputs };
+        if (wlEntry?.overrides) {
+            for (const [k, v] of Object.entries(wlEntry.overrides)) {
+                if (k === "current_price") continue;
+                merged[k] = v;
+            }
+        }
+        setInputs(merged);
+        setSessionEdits({});
+        setCustomRatios(computeCustomRatios(merged));
+    };
+
+    // Determine status of each input field for color coding
+    const fieldStatus = (key) => {
+        if (sessionEdits[key]) return "session"; // unsaved session edit — amber
+        if (wlEntry?.overrides && wlEntry.overrides[key] !== undefined) return "saved"; // user-saved override — green
+        return "auto"; // Yahoo default — neutral
     };
 
     if (loading) return <div className="py-20 text-center font-mono" data-testid="loading">Cargando {ticker}…</div>;
@@ -188,13 +286,37 @@ export default function Company() {
                         <div className="text-xs text-[#4A4A4A] font-mono mt-1">MCap {fmtNum(data.market_cap)}</div>
                     </div>
                 </div>
-                <div className="flex gap-2 mt-4">
-                    <button onClick={handleWl} className="btn-ghost flex items-center gap-2" data-testid="watchlist-toggle">
-                        <Star size={14} fill={inWl ? "#111" : "none"} /> {inWl ? "En watchlist" : "Añadir a watchlist"}
-                    </button>
+                <div className="flex gap-2 mt-4 flex-wrap items-center">
+                    {wlEntry ? (
+                        <>
+                            <button
+                                onClick={handleSaveToWatchlist}
+                                className={hasSessionEdits ? "btn-primary flex items-center gap-2" : "btn-ghost flex items-center gap-2"}
+                                data-testid="watchlist-save"
+                                title={hasSessionEdits ? "Guardar cambios actuales en watchlist" : "Ya guardada"}
+                            >
+                                <Save size={14} /> {hasSessionEdits ? "Guardar cambios" : "En watchlist"}
+                            </button>
+                            <button onClick={handleRemoveFromWatchlist} className="btn-ghost flex items-center gap-2" data-testid="watchlist-remove">
+                                <X size={14} /> Quitar
+                            </button>
+                            {wlEntry.mode === "manual" && (
+                                <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid="manual-badge">MANUAL</span>
+                            )}
+                        </>
+                    ) : (
+                        <button onClick={handleSaveToWatchlist} className="btn-ghost flex items-center gap-2" data-testid="watchlist-add">
+                            <Star size={14} /> Añadir a watchlist
+                        </button>
+                    )}
                     <button onClick={handleRefresh} className="btn-ghost flex items-center gap-2" data-testid="refresh-button" disabled={refreshing}>
                         <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refrescar
                     </button>
+                    {hasSessionEdits && (
+                        <span className="text-xs font-mono text-[#D97706]" data-testid="unsaved-indicator">
+                            ● Cambios sin guardar
+                        </span>
+                    )}
                 </div>
                 {data.long_business_summary && (
                     <p className="text-sm text-[#4A4A4A] mt-4 max-w-3xl">{data.long_business_summary}</p>
@@ -268,7 +390,7 @@ export default function Company() {
                         <div className="font-serif text-2xl">Inputs y proyecciones</div>
                     </div>
                     <div className="flex gap-2">
-                        {edited && <button onClick={handleReset} className="btn-ghost" data-testid="reset-inputs">Reset</button>}
+                        {hasSessionEdits && <button onClick={handleReset} className="btn-ghost" data-testid="reset-inputs">Descartar cambios</button>}
                         <button onClick={handleRecalc} className="btn-primary" data-testid="recalc-button">Recalcular</button>
                     </div>
                 </div>
@@ -284,18 +406,28 @@ export default function Company() {
                         ["CAGR ingresos 4y", "revenue_cagr_4y", "(decimal, 0.40=40%)"],
                         ["CAGR FCF 4y", "fcf_cagr_4y", "(decimal)"],
                         ["Precio acción", "current_price", `(${cur})`],
-                    ].map(([label, key, hint]) => (
-                        <div key={key} className="p-4 grid-cell">
-                            <label className="overline text-[#4A4A4A] block mb-1">{label}</label>
-                            <LocaleNumberInput
-                                className="input-paper text-base"
-                                value={inputs?.[key]}
-                                onChange={(num) => { setInputs(prev => ({ ...prev, [key]: num })); setEdited(true); }}
-                                data-testid={`input-${key}`}
-                            />
-                            <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono">{hint}</div>
-                        </div>
-                    ))}
+                    ].map(([label, key, hint]) => {
+                        const status = fieldStatus(key);
+                        const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "#111111";
+                        const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
+                        const statusDot = status === "session" ? "●" : status === "saved" ? "●" : "○";
+                        return (
+                            <div key={key} className="p-4 grid-cell">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="overline text-[#4A4A4A]">{label}</label>
+                                    <span className="text-xs font-mono" style={{ color: statusColor }} title={statusLabel} data-testid={`input-status-${key}`}>{statusDot}</span>
+                                </div>
+                                <LocaleNumberInput
+                                    className="input-paper text-base"
+                                    style={{ color: statusColor, fontStyle: status === "session" ? "italic" : "normal", fontWeight: status === "saved" ? 600 : 400 }}
+                                    value={inputs?.[key]}
+                                    onChange={(num) => updateInput(key, num)}
+                                    data-testid={`input-${key}`}
+                                />
+                                <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono">{hint}</div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -349,6 +481,51 @@ export default function Company() {
                     </div>
                 </div>
             )}
+
+            {/* Navigation guard modal */}
+            {pendingNav && (
+                <Modal title="Cambios sin guardar" testid="nav-guard-modal">
+                    <p className="text-sm text-[#4A4A4A] mb-4">
+                        Tienes cambios manuales en los inputs que no se han guardado en la watchlist. Si sales ahora se perderán.
+                    </p>
+                    <p className="text-xs font-mono text-[#4A4A4A] mb-6">
+                        Tip: pulsa "Guardar cambios" en la cabecera para añadir esta acción a la watchlist con tus valores actuales.
+                    </p>
+                    <div className="flex gap-2 justify-end">
+                        <button onClick={() => setPendingNav(null)} className="btn-ghost" data-testid="nav-guard-stay">Quedarme aquí</button>
+                        <button onClick={() => { const target = pendingNav; setPendingNav(null); setSessionEdits({}); navigate(target); }} className="btn-primary" data-testid="nav-guard-leave">Salir igualmente</button>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Confirm overwrite modal */}
+            {confirmOverwrite && (
+                <Modal title="Sobrescribir snapshot guardado" testid="overwrite-modal">
+                    <p className="text-sm text-[#4A4A4A] mb-4">
+                        Esta acción ya está en tu watchlist con valores guardados.
+                        Vas a sobrescribir ese snapshot con los valores actuales (incluidos los cambios sin guardar).
+                    </p>
+                    <p className="text-xs font-mono text-[#4A4A4A] mb-6">
+                        ¿Continuar?
+                    </p>
+                    <div className="flex gap-2 justify-end">
+                        <button onClick={() => setConfirmOverwrite(false)} className="btn-ghost" data-testid="overwrite-cancel">Cancelar</button>
+                        <button onClick={doConfirmOverwrite} className="btn-primary" data-testid="overwrite-confirm">Sobrescribir</button>
+                    </div>
+                </Modal>
+            )}
+        </div>
+    );
+}
+
+function Modal({ title, children, testid }) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid={testid} style={{ background: "rgba(17,17,17,0.4)" }}>
+            <div className="bg-white border border-black w-full max-w-md p-6">
+                <div className="overline text-[#B32A22] mb-2">Aviso</div>
+                <h2 className="font-serif text-2xl mb-4">{title}</h2>
+                {children}
+            </div>
         </div>
     );
 }

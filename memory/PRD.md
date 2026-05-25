@@ -40,18 +40,14 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
-- **P0 (siguiente sesión)** — **Watchlist con snapshots manuales** (spec confirmada por usuario Feb 2026):
-  - localStorage pasa de `["AAPL"]` a `[{ticker, mode: "auto"|"manual", overrides: {...inputs} | null, saved_at}]`.
-  - Botón "Añadir a watchlist" actúa como "Guardar snapshot": si el usuario ha editado inputs, se guardan con `mode: manual`; si no, se guarda solo el ticker en `mode: auto`.
-  - Al volver a clicar "Añadir a watchlist" sobre un ticker ya guardado: modal de confirmación de sobrescritura.
-  - En la página Company, al cargar un ticker MANUAL desde watchlist: aplicar los `overrides` a `inputs`, recalcular ratios. Inputs editados en sesión actual con color ámbar/cursiva; valores guardados (no editados) en verde; auto en negro.
-  - Aviso al navegar fuera de la página con cambios pendientes (React Router `useBlocker` + opcional `beforeunload` para cerrar pestaña).
-  - Badge "MANUAL" en la tabla de watchlist junto al ticker.
-  - Endpoint `/api/compare` debe aceptar overrides por ticker, O recomputar en frontend cuando hay overrides.
-  - Decisiones finales (confirmadas por usuario):
-    - **Solo se guardan los campos editados** (deltas, no snapshot completo). Razón: si Yahoo actualiza el resto de datos, los ratios se actualizan automáticamente con los nuevos valores buenos de Yahoo, manteniendo solo los overrides del usuario.
-    - **NO se guarda el precio actual** — siempre se refresca desde Yahoo para que los ratios % evolucionen con el movimiento de la acción.
-    - **SÍ avisar con `beforeunload`** al cerrar la pestaña, además del modal interno al navegar dentro de la app.
+- **✅ COMPLETADO (Mayo 2026)** — **Watchlist con snapshots manuales** según spec del usuario:
+  - localStorage v2: `[{ticker, mode: "auto"|"manual", overrides: {field: value, ...} | null, saved_at}]`. Migración automática desde v1 legacy (`["AAPL", ...]`).
+  - Solo se persisten los **deltas** (campos modificados respecto al auto de Yahoo). Precio NUNCA se guarda (siempre fresco).
+  - Botón "Añadir a watchlist" → "En watchlist" → "Guardar cambios" según estado. Badge `MANUAL` visible en cabecera y en tabla.
+  - Inputs con tres colores: **negro** = auto Yahoo, **verde** = guardado por usuario, **ámbar/cursiva** = editado en sesión sin guardar. Indicador ● status por input.
+  - Modal de confirmación al sobrescribir snapshot existente.
+  - Modal de aviso al navegar con cambios sin guardar (interceptor manual de clicks en links, sin `useBlocker` porque la app no usa data router) + `beforeunload` para cierre de pestaña/refresh.
+  - Watchlist y compare aplican overrides client-side vía `customRatios.js` (réplica JS de la fórmula del backend) → ratios reflejan tu análisis manual.
 - **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).
 - **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
 - **P1** — Aviso visual cuando una proyección automática viene de un CAGR extremo (capado), para que el usuario sepa que debe revisar manualmente.

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { compare } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
-import { getWatchlist } from "@/lib/storage";
+import { getWatchlistTickers } from "@/lib/storage";
 import { X, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,7 +35,7 @@ export default function Compare() {
     };
 
     const loadFromWl = () => {
-        const wl = getWatchlist().slice(0, 6);
+        const wl = getWatchlistTickers().slice(0, 6);
         setTickers(wl);
     };
 
