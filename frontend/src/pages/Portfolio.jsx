@@ -18,7 +18,7 @@ import TickerAutocomplete from "@/components/TickerAutocomplete";
 // ratios. Mirrors the same logic the Watchlist page uses.
 const enrichRow = (companyData, position) => {
     if (!companyData || companyData.error) return companyData;
-    const cr = computeCustomRatios({
+    const merged = {
         revenue_2y: companyData.auto_projections?.revenue_2y,
         fcf_2y: companyData.auto_projections?.fcf_2y,
         shares_outstanding: companyData.shares_outstanding,
@@ -29,7 +29,14 @@ const enrichRow = (companyData, position) => {
         revenue_cagr_4y: companyData.auto_projections?.revenue_cagr_4y,
         fcf_cagr_4y: companyData.auto_projections?.fcf_cagr_4y,
         current_price: companyData.current_price,
-    });
+    };
+    if (position?.mode === "manual" && position?.overrides) {
+        for (const [k, v] of Object.entries(position.overrides)) {
+            if (k === "current_price") continue;
+            merged[k] = v;
+        }
+    }
+    const cr = computeCustomRatios(merged);
     return { ...companyData, custom_ratios: cr };
 };
 
@@ -221,11 +228,15 @@ export default function Portfolio() {
                                 const trackedTag = !isComplete && (
                                     <span className="overline ml-2 px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px] align-middle" data-testid={`tracked-${p.ticker}`}>SEGUIMIENTO</span>
                                 );
+                                const manualTag = p.mode === "manual" && (
+                                    <span className="overline ml-2 px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px] align-middle" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>
+                                );
                                 return (
                                     <tr key={p.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
                                         <td className="px-2 py-2 font-mono font-semibold">
                                             <Link to={`/company/${p.ticker}`} className="hover:underline">{p.ticker}</Link>
                                             {trackedTag}
+                                            {manualTag}
                                             {r.name && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{r.name}</div>}
                                             {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5 italic">{p.note}</div>}
                                         </td>

@@ -5,11 +5,12 @@ import { api } from "@/lib/api";
 import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, ratioColor, signalLabel } from "@/lib/format";
 import LocaleNumberInput from "@/components/LocaleNumberInput";
 import { saveToWatchlist, removeFromWatchlist, getWatchlistEntry } from "@/lib/storage";
+import { getPortfolioEntry, savePortfolioOverrides, removePosition } from "@/lib/portfolio";
 import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import HoverTip from "@/components/HoverTip";
-import { Star, RefreshCw, AlertCircle, Save, X } from "lucide-react";
+import { Star, RefreshCw, AlertCircle, Save, X, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
@@ -233,7 +234,9 @@ export default function Company() {
 
     // Watchlist state
     const [wlEntry, setWlEntry] = useState(null); // {ticker, mode, overrides, saved_at} or null
+    const [pfEntry, setPfEntry] = useState(null); // portfolio position (also carries optional overrides)
     const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+    const [confirmOverwritePortfolio, setConfirmOverwritePortfolio] = useState(false);
     const [confirmRefresh, setConfirmRefresh] = useState(false);
 
     // Inputs lifecycle
@@ -255,11 +258,15 @@ export default function Company() {
             const d = await getCompany(ticker, refresh);
             const auto = autoInputsFromData(d);
             const entry = ignoreOverrides ? null : getWatchlistEntry(ticker);
+            const pf = ignoreOverrides ? null : getPortfolioEntry(ticker);
             setWlEntry(ignoreOverrides ? (getWatchlistEntry(ticker) || null) : entry);
-            // Apply saved overrides (if any and not ignored) on top of auto values.
+            setPfEntry(ignoreOverrides ? (getPortfolioEntry(ticker) || null) : pf);
+            // Apply saved overrides on top of auto values. Watchlist takes priority
+            // over portfolio when both have overrides (user-facing convention).
             const merged = { ...auto };
-            if (entry && entry.overrides) {
-                for (const [k, v] of Object.entries(entry.overrides)) {
+            const savedOverrides = (entry && entry.overrides) || (pf && pf.overrides) || null;
+            if (savedOverrides) {
+                for (const [k, v] of Object.entries(savedOverrides)) {
                     if (k === "current_price") continue;
                     merged[k] = v;
                 }
@@ -395,18 +402,51 @@ export default function Company() {
         toast("Quitada de watchlist");
     };
 
+    const handleSaveToPortfolio = () => {
+        const overrides = computeOverrides(inputs, autoInputs);
+        // If already in portfolio with manual snapshot or session edits, prompt overwrite
+        if (pfEntry && (pfEntry.overrides || hasSessionEdits)) {
+            setConfirmOverwritePortfolio(true);
+            return;
+        }
+        const list = savePortfolioOverrides(ticker, Object.keys(overrides).length ? overrides : null);
+        const newEntry = list.find(e => (e.ticker || "").toUpperCase() === ticker.toUpperCase());
+        setPfEntry(newEntry);
+        setSessionEdits({});
+        toast.success(Object.keys(overrides).length ? "Añadida a cartera con tus overrides" : "Añadida a cartera");
+    };
+
+    const doConfirmOverwritePortfolio = () => {
+        const overrides = computeOverrides(inputs, autoInputs);
+        const list = savePortfolioOverrides(ticker, Object.keys(overrides).length ? overrides : null);
+        const newEntry = list.find(e => (e.ticker || "").toUpperCase() === ticker.toUpperCase());
+        setPfEntry(newEntry);
+        setSessionEdits({});
+        setConfirmOverwritePortfolio(false);
+        toast.success("Cartera actualizada");
+    };
+
+    const handleRemoveFromPortfolio = () => {
+        removePosition(ticker);
+        setPfEntry(null);
+        toast("Quitada de cartera");
+    };
+
     const updateInput = (key, num) => {
         setInputs(prev => {
             const next = { ...prev, [key]: num };
-            // Track as session edit only if it differs from the "loaded" value
-            const loaded = wlEntry?.overrides?.[key] !== undefined ? wlEntry.overrides[key] : autoInputs?.[key];
+            // Track as session edit only if it differs from the loaded state
+            const savedFromWl = wlEntry?.overrides?.[key];
+            const savedFromPf = pfEntry?.overrides?.[key];
+            const loaded = (savedFromWl !== undefined) ? savedFromWl
+                         : (savedFromPf !== undefined) ? savedFromPf
+                         : autoInputs?.[key];
             setSessionEdits(prevEdits => {
                 const ne = { ...prevEdits };
                 if (!valuesEqual(num, loaded)) ne[key] = true;
                 else delete ne[key];
                 return ne;
             });
-            // Live recompute ratios
             setCustomRatios(computeCustomRatios(next));
             return next;
         });
@@ -423,10 +463,11 @@ export default function Company() {
 
     const handleReset = () => {
         if (!data || !autoInputs) return;
-        // Reset to the "loaded" state: auto + saved overrides (if any)
+        // Reset to the "loaded" state: auto + saved overrides (watchlist preferred)
         const merged = { ...autoInputs };
-        if (wlEntry?.overrides) {
-            for (const [k, v] of Object.entries(wlEntry.overrides)) {
+        const savedOverrides = wlEntry?.overrides || pfEntry?.overrides || null;
+        if (savedOverrides) {
+            for (const [k, v] of Object.entries(savedOverrides)) {
                 if (k === "current_price") continue;
                 merged[k] = v;
             }
@@ -439,7 +480,8 @@ export default function Company() {
     // Determine status of each input field for color coding
     const fieldStatus = (key) => {
         if (sessionEdits[key]) return "session"; // unsaved session edit — amber
-        if (wlEntry?.overrides && wlEntry.overrides[key] !== undefined) return "saved"; // user-saved override — green
+        if (wlEntry?.overrides && wlEntry.overrides[key] !== undefined) return "saved";
+        if (pfEntry?.overrides && pfEntry.overrides[key] !== undefined) return "saved";
         return "auto"; // Yahoo default — neutral
     };
 
@@ -711,10 +753,10 @@ export default function Company() {
                                 data-testid="watchlist-save"
                                 title={hasSessionEdits ? "Guardar cambios actuales en watchlist" : "Ya guardada"}
                             >
-                                <Save size={14} /> {hasSessionEdits ? "Guardar cambios" : "En watchlist"}
+                                <Save size={14} /> {hasSessionEdits ? "Guardar en watchlist" : "En watchlist"}
                             </button>
                             <button onClick={handleRemoveFromWatchlist} className="btn-ghost flex items-center gap-2" data-testid="watchlist-remove">
-                                <X size={14} /> Quitar
+                                <X size={14} /> Quitar de watchlist
                             </button>
                             {wlEntry.mode === "manual" && (
                                 <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid="manual-badge">MANUAL</span>
@@ -725,12 +767,36 @@ export default function Company() {
                             <Star size={14} /> Añadir a watchlist
                         </button>
                     )}
+
+                    {pfEntry ? (
+                        <>
+                            <button
+                                onClick={handleSaveToPortfolio}
+                                className={hasSessionEdits ? "btn-primary flex items-center gap-2" : "btn-ghost flex items-center gap-2"}
+                                data-testid="portfolio-save"
+                                title={hasSessionEdits ? "Guardar cambios actuales en cartera" : "Ya en cartera"}
+                            >
+                                <Save size={14} /> {hasSessionEdits ? "Guardar en cartera" : "En cartera"}
+                            </button>
+                            <button onClick={handleRemoveFromPortfolio} className="btn-ghost flex items-center gap-2" data-testid="portfolio-remove-btn">
+                                <X size={14} /> Quitar de cartera
+                            </button>
+                            {pfEntry.mode === "manual" && (
+                                <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid="manual-badge-pf">MANUAL</span>
+                            )}
+                        </>
+                    ) : (
+                        <button onClick={handleSaveToPortfolio} className="btn-ghost flex items-center gap-2" data-testid="portfolio-add-btn">
+                            <Briefcase size={14} /> Añadir a cartera
+                        </button>
+                    )}
+
                     <button onClick={handleRefresh} className="btn-ghost flex items-center gap-2" data-testid="refresh-button" disabled={refreshing}>
                         <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refrescar
                     </button>
                     {hasSessionEdits && (
-                        <span className="text-xs font-mono text-[#D97706]" data-testid="unsaved-indicator">
-                            ● Cambios sin guardar
+                        <span className="text-xs font-mono text-[#D97706]" data-testid="unsaved-indicator" title="Pulsa 'Guardar en watchlist' o 'Guardar en cartera' para conservar estos cambios">
+                            ● Cambios sin guardar, añade a cartera o watchlist
                         </span>
                     )}
                 </div>
@@ -1028,7 +1094,7 @@ export default function Company() {
                 </Modal>
             )}
 
-            {/* Confirm overwrite modal */}
+            {/* Confirm overwrite modal — Watchlist */}
             {confirmOverwrite && (
                 <Modal title="Sobrescribir snapshot guardado" testid="overwrite-modal">
                     <p className="text-sm text-[#4A4A4A] mb-4">
@@ -1045,22 +1111,43 @@ export default function Company() {
                 </Modal>
             )}
 
+            {/* Confirm overwrite modal — Portfolio */}
+            {confirmOverwritePortfolio && (
+                <Modal title="Sobrescribir snapshot en cartera" testid="overwrite-portfolio-modal">
+                    <p className="text-sm text-[#4A4A4A] mb-4">
+                        Esta acción ya está en tu cartera con valores guardados.
+                        Vas a sobrescribir ese snapshot con los valores actuales (incluidos los cambios sin guardar).
+                    </p>
+                    <p className="text-xs font-mono text-[#4A4A4A] mb-6">¿Continuar?</p>
+                    <div className="flex gap-2 justify-end">
+                        <button onClick={() => setConfirmOverwritePortfolio(false)} className="btn-ghost" data-testid="overwrite-portfolio-cancel">Cancelar</button>
+                        <button onClick={doConfirmOverwritePortfolio} className="btn-primary" data-testid="overwrite-portfolio-confirm">Sobrescribir</button>
+                    </div>
+                </Modal>
+            )}
+
             {/* Confirm refresh (discard overrides) modal */}
             {confirmRefresh && (() => {
-                const hasSavedOverrides = wlEntry && wlEntry.overrides && Object.keys(wlEntry.overrides).length > 0;
+                const hasWlOverrides = wlEntry && wlEntry.overrides && Object.keys(wlEntry.overrides).length > 0;
+                const hasPfOverrides = pfEntry && pfEntry.overrides && Object.keys(pfEntry.overrides).length > 0;
                 return (
                     <Modal title="Volver a los datos de Yahoo" testid="refresh-modal">
                         <p className="text-sm text-[#4A4A4A] mb-3">
                             Refrescar recarga los fundamentales actualizados desde Yahoo Finance y descarta cualquier valor manual aplicado a esta vista.
                         </p>
-                        {hasSavedOverrides && (
+                        {hasWlOverrides && (
                             <p className="text-sm text-[#B32A22] mb-3" data-testid="refresh-warning-saved">
                                 ⚠ Esta acción está en tu watchlist en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. El ticker seguirá en la watchlist.
                             </p>
                         )}
+                        {hasPfOverrides && (
+                            <p className="text-sm text-[#B32A22] mb-3" data-testid="refresh-warning-pf">
+                                ⚠ Esta acción está en tu cartera en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. La posición se mantiene.
+                            </p>
+                        )}
                         {hasSessionEdits && (
                             <p className="text-sm text-[#D97706] mb-3" data-testid="refresh-warning-session">
-                                ⚠ Tienes cambios sin guardar que también se perderán.
+                                ⚠ Tienes cambios sin guardar. Pulsa cancelar y luego "Guardar en watchlist" o "Guardar en cartera" para conservarlos.
                             </p>
                         )}
                         <p className="text-xs font-mono text-[#4A4A4A] mb-6">¿Continuar?</p>

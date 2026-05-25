@@ -44,3 +44,39 @@ export const setPositionAlert = (ticker, enabled) => {
     _write(list);
     return list;
 };
+
+export const getPortfolioEntry = (ticker) => {
+    const t = (ticker || "").toUpperCase();
+    return _read().find(p => (p.ticker || "").toUpperCase() === t) || null;
+};
+
+// Save manual overrides on a portfolio position. If the position doesn't
+// exist yet, we create a "tracking-only" entry (no shares/buy_price) with
+// the overrides attached. Pass overrides=null to clear overrides and revert
+// the entry back to auto mode (without removing it from the portfolio).
+export const savePortfolioOverrides = (ticker, overrides) => {
+    if (!ticker) return _read();
+    const t = ticker.toUpperCase();
+    const list = _read();
+    const idx = list.findIndex(p => (p.ticker || "").toUpperCase() === t);
+    if (idx === -1) {
+        list.push({
+            ticker: t,
+            shares: null,
+            buy_price: null,
+            mode: overrides ? "manual" : "auto",
+            overrides: overrides || null,
+            saved_at: new Date().toISOString(),
+            alert_enabled: false,
+        });
+    } else {
+        list[idx] = {
+            ...list[idx],
+            mode: overrides ? "manual" : "auto",
+            overrides: overrides || null,
+            saved_at: new Date().toISOString(),
+        };
+    }
+    _write(list);
+    return list;
+};

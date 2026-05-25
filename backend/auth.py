@@ -58,6 +58,13 @@ class PortfolioEntry(BaseModel):
     buy_date: Optional[str] = None    # ISO date
     note: Optional[str] = None
     alert_enabled: Optional[bool] = False
+    # Manual override snapshot — mirrors the watchlist semantics.
+    # When mode == "manual", `overrides` carries the user-edited inputs; the
+    # frontend recomputes ratios with these overrides on top of the live Yahoo
+    # data so the displayed Ratio Compra/Venta stays consistent across refresh.
+    mode: Optional[str] = "auto"
+    overrides: Optional[Dict[str, Any]] = None
+    saved_at: Optional[str] = None
 
 
 class PortfolioPayload(BaseModel):
