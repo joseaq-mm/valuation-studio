@@ -571,6 +571,11 @@ def compute_custom_ratios(inputs: Dict[str, Any]) -> Dict[str, Any]:
         x_factor = 1.0 + (x_raw / 100.0)
     elif x_raw <= 1.0:
         x_factor = 1.0
+    elif x_raw > 10.0:
+        # Upper cap: extremely high FCF yields often indicate the company can't
+        # reinvest cash productively or isn't returning it to shareholders
+        # (no buybacks/dividends). Cap at 10 so unusual cases don't dominate POC.
+        x_factor = 10.0
     else:
         x_factor = x_raw
 
@@ -699,6 +704,175 @@ async def get_company(ticker: str, refresh: bool = False):
 async def recalculate(ticker: str, inputs: CalcInputs):
     """Recompute custom ratios with user-overridden inputs."""
     return compute_custom_ratios(inputs.model_dump())
+
+
+@api_router.get("/company/{ticker}/ratio-history")
+async def ratio_history(ticker: str):
+    """Returns yearly historical Ratio Compra / Ratio Venta + closing price.
+
+    The user's POC formula needs forward-looking inputs (revenue_2y, fcf_2y,
+    CAGRs). For history we approximate them by using:
+      • year-N revenue → as `revenue_2y` proxy
+      • year-N FCF     → as `fcf_2y` proxy
+      • current shares + current margins (Yahoo doesn't expose clean historical
+        margin series in `info`; using current is acceptable as a first
+        approximation — the trend dominates).
+      • that year's market cap = year-end close × current shares (we assume
+        shares haven't changed dramatically; approximate but consistent).
+      • CAGRs computed from the available history slice ending at year N.
+
+    The point of this endpoint is to plot the TREND of POC vs price together,
+    not to produce a precise ratio per year. The user can spot if a falling
+    Ratio Compra coincides with a falling price (value-trap signal) or with
+    rising fundamentals.
+    """
+    ticker = ticker.upper().strip()
+    cached_company = await db.fundamentals.find_one({"ticker": ticker}, {"_id": 0})
+    if not cached_company:
+        raise HTTPException(status_code=404, detail="Company not loaded yet — open it first.")
+    data = cached_company.get("data", {})
+
+    rev_hist = data.get("revenue_history") or []
+    fcf_hist = data.get("fcf_history") or []
+    shares = data.get("shares_outstanding")
+    gross_m = data.get("gross_margin") or 0.0
+    op_m = data.get("operating_margin") or 0.0
+    cur_net_debt = data.get("net_debt") or 0.0
+
+    if not rev_hist or not fcf_hist or not shares or shares <= 0:
+        return {"ticker": ticker, "series": [], "note": "Datos históricos insuficientes."}
+
+    # Fetch historical year-end prices via yfinance.
+    def _fetch_close():
+        t = yf.Ticker(ticker)
+        try:
+            hist = t.history(period="max", interval="1mo", auto_adjust=True)
+            return hist
+        except Exception as e:
+            logger.warning(f"history fetch failed for {ticker}: {e}")
+            return pd.DataFrame()
+
+    hist = await run_in_threadpool(_fetch_close)
+    if hist is None or hist.empty:
+        return {"ticker": ticker, "series": [], "note": "Histórico de precios no disponible."}
+
+    # Year-end close per calendar year (use last available month of the year)
+    closes_by_year: Dict[int, float] = {}
+    try:
+        for idx, row in hist.iterrows():
+            yr = idx.year if hasattr(idx, "year") else None
+            close = _safe_float(row.get("Close"))
+            if yr is None or close is None:
+                continue
+            closes_by_year[yr] = close  # last write wins → latest month of that year
+    except Exception as e:
+        logger.warning(f"price aggregation failed for {ticker}: {e}")
+
+    # Build the series. Walk rev_hist (ascending) and pair with FCF at same year.
+    series = []
+    rev_by_year = {int(str(p["date"])[:4]): p["value"] for p in rev_hist if p.get("value") is not None}
+    fcf_by_year = {int(str(p["date"])[:4]): p["value"] for p in fcf_hist if p.get("value") is not None}
+    years = sorted(set(rev_by_year.keys()) & set(fcf_by_year.keys()))
+
+    for yr in years:
+        rev = rev_by_year[yr]
+        fcf = fcf_by_year[yr]
+        price = closes_by_year.get(yr)
+        if price is None or price <= 0:
+            continue
+        mcap = price * shares
+
+        # CAGR-style growth from the earliest available year up to this one
+        rev_cagr = None
+        fcf_cagr = None
+        earlier_years = [y for y in years if y < yr]
+        if earlier_years:
+            y0 = earlier_years[0]
+            span = yr - y0
+            rev_cagr = _cagr([rev_by_year[y0], rev], span) if span >= 1 else None
+            fcf_cagr = _cagr([fcf_by_year[y0], fcf], span) if span >= 1 else None
+        # Sensible fallbacks: 0% (flat) so the formula still produces a value
+        if rev_cagr is None:
+            rev_cagr = 0.0
+        if fcf_cagr is None:
+            fcf_cagr = 0.0
+
+        # Use that year's revenue/FCF as a proxy for the "2y forward" inputs.
+        ratios = compute_custom_ratios({
+            "revenue_2y": rev,
+            "fcf_2y": fcf,
+            "shares_outstanding": shares,
+            "gross_margin": gross_m,
+            "operating_margin": op_m,
+            "net_debt": cur_net_debt,
+            "market_cap": mcap,
+            "revenue_cagr_4y": rev_cagr,
+            "fcf_cagr_4y": fcf_cagr,
+            "current_price": price,
+        })
+        series.append({
+            "year": yr,
+            "price": price,
+            "ratio_compra_pct": ratios.get("ratio_compra_pct"),
+            "ratio_venta_pct": ratios.get("ratio_venta_pct"),
+        })
+
+    return {"ticker": ticker, "series": series}
+
+
+@api_router.get("/company/{ticker}/translate-summary")
+async def translate_summary(ticker: str):
+    """Translate the company's long_business_summary to Spanish via LLM.
+    Cached forever per ticker+source_hash because the source rarely changes
+    and the Yahoo English text is essentially immutable per company.
+    """
+    ticker = ticker.upper().strip()
+    cached_company = await db.fundamentals.find_one({"ticker": ticker}, {"_id": 0})
+    if not cached_company:
+        raise HTTPException(status_code=404, detail="Company not loaded yet — open it first.")
+    source_en = cached_company.get("data", {}).get("long_business_summary") or ""
+    if not source_en.strip():
+        return {"ticker": ticker, "summary_es": "", "source_hash": None, "cached": False}
+
+    import hashlib
+    source_hash = hashlib.sha256(source_en.encode("utf-8")).hexdigest()[:16]
+
+    existing = await db.translations.find_one({"ticker": ticker, "source_hash": source_hash}, {"_id": 0})
+    if existing and existing.get("summary_es"):
+        return {"ticker": ticker, "summary_es": existing["summary_es"], "source_hash": source_hash, "cached": True}
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        api_key = os.environ["EMERGENT_LLM_KEY"]
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"translate-{ticker}-{source_hash}",
+            system_message=(
+                "Eres un traductor financiero profesional. Traduce textos del inglés al español de España "
+                "de forma natural y precisa, manteniendo terminología financiera estándar (revenue → ingresos, "
+                "free cash flow → flujo de caja libre, etc.). No añadas notas, explicaciones ni comentarios. "
+                "Devuelve únicamente la traducción."
+            ),
+        ).with_model("openai", "gpt-4.1-mini")
+        resp = await chat.send_message(UserMessage(text=f"Traduce este texto al español:\n\n{source_en}"))
+        summary_es = (resp or "").strip()
+    except Exception as e:
+        logger.error(f"Translation failed for {ticker}: {e}")
+        raise HTTPException(status_code=502, detail=f"Translation service error: {e}")
+
+    if summary_es:
+        await db.translations.update_one(
+            {"ticker": ticker, "source_hash": source_hash},
+            {"$set": {
+                "ticker": ticker,
+                "source_hash": source_hash,
+                "summary_es": summary_es,
+                "translated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+
+    return {"ticker": ticker, "summary_es": summary_es, "source_hash": source_hash, "cached": False}
 
 
 @api_router.get("/compare")

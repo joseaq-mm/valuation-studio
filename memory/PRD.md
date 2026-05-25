@@ -22,9 +22,15 @@
 - `POST /api/company/{ticker}/calculate` — recálculo en vivo con inputs editables.
 - `GET /api/compare?tickers=...` — comparación side-by-side (1-6 tickers).
 - `GET /api/search?q=...` — autocompletado de tickers.
-- Frontend: Home (hero + accesos rápidos), Company (KPIs hero, inputs editables, ratios clásicos, gráficos de ingresos/FCF, breakdown POC), Watchlist (localStorage), Compare (tabla densa).
+- `GET /api/company/{ticker}/translate-summary` — traduce `long_business_summary` al español vía Emergent LLM (gpt-4.1-mini) + cache en Mongo por `source_hash`.
+- `GET /api/company/{ticker}/ratio-history` — serie anual de Ratio Compra/Venta + precio cierre para detectar trampas de valor.
+- Frontend: Home, Company (KPIs hero, inputs editables, ratios clásicos + sección de crecimiento + breakeven, gráficos de ingresos/FCF/ratios+precio, breakdown POC, modo sensibilidad), Watchlist, Compare.
 - Soporte global: AAPL, SAP.DE, SAN.MC, VOD.L, ASML.AS, etc.
-- Formato europeo es-ES en todos los números: miles con `.`, decimales con `,`. Ratios % a 1 decimal; resto a 2 decimales. Inputs editables aceptan formato europeo y se parsean automáticamente.
+- Formato europeo es-ES en todos los números.
+- **Modo oscuro** (toggle en cabecera) con paleta dedicada y overrides para Recharts.
+- **Umbrales configurables** cara/justa/barata por Ratio Compra y Venta independientes (sliders + inputs, localStorage).
+- **Aviso legal** persistente en el footer.
+- **Tooltip de código de mercado** (NMS → NASDAQ Global Select, etc.) sobre +50 exchanges.
 
 ## Decisiones de diseño / pitfalls (no romper)
 - **Proyecciones automáticas (`fetch_fundamentals_sync` en server.py)**:

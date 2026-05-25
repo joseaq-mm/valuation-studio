@@ -8,16 +8,98 @@
     --bg-base: #FDF1E6;
     --bg-surface: #FFFFFF;
     --bg-surface-alt: #F5E4D4;
+    --bg-surface-soft: #FAF6EE;
     --border-default: rgba(17,17,17,0.20);
     --border-strong: #111111;
     --text-primary: #111111;
     --text-secondary: #4A4A4A;
+    --text-on-dark: #FFFFFF;
     --brand: #052049;
     --crimson: #B32A22;
     --cheap: #1D7044;
     --neutral: #D97706;
     --expensive: #B32A22;
 }
+
+html[data-theme="dark"] {
+    --bg-base: #14110D;
+    --bg-surface: #1C1813;
+    --bg-surface-alt: #2A231B;
+    --bg-surface-soft: #221D17;
+    --border-default: rgba(232,226,216,0.20);
+    --border-strong: #E8E2D8;
+    --text-primary: #E8E2D8;
+    --text-secondary: #A89E8E;
+    --text-on-dark: #14110D;
+    --brand: #7AA0E3;
+    --crimson: #E8675E;
+    --cheap: #2FA86B;
+    --neutral: #E69238;
+    --expensive: #E8675E;
+}
+
+/* Dark theme overrides for hardcoded Tailwind arbitrary-value classes used across pages. */
+html[data-theme="dark"] .bg-white { background-color: var(--bg-surface) !important; }
+html[data-theme="dark"] .bg-\[\#FDF1E6\] { background-color: var(--bg-base) !important; }
+html[data-theme="dark"] .bg-\[\#F5E4D4\] { background-color: var(--bg-surface-alt) !important; }
+html[data-theme="dark"] .bg-\[\#FAF6EE\] { background-color: var(--bg-surface-soft) !important; }
+html[data-theme="dark"] .hover\:bg-\[\#F5E4D4\]:hover { background-color: var(--bg-surface-alt) !important; }
+
+html[data-theme="dark"] .text-\[\#4A4A4A\] { color: var(--text-secondary) !important; }
+html[data-theme="dark"] .text-\[\#111111\] { color: var(--text-primary) !important; }
+html[data-theme="dark"] .text-\[\#052049\] { color: var(--brand) !important; }
+html[data-theme="dark"] .text-\[\#B32A22\] { color: var(--crimson) !important; }
+html[data-theme="dark"] .text-\[\#1D7044\] { color: var(--cheap) !important; }
+html[data-theme="dark"] .text-\[\#D97706\] { color: var(--neutral) !important; }
+
+html[data-theme="dark"] .border-black { border-color: var(--border-strong) !important; }
+html[data-theme="dark"] .border-black\/10 { border-color: rgba(232,226,216,0.15) !important; }
+html[data-theme="dark"] .border-black\/20 { border-color: rgba(232,226,216,0.22) !important; }
+html[data-theme="dark"] .border-black\/30 { border-color: rgba(232,226,216,0.30) !important; }
+html[data-theme="dark"] .border-black\/15 { border-color: rgba(232,226,216,0.18) !important; }
+html[data-theme="dark"] .border-\[\#B32A22\]\/40 { border-color: rgba(232,103,94,0.45) !important; }
+
+html[data-theme="dark"] .bg-white\/60 { background-color: rgba(28,24,19,0.7) !important; }
+
+html[data-theme="dark"] .input-paper {
+    background: var(--bg-surface);
+    border-bottom-color: var(--text-primary);
+    color: var(--text-primary);
+}
+html[data-theme="dark"] .input-paper:focus { background: var(--bg-surface-alt); }
+
+html[data-theme="dark"] button.btn-primary {
+    background: var(--text-primary);
+    color: var(--bg-base);
+    border-color: var(--text-primary);
+}
+html[data-theme="dark"] button.btn-primary:hover {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: 4px 4px 0 var(--text-primary);
+}
+html[data-theme="dark"] button.btn-ghost {
+    border-color: var(--text-primary);
+    color: var(--text-primary);
+}
+html[data-theme="dark"] button.btn-ghost:hover {
+    background: var(--text-primary);
+    color: var(--bg-base);
+}
+
+html[data-theme="dark"] ::selection { background: var(--text-primary); color: var(--bg-base); }
+
+html[data-theme="dark"] .text-black { color: var(--text-primary) !important; }
+html[data-theme="dark"] .text-white { color: var(--bg-base) !important; }
+html[data-theme="dark"] .bg-black { background-color: var(--text-primary) !important; }
+
+/* Recharts: invert grid/axis colours on dark theme */
+html[data-theme="dark"] .recharts-cartesian-grid line { stroke: rgba(232,226,216,0.15) !important; }
+html[data-theme="dark"] .recharts-cartesian-axis-tick text,
+html[data-theme="dark"] .recharts-label,
+html[data-theme="dark"] .recharts-legend-item-text { fill: var(--text-secondary) !important; color: var(--text-secondary) !important; }
+html[data-theme="dark"] .recharts-cartesian-axis-line,
+html[data-theme="dark"] .recharts-cartesian-axis-tick-line { stroke: rgba(232,226,216,0.35) !important; }
 
 html, body, #root {
     background-color: var(--bg-base);

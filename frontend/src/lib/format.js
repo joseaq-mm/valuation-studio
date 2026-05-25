@@ -46,19 +46,11 @@ export const fmtPrice = (n, currency = "USD") => {
     return sym + nf2.format(n);
 };
 
-export const ratioColor = (pct) => {
-    if (pct === null || pct === undefined || isNaN(pct)) return "#4A4A4A";
-    if (pct >= 20) return "#1D7044";
-    if (pct >= 0) return "#D97706";
-    return "#B32A22";
-};
+import { signalFor } from "./thresholds";
 
-export const signalLabel = (pct) => {
-    if (pct === null || pct === undefined || isNaN(pct)) return "—";
-    if (pct >= 20) return "BARATA";
-    if (pct >= 0) return "JUSTA";
-    return "CARA";
-};
+export const ratioColor = (pct, kind = "compra") => signalFor(pct, kind).color;
+
+export const signalLabel = (pct, kind = "compra") => signalFor(pct, kind).label;
 
 // Parse a string in es-ES format ("1.234.567,89") or plain ("1234567.89") back to number
 export const parseLocaleNumber = (str) => {

@@ -4,6 +4,7 @@ import { getWatchlist, getWatchlistTickers, removeFromWatchlist } from "@/lib/st
 import { compare } from "@/lib/api";
 import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
+import { useThresholds } from "@/lib/useThresholds";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +31,7 @@ export default function Watchlist() {
     const [entries, setEntries] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    useThresholds(); // re-render on threshold changes
 
     const load = async (es) => {
         if (!es.length) { setRows([]); return; }
@@ -124,7 +126,7 @@ export default function Watchlist() {
                                         <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid={`rc-${r.ticker}`}>
                                             {fmtPctSigned(cr.ratio_compra_pct)}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid={`rv-${r.ticker}`}>
+                                        <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid={`rv-${r.ticker}`}>
                                             {fmtPctSigned(cr.ratio_venta_pct)}
                                         </td>
                                         <td className="px-4 py-3 text-center">

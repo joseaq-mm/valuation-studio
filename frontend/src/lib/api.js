@@ -16,3 +16,6 @@ export const compare = (tickers) =>
 
 export const searchTickers = (q) =>
     api.get(`/search`, { params: { q } }).then(r => r.data);
+
+export const translateSummary = (ticker) =>
+    api.get(`/company/${encodeURIComponent(ticker)}/translate-summary`).then(r => r.data);

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { compare } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
+import { useThresholds } from "@/lib/useThresholds";
 import { getWatchlistTickers } from "@/lib/storage";
 import { X, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +11,7 @@ export default function Compare() {
     const [tickers, setTickers] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    useThresholds();
 
     const add = (t) => {
         const sym = t.trim().toUpperCase();
@@ -52,7 +54,7 @@ export default function Compare() {
         { label: "Ratio Venta", get: r => {
             const v = r.custom_ratios?.ratio_venta_pct;
             return v == null ? "—" : (
-                <span style={{ color: ratioColor(v) }}>{fmtPctSigned(v)}</span>
+                <span style={{ color: ratioColor(v, "venta") }}>{fmtPctSigned(v)}</span>
             );
         }, align: "right" },
         { label: "Señal", get: r => {

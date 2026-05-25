@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { searchTickers } from "@/lib/api";
 import { Search } from "lucide-react";
+import ThresholdsDialog from "./ThresholdsDialog";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Layout({ children }) {
     const navigate = useNavigate();
@@ -51,8 +53,8 @@ export default function Layout({ children }) {
     } transition-colors`;
 
     return (
-        <div className="min-h-screen flex flex-col" style={{ background: "#FDF1E6" }}>
-            <header className="border-b border-black sticky top-0 z-40" style={{ background: "#FDF1E6" }}>
+        <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-base)" }}>
+            <header className="border-b border-black sticky top-0 z-40" style={{ background: "var(--bg-base)" }}>
                 <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center gap-6">
                     <Link to="/" className="flex items-center gap-3" data-testid="nav-home">
                         <div className="w-8 h-8 border border-black flex items-center justify-center bg-white">
@@ -101,16 +103,24 @@ export default function Layout({ children }) {
                         <Link to="/" className={navClass("/")} data-testid="nav-link-home">Inicio</Link>
                         <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">Watchlist</Link>
                         <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">Comparar</Link>
+                        <ThresholdsDialog />
+                        <ThemeToggle />
                     </nav>
                 </div>
             </header>
 
             <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-8">{children}</main>
 
-            <footer className="border-t border-black/30 py-4 px-6 text-xs text-[#4A4A4A]">
-                <div className="max-w-[1400px] mx-auto flex justify-between">
-                    <span>Valuation Studio · Datos: Yahoo Finance</span>
-                    <span className="font-mono">v1.0</span>
+            <footer className="border-t border-black/30 py-4 px-6 text-xs text-[#4A4A4A]" data-testid="footer">
+                <div className="max-w-[1400px] mx-auto space-y-2">
+                    <div className="border border-[#B32A22]/40 bg-white/60 px-3 py-2 text-[11px] leading-relaxed" data-testid="legal-disclaimer">
+                        <span className="font-mono font-semibold text-[#B32A22] mr-1">AVISO LEGAL ·</span>
+                        Esta aplicación tiene fines exclusivamente <span className="font-semibold">didácticos y orientativos</span>. La información mostrada <span className="font-semibold">no constituye recomendación, asesoramiento ni invitación a operar</span> con valores. Los cálculos se basan en una fórmula propia del usuario y en datos automáticos de Yahoo Finance que pueden contener errores o estar desactualizados. Cada inversor debe realizar su propio análisis y, si procede, consultar a un profesional registrado. Invertir conlleva riesgo de pérdida del capital.
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Valuation Studio · Datos: Yahoo Finance</span>
+                        <span className="font-mono">v1.0</span>
+                    </div>
                 </div>
             </footer>
         </div>

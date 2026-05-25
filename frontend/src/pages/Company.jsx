@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getCompany, recalc } from "@/lib/api";
+import { getCompany, recalc, translateSummary } from "@/lib/api";
+import { api } from "@/lib/api";
 import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, ratioColor, signalLabel } from "@/lib/format";
 import LocaleNumberInput from "@/components/LocaleNumberInput";
 import { saveToWatchlist, removeFromWatchlist, getWatchlistEntry } from "@/lib/storage";
 import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
+import { useThresholds } from "@/lib/useThresholds";
 import { Star, RefreshCw, AlertCircle, Save, X } from "lucide-react";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
 const ratioRows = [
     ["Trailing P/E", "trailing_pe", null, "Precio entre beneficio neto últimos 12m. Mide cuántos años de beneficios actuales pagas por la acción. < 15 suele ser barato, 15-25 normal, > 30 caro. Ojo: muy dependiente del sector y del momento del ciclo."],
@@ -39,6 +41,87 @@ const growthRows = [
 const marginRowsInfo = {
     gross_margin: "Ingresos − coste directo del producto, en %. Mide eficiencia productiva. > 40% suele ser bueno (escala, marca, software). En retail/manufactura puede ser <25% sin que sea mala señal.",
     operating_margin: "Beneficio operativo (antes de impuestos e intereses) / ingresos. Mide eficiencia del negocio core. > 15% sólido, > 25% excelente. Negativo = pierde dinero operando.",
+};
+
+// Common Yahoo Finance exchange codes → human-readable name.
+// Lookup is case-insensitive and matches the full code returned by yfinance.
+const EXCHANGE_NAMES = {
+    NMS: "NASDAQ Global Select Market",
+    NGM: "NASDAQ Global Market",
+    NCM: "NASDAQ Capital Market",
+    NAS: "NASDAQ",
+    NASDAQ: "NASDAQ",
+    NYQ: "New York Stock Exchange (NYSE)",
+    NYE: "New York Stock Exchange (NYSE)",
+    ASE: "NYSE American (antes AMEX)",
+    PCX: "NYSE Arca",
+    BATS: "Cboe BZX Exchange",
+    BTS: "Cboe BZX Exchange",
+    OTC: "OTC Markets (extrabursátil EE. UU.)",
+    OQB: "OTCQB Venture Market",
+    OQX: "OTCQX Best Market",
+    PNK: "Pink Sheets (OTC)",
+    LSE: "London Stock Exchange",
+    LON: "London Stock Exchange",
+    IOB: "International Order Book (LSE)",
+    MCE: "Bolsa de Madrid (BME)",
+    BME: "Bolsas y Mercados Españoles",
+    GER: "Deutsche Börse Xetra",
+    XETR: "Deutsche Börse Xetra",
+    FRA: "Bolsa de Fráncfort",
+    AMS: "Euronext Amsterdam",
+    PAR: "Euronext París",
+    EBR: "Euronext Bruselas",
+    LIS: "Euronext Lisboa",
+    MIL: "Borsa Italiana (Milán)",
+    BIT: "Borsa Italiana (Milán)",
+    SWX: "SIX Swiss Exchange",
+    EBS: "SIX Swiss Exchange",
+    VIE: "Wiener Börse (Viena)",
+    STO: "Nasdaq Estocolmo",
+    HEL: "Nasdaq Helsinki",
+    CPH: "Nasdaq Copenhague",
+    OSL: "Oslo Børs",
+    WSE: "Bolsa de Varsovia",
+    ATH: "Bolsa de Atenas",
+    IST: "Bolsa de Estambul",
+    JNB: "Johannesburg Stock Exchange",
+    MOEX: "Bolsa de Moscú",
+    BUE: "Bolsa de Buenos Aires",
+    SAO: "B3 (Bolsa de São Paulo)",
+    MEX: "Bolsa Mexicana de Valores",
+    SGO: "Bolsa de Santiago de Chile",
+    TOR: "Toronto Stock Exchange",
+    TSX: "Toronto Stock Exchange",
+    VAN: "TSX Venture Exchange",
+    CNQ: "Canadian Securities Exchange",
+    NEO: "NEO Exchange (Canadá)",
+    ASX: "Australian Securities Exchange",
+    NZE: "New Zealand Stock Exchange",
+    TSE: "Tokyo Stock Exchange",
+    TYO: "Tokyo Stock Exchange",
+    OSE: "Osaka Exchange",
+    HKG: "Bolsa de Hong Kong",
+    HKE: "Bolsa de Hong Kong",
+    SHH: "Bolsa de Shanghái",
+    SHZ: "Bolsa de Shenzhen",
+    KSC: "KOSPI (Bolsa de Seúl)",
+    KOE: "KOSDAQ",
+    TAI: "Bolsa de Taiwán",
+    SES: "Bolsa de Singapur",
+    KLS: "Bolsa de Malasia",
+    JKT: "Bolsa de Indonesia",
+    BSE: "Bombay Stock Exchange",
+    NSI: "National Stock Exchange of India",
+    BKK: "Bolsa de Tailandia",
+    TLV: "Bolsa de Tel Aviv",
+    SAU: "Tadawul (Bolsa Saudí)",
+    DFM: "Bolsa de Dubái",
+};
+const exchangeFullName = (code) => {
+    if (!code) return null;
+    const key = String(code).toUpperCase().trim();
+    return EXCHANGE_NAMES[key] || null;
 };
 
 // Health colour for a given ratio key + value. Returns {color, label} or null
@@ -156,6 +239,10 @@ export default function Company() {
     const [inputs, setInputs] = useState(null);            // current shown values (auto + saved overrides + session edits)
     const [sessionEdits, setSessionEdits] = useState({});  // {field: true} for fields edited this session
     const [customRatios, setCustomRatios] = useState(null);
+    const [summaryEs, setSummaryEs] = useState(null); // translated description (null = not yet loaded)
+    const [translating, setTranslating] = useState(false);
+    const [ratioHistory, setRatioHistory] = useState([]); // [{year, price, ratio_compra_pct, ratio_venta_pct}]
+    useThresholds(); // subscribe to threshold changes so colours/labels live-update
 
     const hasSessionEdits = Object.keys(sessionEdits).length > 0;
 
@@ -185,6 +272,31 @@ export default function Company() {
     }, [ticker]);
 
     useEffect(() => { load(); }, [load]);
+
+    // Fetch Spanish translation lazily once the company is loaded and has a summary.
+    // The backend caches per ticker+source_hash so subsequent visits are instant.
+    useEffect(() => {
+        if (!data?.long_business_summary || !data?.ticker) return;
+        let cancelled = false;
+        setSummaryEs(null);
+        setTranslating(true);
+        translateSummary(data.ticker)
+            .then(r => { if (!cancelled) setSummaryEs(r?.summary_es || null); })
+            .catch(() => { /* fall back silently to the English version */ })
+            .finally(() => { if (!cancelled) setTranslating(false); });
+        return () => { cancelled = true; };
+    }, [data?.ticker, data?.long_business_summary]);
+
+    // Fetch yearly ratio history (POC/POV + price trend) once company is loaded.
+    useEffect(() => {
+        if (!data?.ticker) return;
+        let cancelled = false;
+        setRatioHistory([]);
+        api.get(`/company/${encodeURIComponent(data.ticker)}/ratio-history`)
+            .then(r => { if (!cancelled) setRatioHistory(r.data?.series || []); })
+            .catch(() => { /* silently ignore — chart will just hide */ });
+        return () => { cancelled = true; };
+    }, [data?.ticker]);
 
     // Navigation guard for unsaved session edits.
     // - Internal links: intercept anchor clicks; show modal.
@@ -495,6 +607,34 @@ export default function Company() {
             addCorr("operating_margin", om, 0, "Clip margen operativo a 0% (neutraliza el factor, POV = POC).");
         }
 
+        // Extreme upside (>1000%) — opportunity or value trap.
+        const rc = cr.ratio_compra_pct, rv = cr.ratio_venta_pct;
+        const extremeRC = rc != null && rc > 1000;
+        const extremeRV = rv != null && rv > 1000;
+        if (extremeRC || extremeRV) {
+            const which = extremeRC && extremeRV ? "Ratio Compra y Ratio Venta" : extremeRC ? "Ratio Compra" : "Ratio Venta";
+            anomalies.push({
+                title: `${which} > +1000%`,
+                detail: "Un upside extremadamente elevado puede tener dos lecturas opuestas. Antes de actuar, pregúntate cuál crees que aplica aquí:",
+                bullets: [
+                    "🟢 Oportunidad real: el mercado está penalizando temporalmente a una empresa con buenos fundamentales (sector deprimido, evento puntual, noticia negativa exagerada). En este caso, los datos automáticos sí reflejan el negocio y los CAGRs son fiables.",
+                    "🔴 Trampa de valor: el mercado está descontando un deterioro estructural que la fórmula no capta (deuda escondida, regulación, disrupción del producto, contabilidad agresiva, riesgo de quiebra). Los datos del pasado mienten sobre el futuro.",
+                    "Sugerencia: revisa los avisos sobre proyecciones automáticas, compara con el precio objetivo medio de analistas (sección 'Ratios clásicos'), y si los CAGRs son anormalmente altos, recórtalos manualmente para ver si el upside aguanta.",
+                ],
+            });
+        }
+        // Symmetric: extreme downside (<-1000%) — likely garbage inputs.
+        if ((rc != null && rc < -1000) || (rv != null && rv < -1000)) {
+            anomalies.push({
+                title: `Ratio < −1000%`,
+                detail: "Un downside extremo casi siempre indica que algún input está descalibrado (no es una señal de venta real):",
+                bullets: [
+                    "Lo más habitual: el POC es negativo o casi cero por culpa de un factor colapsado. Mira las anomalías de arriba para identificar el factor.",
+                    "Acción: usa 'Auto-corregir' o edita manualmente los inputs sospechosos antes de tomar conclusiones.",
+                ],
+            });
+        }
+
         return { pocPovAnomalies: anomalies, pocPovCorrections: Array.from(corrByField.values()) };
     })();
 
@@ -540,7 +680,12 @@ export default function Company() {
             <div className="border border-black bg-white p-6 mb-6" data-testid="company-header">
                 <div className="flex items-start justify-between flex-wrap gap-4">
                     <div>
-                        <div className="overline text-[#4A4A4A]">{data.exchange} · {data.currency}{data.sector ? ` · ${data.sector}` : ""}</div>
+                        <div className="overline text-[#4A4A4A]">
+                            <HoverTip text={exchangeFullName(data.exchange) || "Código de mercado no reconocido"}>
+                                <span className={exchangeFullName(data.exchange) ? "underline decoration-dotted underline-offset-2 cursor-help" : ""} data-testid="exchange-code">{data.exchange}</span>
+                            </HoverTip>
+                            {" · "}{data.currency}{data.sector ? ` · ${data.sector}` : ""}
+                        </div>
                         <h1 className="font-serif text-4xl sm:text-5xl tracking-tight mt-1" data-testid="company-name">{data.name}</h1>
                         <div className="font-mono text-lg text-[#052049] mt-1" data-testid="company-ticker">{data.ticker}</div>
                     </div>
@@ -583,7 +728,18 @@ export default function Company() {
                     )}
                 </div>
                 {data.long_business_summary && (
-                    <p className="text-sm text-[#4A4A4A] mt-4 max-w-3xl">{data.long_business_summary}</p>
+                    <div className="text-sm text-[#4A4A4A] mt-4 max-w-3xl" data-testid="business-summary">
+                        {summaryEs ? (
+                            <p>{summaryEs}</p>
+                        ) : translating ? (
+                            <>
+                                <p className="italic">{data.long_business_summary}</p>
+                                <p className="text-[10px] font-mono text-[#4A4A4A]/70 mt-1">Traduciendo al español…</p>
+                            </>
+                        ) : (
+                            <p>{data.long_business_summary}</p>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -604,11 +760,11 @@ export default function Company() {
                 </div>
                 <div className="bg-white p-6" data-testid="ratio-venta-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Venta</div>
-                    <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="ratio-venta-value">
+                    <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid="ratio-venta-value">
                         {fmtPctSigned(cr.ratio_venta_pct)}
                     </div>
                     <div className="mt-3 flex items-center gap-3 flex-wrap">
-                        <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct)}</span>
+                        <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct, "venta")}</span>
                         <HoverTip text="POV = Precio Objetivo de Venta. Precio al que la acción te parecería cara según tu fórmula.">
                             <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
                         </HoverTip>
@@ -723,7 +879,7 @@ export default function Company() {
                         ["Precio acción", "current_price", false, false, cur],
                     ].map(([label, key, isPercent, isMagnitude, hint]) => {
                         const status = fieldStatus(key);
-                        const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "#111111";
+                        const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "var(--text-primary)";
                         const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
                         const statusDot = status === "session" ? "●" : status === "saved" ? "●" : "○";
                         // Per user's spec: % suffix removed for margins & CAGRs; magnitude inputs get B/M/K when they have a value
@@ -808,6 +964,7 @@ export default function Company() {
                 <div className="space-y-6">
                     <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
                     <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
+                    <RatioHistoryChart series={ratioHistory} currency={cur} />
                 </div>
             </div>
 
@@ -827,7 +984,7 @@ export default function Company() {
                               tooltip={`((FCF 2y − Deuda neta) / Capitalización) × 100 = ((${fmtNum(inputs?.fcf_2y || 0)} − ${fmtNum(inputs?.net_debt || 0)}) / ${fmtNum(inputs?.market_cap || 0)}) × 100`} />
                         <Stat label="× (FCF-NetDebt)/MCap (ajustado)"
                               value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)}
-                              tooltip={`Ajuste sobre el factor anterior:\n• si x < 0  → 1 + x/100  (penaliza pero no anula)\n• si 0 ≤ x ≤ 1  → 1  (neutralidad financiera)\n• si x > 1  → x  (sin cambio)`} />
+                              tooltip={`Ajuste sobre el factor anterior:\n• si x < 0  → 1 + x/100  (penaliza pero no anula)\n• si 0 ≤ x ≤ 1  → 1  (neutralidad financiera)\n• si 1 < x ≤ 10  → x  (sin cambio)\n• si x > 10  → 10  (tope superior: yields anormalmente altos suelen indicar caja sin reinvertir o sin remunerar al accionista)`} />
                         <Stat label="× CAGR Ingresos 4y"
                               value={fmtNum(cr.breakdown.rev_growth_factor)}
                               tooltip={`1 + CAGR ingresos 4y = 1 + ${((inputs?.revenue_cagr_4y || 0) * 100).toFixed(2)}%`} />
@@ -842,6 +999,10 @@ export default function Company() {
                               tooltip={`Ajuste sobre el margen operativo (factor en POV = POC × este factor):\n• si y < 0%  → 1 + y/100  (penaliza pero no anula)\n• si 0% ≤ y ≤ 1%  → 1  (neutralidad)\n• si y > 1%  → 1 + y/100  (sin cambio)`} />
                     </div>
                 </div>
+            )}
+
+            {inputs && cr.poc != null && (
+                <SensitivityMatrix inputs={inputs} basePoc={cr.poc} basePov={cr.pov} basePrice={inputs.current_price} currency={cur} />
             )}
 
             {/* Navigation guard modal */}
@@ -1107,6 +1268,215 @@ function ChartBlock({ title, data, unit, color, type = "line", testid, userEdite
                     </LineChart>
                 )}
             </ResponsiveContainer>
+        </div>
+    );
+}
+
+
+// Custom tooltip used by the dual-axis ratio + price chart.
+function RatioHistoryTooltip({ active, payload, label, currency }) {
+    if (!active || !payload || !payload.length) return null;
+    const row = payload[0]?.payload || {};
+    return (
+        <div className="bg-white border border-black px-3 py-2 font-mono text-xs">
+            <div className="text-[#4A4A4A] mb-1">{label}</div>
+            <div>R. Compra: <span style={{ color: ratioColor(row.ratio_compra_pct) }}>{fmtPctSigned(row.ratio_compra_pct)}</span></div>
+            <div>R. Venta: <span style={{ color: ratioColor(row.ratio_venta_pct, "venta") }}>{fmtPctSigned(row.ratio_venta_pct)}</span></div>
+            <div className="mt-1">Precio cierre: {fmtPrice(row.price, currency)}</div>
+        </div>
+    );
+}
+
+function RatioHistoryChart({ series, currency }) {
+    if (!series || series.length === 0) {
+        return (
+            <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
+                <div className="overline text-[#4A4A4A] mb-1">Histórico Ratio Compra / Venta vs Precio</div>
+                <div className="text-sm text-[#4A4A4A]">Sin datos históricos suficientes para reconstruir la serie.</div>
+            </div>
+        );
+    }
+    const data = series.map(s => ({
+        year: String(s.year),
+        ratio_compra_pct: s.ratio_compra_pct,
+        ratio_venta_pct: s.ratio_venta_pct,
+        price: s.price,
+    }));
+    return (
+        <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
+            <div className="flex items-start justify-between mb-1">
+                <div>
+                    <div className="overline text-[#4A4A4A]">Histórico Ratio Compra / Venta vs Precio</div>
+                    <div className="font-serif text-xl">Tendencia anual</div>
+                    <div className="text-[10px] font-mono text-[#4A4A4A] mt-1 max-w-md leading-relaxed">
+                        Si el ratio cae con el precio: posible deterioro fundamental. Si el ratio cae mientras el precio sube: el mercado paga más por menos → posible trampa al alza. Si el ratio sube con caída de precio: posible oportunidad si los fundamentales aguantan.
+                    </div>
+                </div>
+            </div>
+            <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
+                    <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                    <YAxis yAxisId="left" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
+                           tickFormatter={(v) => `${Math.round(v)}%`} label={{ value: "Ratio (%)", angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
+                           tickFormatter={(v) => fmtCompact(v)} label={{ value: `Precio (${currency})`, angle: 90, position: "insideRight", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
+                    <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                    <Line yAxisId="left" type="monotone" dataKey="ratio_compra_pct" name="R. Compra" stroke="#B32A22" strokeWidth={2} dot={{ r: 4, fill: "#B32A22" }} />
+                    <Line yAxisId="left" type="monotone" dataKey="ratio_venta_pct" name="R. Venta" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 4, fill: "#1D7044" }} />
+                    <Line yAxisId="right" type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2} strokeDasharray="2 4" dot={{ r: 3, fill: "#052049" }} />
+                </ComposedChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
+
+
+const SENS_AXES = [
+    { key: "revenue_2y", label: "Ingresos 2y", isPercent: false },
+    { key: "fcf_2y", label: "FCF 2y", isPercent: false },
+    { key: "gross_margin", label: "Margen bruto", isPercent: true },
+    { key: "operating_margin", label: "Margen operativo", isPercent: true },
+    { key: "revenue_cagr_4y", label: "CAGR Ingresos 4y", isPercent: true },
+    { key: "fcf_cagr_4y", label: "CAGR FCF 4y", isPercent: true },
+];
+
+function SensitivityMatrix({ inputs, basePoc, basePov, basePrice, currency }) {
+    const [axisX, setAxisX] = useState("operating_margin");
+    const [axisY, setAxisY] = useState("revenue_cagr_4y");
+    const [delta, setDelta] = useState(10); // ±%
+    const [metric, setMetric] = useState("ratio_compra"); // "ratio_compra" | "ratio_venta" | "poc" | "pov"
+
+    if (axisX === axisY) {
+        // Auto-pick a different default to avoid degenerate 1D matrix
+        const fallback = SENS_AXES.find(a => a.key !== axisX)?.key || axisX;
+        if (axisY !== fallback) setAxisY(fallback);
+    }
+
+    const steps = [-delta, 0, +delta];
+
+    // Bump an input value by a relative %.
+    const bump = (val, pct) => (val == null ? null : val * (1 + pct / 100));
+
+    const cells = steps.map(dy => steps.map(dx => {
+        const next = { ...inputs };
+        next[axisX] = bump(inputs[axisX], dx);
+        next[axisY] = bump(inputs[axisY], dy);
+        const r = computeCustomRatios(next);
+        return { dx, dy, r };
+    }));
+
+    const valFor = (r) => {
+        if (!r) return null;
+        if (metric === "ratio_compra") return r.ratio_compra_pct;
+        if (metric === "ratio_venta") return r.ratio_venta_pct;
+        if (metric === "poc") return r.poc;
+        if (metric === "pov") return r.pov;
+        return null;
+    };
+    const fmtCell = (v) => {
+        if (v == null || isNaN(v)) return "—";
+        if (metric === "ratio_compra" || metric === "ratio_venta") return fmtPctSigned(v);
+        return fmtPrice(v, currency);
+    };
+    const cellColor = (v) => {
+        if (v == null || isNaN(v)) return "#4A4A4A";
+        if (metric === "ratio_compra") return ratioColor(v, "compra");
+        if (metric === "ratio_venta") return ratioColor(v, "venta");
+        // POC/POV vs base price: green if above price, red if below
+        if (basePrice == null) return "#111";
+        const pct = (v / basePrice - 1) * 100;
+        return ratioColor(pct, metric === "pov" ? "venta" : "compra");
+    };
+
+    // Base value to highlight the center cell
+    const baseVal = metric === "ratio_compra" ? (basePoc != null && basePrice ? (basePoc / basePrice - 1) * 100 : null)
+                  : metric === "ratio_venta" ? (basePov != null && basePrice ? (basePov / basePrice - 1) * 100 : null)
+                  : metric === "poc" ? basePoc
+                  : basePov;
+
+    const labelFor = (key) => SENS_AXES.find(a => a.key === key)?.label || key;
+    const stepFmt = (s) => s === 0 ? "Base" : `${s > 0 ? "+" : ""}${s}%`;
+
+    return (
+        <div className="border border-black bg-white p-4 mt-6" data-testid="sensitivity-matrix">
+            <div className="flex flex-wrap items-end gap-3 mb-3">
+                <div>
+                    <div className="overline text-[#B32A22]">Modo Sensibilidad</div>
+                    <div className="font-serif text-2xl">¿Cuán frágil es tu valoración?</div>
+                </div>
+                <div className="ml-auto grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <label className="flex flex-col">
+                        <span className="overline text-[#4A4A4A]">Eje X</span>
+                        <select value={axisX} onChange={e => setAxisX(e.target.value)} className="input-paper font-mono" data-testid="sens-axis-x">
+                            {SENS_AXES.map(a => <option key={a.key} value={a.key} disabled={a.key === axisY}>{a.label}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col">
+                        <span className="overline text-[#4A4A4A]">Eje Y</span>
+                        <select value={axisY} onChange={e => setAxisY(e.target.value)} className="input-paper font-mono" data-testid="sens-axis-y">
+                            {SENS_AXES.map(a => <option key={a.key} value={a.key} disabled={a.key === axisX}>{a.label}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col">
+                        <span className="overline text-[#4A4A4A]">Métrica</span>
+                        <select value={metric} onChange={e => setMetric(e.target.value)} className="input-paper font-mono" data-testid="sens-metric">
+                            <option value="ratio_compra">Ratio Compra</option>
+                            <option value="ratio_venta">Ratio Venta</option>
+                            <option value="poc">POC</option>
+                            <option value="pov">POV</option>
+                        </select>
+                    </label>
+                    <label className="flex flex-col">
+                        <span className="overline text-[#4A4A4A]">Δ {delta}%</span>
+                        <input type="range" min="2" max="30" step="1" value={delta} onChange={e => setDelta(parseInt(e.target.value, 10))} data-testid="sens-delta" />
+                    </label>
+                </div>
+            </div>
+
+            <p className="text-xs text-[#4A4A4A] mb-3 max-w-3xl">
+                Muestra cómo cambia <span className="font-mono font-semibold">{({ ratio_compra: "Ratio Compra", ratio_venta: "Ratio Venta", poc: "POC", pov: "POV" })[metric]}</span> al mover <span className="font-mono">{labelFor(axisX)}</span> y <span className="font-mono">{labelFor(axisY)}</span> ±{delta}%. Si los extremos varían mucho respecto a la celda central, tu tesis es <span className="text-[#B32A22]">frágil</span>. Si apenas cambian, la valoración es <span className="text-[#1D7044]">robusta</span>.
+            </p>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse" data-testid="sens-table">
+                    <thead>
+                        <tr>
+                            <th className="px-2 py-2 text-left overline text-[#4A4A4A] border-b border-r border-black/20"></th>
+                            {steps.map(s => (
+                                <th key={s} className="px-2 py-2 text-center overline text-[#4A4A4A] border-b border-black/20">
+                                    {labelFor(axisX)} {stepFmt(s)}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {cells.map((row, i) => (
+                            <tr key={steps[i]}>
+                                <td className="px-2 py-2 overline text-[#4A4A4A] border-r border-black/20 whitespace-nowrap">
+                                    {labelFor(axisY)} {stepFmt(steps[i])}
+                                </td>
+                                {row.map((c, j) => {
+                                    const v = valFor(c.r);
+                                    const isBase = c.dx === 0 && c.dy === 0;
+                                    return (
+                                        <td key={j}
+                                            className={`px-3 py-3 text-center font-mono ${isBase ? "bg-[#FAF6EE] font-semibold" : ""} border border-black/10`}
+                                            data-testid={`sens-cell-${i}-${j}`}
+                                            style={{ color: cellColor(v) }}>
+                                            {fmtCell(v)}
+                                            {isBase && baseVal != null && (
+                                                <div className="text-[10px] text-[#4A4A4A] font-mono mt-1 font-normal">(base)</div>
+                                            )}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

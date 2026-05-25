@@ -43,6 +43,7 @@ export const computeCustomRatios = (inputs) => {
     let xFactor;
     if (xRaw < 0) xFactor = 1 + xRaw / 100;
     else if (xRaw <= 1) xFactor = 1;
+    else if (xRaw > 10) xFactor = 10; // Upper cap: very high FCF yields often signal cash trap / no reinvestment / no buybacks
     else xFactor = xRaw;
 
     const revGrowthFactor = 1 + vals.revenue_cagr_4y;
