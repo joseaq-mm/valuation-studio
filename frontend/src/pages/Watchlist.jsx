@@ -10,6 +10,7 @@ import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { notifyGet, notifyPut } from "@/lib/api";
 import AlertToggle from "@/components/AlertToggle";
+import HoverTip from "@/components/HoverTip";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -153,30 +154,39 @@ export default function Watchlist() {
                 </div>
             ) : (
                 <div className="border border-black bg-white overflow-x-auto" data-testid="watchlist-table">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-4 py-3">{t("watchlist.col_ticker")}</th>
-                                <th className="overline text-left px-4 py-3">{t("watchlist.col_company")}</th>
-                                <th className="overline text-center px-4 py-3">{t("watchlist.col_mode")}</th>
-                                <th className="overline text-right px-4 py-3">{t("watchlist.col_price")}</th>
-                                <th className="overline text-right px-4 py-3">{t("watchlist.col_mcap")}</th>
-                                <th className="overline text-right px-4 py-3">{t("watchlist.col_rc")}</th>
-                                <th className="overline text-right px-4 py-3">{t("watchlist.col_rv")}</th>
-                                <th className="overline text-center px-4 py-3">{t("watchlist.col_signal")}</th>
-                                <th className="overline text-center px-4 py-3">{t("watchlist.col_alert")}</th>
-                                <th className="px-4 py-3" />
+                                <th className="overline text-left px-2 py-2">{t("watchlist.col_ticker")}</th>
+                                <th className="overline text-left px-2 py-2">{t("watchlist.col_company")}</th>
+                                <th className="overline text-center px-2 py-2">{t("watchlist.col_mode")}</th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_price")}</th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_mcap")}</th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rc")}</th>
+                                <th className="overline text-center px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_buy_signal")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rv")}</th>
+                                <th className="overline text-center px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_sell_signal")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-center px-2 py-2">{t("watchlist.col_alert")}</th>
+                                <th className="px-2 py-2" />
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="10" className="px-4 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="11" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {rows.map(({ entry, data: r }) => {
                                 if (r.error) return (
                                     <tr key={r.ticker} className="border-b border-black/10">
-                                        <td className="px-4 py-3 font-mono">{r.ticker}</td>
-                                        <td colSpan="8" className="px-4 py-3 text-[#B32A22] text-xs">{r.error}</td>
-                                        <td className="px-4 py-3 text-right">
-                                            <button onClick={() => handleRemove(r.ticker)} data-testid={`remove-${r.ticker}`}><Trash2 size={14} /></button>
+                                        <td className="px-2 py-2 font-mono">{r.ticker}</td>
+                                        <td colSpan="9" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td className="px-2 py-2 text-right">
+                                            <button onClick={() => handleRemove(r.ticker)} data-testid={`remove-${r.ticker}`}><Trash2 size={12} /></button>
                                         </td>
                                     </tr>
                                 );
@@ -184,40 +194,45 @@ export default function Watchlist() {
                                 const isManual = entry.mode === "manual";
                                 return (
                                     <tr key={r.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`watchlist-row-${r.ticker}`}>
-                                        <td className="px-4 py-3 font-mono font-semibold">
+                                        <td className="px-2 py-2 font-mono font-semibold">
                                             <Link to={`/company/${r.ticker}`} className="underline-offset-2 hover:underline">{r.ticker}</Link>
                                         </td>
-                                        <td className="px-4 py-3 text-[#4A4A4A]">{r.name}</td>
-                                        <td className="px-4 py-3 text-center">
+                                        <td className="px-2 py-2 text-[#4A4A4A]">{r.name}</td>
+                                        <td className="px-2 py-2 text-center">
                                             {isManual ? (
-                                                <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid={`mode-${r.ticker}`}>MANUAL</span>
+                                                <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] bg-white text-[10px]" data-testid={`mode-${r.ticker}`}>MAN</span>
                                             ) : (
-                                                <span className="overline px-2 py-1 border border-black/30 text-[#4A4A4A] bg-white" data-testid={`mode-${r.ticker}`}>AUTO</span>
+                                                <span className="overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] bg-white text-[10px]" data-testid={`mode-${r.ticker}`}>AUTO</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono">{fmtPrice(displayCur && displayCur !== "NATIVE" ? fxConvert(r.current_price, r.currency) : r.current_price, displayCur && displayCur !== "NATIVE" ? displayCur : r.currency)}</td>
-                                        <td className="px-4 py-3 text-right font-mono">{fmtNum(displayCur && displayCur !== "NATIVE" ? fxConvert(r.market_cap, r.currency) : r.market_cap)}</td>
-                                        <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid={`rc-${r.ticker}`}>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtPrice(displayCur && displayCur !== "NATIVE" ? fxConvert(r.current_price, r.currency) : r.current_price, displayCur && displayCur !== "NATIVE" ? displayCur : r.currency)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtNum(displayCur && displayCur !== "NATIVE" ? fxConvert(r.market_cap, r.currency) : r.market_cap)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid={`rc-${r.ticker}`}>
                                             {fmtPctSigned(cr.ratio_compra_pct)}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid={`rv-${r.ticker}`}>
-                                            {fmtPctSigned(cr.ratio_venta_pct)}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }}>
+                                        <td className="px-2 py-2 text-center">
+                                            <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_compra_pct) }}>
                                                 {signalLabel(cr.ratio_compra_pct)}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-center">
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid={`rv-${r.ticker}`}>
+                                            {fmtPctSigned(cr.ratio_venta_pct)}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                            <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid={`signal-venta-${r.ticker}`}>
+                                                {signalLabel(cr.ratio_venta_pct, "venta")}
+                                            </span>
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
                                             <AlertToggle
                                                 enabled={!!entry.alert_enabled}
                                                 onChange={(v) => { setWatchlistAlert(r.ticker, v); toast.success(v ? t("alerts.row_on") : t("alerts.row_off")); }}
                                                 testid={r.ticker}
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right">
+                                        <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(r.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${r.ticker}`}>
-                                                <Trash2 size={14} />
+                                                <Trash2 size={12} />
                                             </button>
                                         </td>
                                     </tr>

@@ -11,6 +11,8 @@ import { useAuth } from "@/lib/auth";
 import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import AlertToggle from "@/components/AlertToggle";
+import HoverTip from "@/components/HoverTip";
+import TickerAutocomplete from "@/components/TickerAutocomplete";
 
 // Apply manual overrides to the API-fetched company snapshot before recomputing
 // ratios. Mirrors the same logic the Watchlist page uses.
@@ -154,32 +156,50 @@ export default function Portfolio() {
                 </div>
             ) : (
                 <div className="border border-black bg-white overflow-x-auto" data-testid="portfolio-table">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-3 py-3">{t("watchlist.col_ticker")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_shares")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_buy_price")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_invested")}</th>
-                                <th className="overline text-right px-3 py-3">{t("watchlist.col_price")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_now")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_pl")}</th>
-                                <th className="overline text-right px-3 py-3">{t("portfolio.col_pl_pct")}</th>
-                                <th className="overline text-right px-3 py-3">{t("watchlist.col_rc")}</th>
-                                <th className="overline text-center px-3 py-3">{t("watchlist.col_signal")}</th>
-                                <th className="overline text-center px-3 py-3">{t("watchlist.col_alert")}</th>
-                                <th className="overline text-right px-3 py-3">{t("common.actions")}</th>
+                                <th className="overline text-left px-2 py-2">{t("watchlist.col_ticker")}</th>
+                                <th className="overline text-right px-2 py-2">{t("portfolio.col_shares")}</th>
+                                <th className="overline text-right px-2 py-2">{t("portfolio.col_buy_price")}</th>
+                                <th className="overline text-right px-2 py-2">{t("portfolio.col_invested")}</th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_price")}</th>
+                                <th className="overline text-right px-2 py-2">{t("portfolio.col_now")}</th>
+                                <th className="overline text-right px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_pl")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-right px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_pl_pct")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl_pct")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rc")}</th>
+                                <th className="overline text-center px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_buy_signal")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rv")}</th>
+                                <th className="overline text-center px-2 py-2">
+                                    <HoverTip text={t("portfolio.tt_sell_signal")}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
+                                    </HoverTip>
+                                </th>
+                                <th className="overline text-center px-2 py-2">{t("watchlist.col_alert")}</th>
+                                <th className="overline text-right px-2 py-2"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="12" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="14" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {!loading && rows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">
-                                        <td className="px-3 py-3 font-mono">{p.ticker}</td>
-                                        <td colSpan="10" className="px-3 py-3 text-[#B32A22] text-xs">{r.error}</td>
-                                        <td className="px-3 py-3 text-right">
+                                        <td className="px-2 py-2 font-mono">{p.ticker}</td>
+                                        <td colSpan="12" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(p.ticker)} data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
                                         </td>
                                     </tr>
@@ -203,29 +223,33 @@ export default function Portfolio() {
                                 );
                                 return (
                                     <tr key={p.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
-                                        <td className="px-3 py-3 font-mono font-semibold">
+                                        <td className="px-2 py-2 font-mono font-semibold">
                                             <Link to={`/company/${p.ticker}`} className="hover:underline">{p.ticker}</Link>
                                             {trackedTag}
                                             {r.name && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{r.name}</div>}
                                             {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5 italic">{p.note}</div>}
                                         </td>
-                                        <td className="px-3 py-3 text-right font-mono">{hasShares ? fmtNum(p.shares) : "—"}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
-                                        <td className="px-3 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
-                                        <td className="px-3 py-3 text-center">
-                                            <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{signalLabel(cr.ratio_compra_pct)}</span>
+                                        <td className="px-2 py-2 text-right font-mono">{hasShares ? fmtNum(p.shares) : "—"}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
+                                        <td className="px-2 py-2 text-center">
+                                            <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{signalLabel(cr.ratio_compra_pct)}</span>
                                         </td>
-                                        <td className="px-3 py-3 text-center">
+                                        <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }}>{fmtPctSigned(cr.ratio_venta_pct)}</td>
+                                        <td className="px-2 py-2 text-center">
+                                            <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }}>{signalLabel(cr.ratio_venta_pct, "venta")}</span>
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
                                             <AlertToggle enabled={!!p.alert_enabled} onChange={(v) => toggleAlert(p.ticker, v)} testid={p.ticker} />
                                         </td>
-                                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                                            <button onClick={() => { setEditing(p); setShowAdd(true); }} className="text-[#4A4A4A] hover:text-black mr-2 text-xs underline" data-testid={`edit-${p.ticker}`}>Editar</button>
-                                            <button onClick={() => handleRemove(p.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
+                                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                                            <button onClick={() => { setEditing(p); setShowAdd(true); }} className="text-[#4A4A4A] hover:text-black mr-1 text-[10px] underline" data-testid={`edit-${p.ticker}`}>Editar</button>
+                                            <button onClick={() => handleRemove(p.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${p.ticker}`}><Trash2 size={12} /></button>
                                         </td>
                                     </tr>
                                 );
@@ -307,7 +331,17 @@ function PositionDialog({ initial, onClose, onSave }) {
                 </div>
 
                 <Field label={t("portfolio.field_ticker")}>
-                    <input value={ticker} onChange={(e) => setTicker(e.target.value)} className="input-paper font-mono w-full" disabled={!!initial} data-testid="pos-ticker" />
+                    {initial ? (
+                        <input value={ticker} className="input-paper font-mono w-full" disabled data-testid="pos-ticker" />
+                    ) : (
+                        <TickerAutocomplete
+                            value={ticker}
+                            onChange={setTicker}
+                            onPick={(r) => setTicker(r.symbol)}
+                            placeholder="AAPL, NVDA, SAP.DE, SAN.MC…"
+                            testid="pos-ticker"
+                        />
+                    )}
                 </Field>
                 <Field label={`${t("portfolio.field_shares")} (opcional)`}>
                     <input value={shares} onChange={(e) => setShares(e.target.value)} placeholder="Déjalo vacío si aún no quieres registrar la cantidad" className="input-paper font-mono w-full" inputMode="decimal" data-testid="pos-shares" />
