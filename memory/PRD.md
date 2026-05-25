@@ -40,6 +40,10 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **✅ COMPLETADO (Feb 2026)** — **Métricas de crecimiento + breakeven + health indicators**:
+  - Backend: `data.growth_metrics` con `revenue_growth_yoy`, `revenue_cagr_3y_hist`, `fcf_margin_ttm`, `rule_of_40`, `breakeven_year_op`, `breakeven_year_fcf` (regresión lineal sobre los últimos 4 años del histórico de operating income / FCF, con horizonte máximo 15 años). También expone `operating_income_history`.
+  - Frontend: nueva sección "Crecimiento y rentabilidad futura" debajo de los ratios clásicos (más justa para growth/empresas pre-rentables): Crec. Ingresos YoY, CAGR 3y histórico, Margen FCF (TTM), Rule of 40 (clásico de SaaS), y dos filas de breakeven estimado (operativo y FCF) con etiquetas humanas: "Ya rentable (YYYY)" verde, "YYYY" + "≈ N años si la tendencia se mantiene" ámbar/rojo, "No converge" rojo con subtítulo explicando.
+  - Mini punto de salud verde/ámbar/rojo a la izquierda del valor en todas las filas (clásicas + crecimiento + márgenes). Lógica `ratioHealth(key, v)` con rangos por ratio (P/E < 15 verde, ROE < 8% rojo, etc.), normaliza debt_to_equity (yfinance lo devuelve en formato escalado). Hover sobre el punto muestra etiqueta corta ("Barato", "Pérdidas", "Saludable", "Excepcional"...).
 - **✅ COMPLETADO (Feb 2026)** — **Auto-corregir + tooltips didácticos en ratios clásicos**:
   - Botón "Aplicar N correcciones" en el panel de anomalías POC/POV. Heurísticas: clip de márgenes a 0% si < 0, clip de CAGRs a −30% si < −100%, ajuste de net_debt para llevar x_raw a −50% si está colapsado. Cada corrección muestra preview "valor antiguo → valor nuevo" con razón. Aplicar deja las correcciones marcadas como `session edits` (ámbar) para que el usuario revise antes de guardar.
   - Tooltip rico (HoverTip) en los 17 ratios clásicos (P/E, PEG, P/B, P/S, EV/EBITDA, EV/Revenue, ROE, ROA, Profit margin, Debt/Equity, Current ratio, Dividend yield, Beta, Analyst target, Gross margin, Operating margin). Explica qué mide y los rangos "barato/normal/caro" como referencia educativa.

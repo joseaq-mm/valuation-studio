@@ -88,6 +88,52 @@ def _cagr(values: List[float], years: int) -> Optional[float]:
         return None
 
 
+def _estimate_breakeven_year(history_pairs, max_horizon_years: int = 15) -> Optional[int]:
+    """Estimate the fiscal year a metric (operating income or FCF) crosses 0
+    using a simple linear regression on the last 4 historical points.
+
+    - Returns the current last year if the metric is already >= 0.
+    - Returns the projected year if the slope is positive and the breakeven
+      lies within `max_horizon_years` from the last reported year.
+    - Returns None if there is no trajectory, the trend is flat/negative, or
+      the breakeven is too far away to be reliable.
+    """
+    if not history_pairs or len(history_pairs) < 2:
+        return None
+    pairs = history_pairs[-4:]
+    years, vals = [], []
+    for p in pairs:
+        try:
+            y = int(str(p.get("date", ""))[:4])
+        except (TypeError, ValueError):
+            continue
+        v = _safe_float(p.get("value"))
+        if v is None:
+            continue
+        years.append(y)
+        vals.append(v)
+    if len(years) < 2:
+        return None
+    last_year = years[-1]
+    last_val = vals[-1]
+    if last_val >= 0:
+        return last_year  # already profitable
+    n = len(years)
+    avg_y = sum(years) / n
+    avg_v = sum(vals) / n
+    num = sum((years[i] - avg_y) * (vals[i] - avg_v) for i in range(n))
+    den = sum((years[i] - avg_y) ** 2 for i in range(n))
+    if den == 0:
+        return None
+    slope = num / den
+    if slope <= 0:
+        return None  # trajectory not converging towards profitability
+    years_needed = -last_val / slope
+    if years_needed > max_horizon_years:
+        return None  # too far in the future to trust
+    return int(last_year + math.ceil(years_needed))
+
+
 def _find_annual_for_year(history, target_year: int):
     """Find the annual data point whose fiscal-year-end falls in `target_year`.
     Falls back to the closest year ≤ target if exact match not found."""
@@ -182,6 +228,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     operating_income_series = _get_row(fin, ["Operating Income", "OperatingIncome", "EBIT"])
 
     revenue_history = _series_to_pairs(revenue_series, limit=6)
+    operating_income_history = _series_to_pairs(operating_income_series, limit=6)
     # ascending: oldest -> newest. We want it as is.
 
     # FCF: try direct, else OCF - |CapEx|
@@ -393,6 +440,44 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "target_mean_price": _safe_float(info.get("targetMeanPrice")),
     }
 
+    # Growth metrics specifically helpful for small high-growth (still unprofitable) companies.
+    # - revenue_growth_yoy: last year-on-year revenue growth (annualised) from Yahoo.
+    # - revenue_cagr_3y_hist: pure historical CAGR over the last ~3 years of revenue.
+    # - rule_of_40: revenue_growth_yoy_pct + fcf_margin_pct; classic SaaS health gauge.
+    # - breakeven_year_op / breakeven_year_fcf: linear extrapolation of historical
+    #   operating-income / FCF trajectory; tells the user roughly when the metric
+    #   would cross zero if the recent trend holds.
+    revenue_cagr_3y_hist = None
+    if len(revenue_history) >= 2:
+        rev_vals = [r["value"] for r in revenue_history[-4:] if r.get("value") is not None]
+        span = len(rev_vals) - 1
+        if span >= 1:
+            revenue_cagr_3y_hist = _cagr(rev_vals, span)
+
+    fcf_margin_ttm = None
+    last_rev = revenue_history[-1]["value"] if revenue_history else None
+    base_fcf = fcf_ttm if (fcf_ttm is not None) else (fcf_history[-1]["value"] if fcf_history else None)
+    if last_rev and last_rev > 0 and base_fcf is not None:
+        fcf_margin_ttm = base_fcf / last_rev
+
+    rule_of_40 = None
+    if revenue_growth_yoy is not None and fcf_margin_ttm is not None:
+        rule_of_40 = (revenue_growth_yoy * 100.0) + (fcf_margin_ttm * 100.0)
+
+    breakeven_year_op = _estimate_breakeven_year(operating_income_history)
+    breakeven_year_fcf = _estimate_breakeven_year(fcf_history)
+
+    growth_metrics = {
+        "revenue_growth_yoy": revenue_growth_yoy,
+        "revenue_cagr_3y_hist": revenue_cagr_3y_hist,
+        "fcf_margin_ttm": fcf_margin_ttm,
+        "rule_of_40": rule_of_40,
+        "breakeven_year_op": breakeven_year_op,
+        "breakeven_year_fcf": breakeven_year_fcf,
+        "is_profitable_op": (operating_income_history[-1]["value"] > 0) if operating_income_history else None,
+        "is_profitable_fcf": (base_fcf > 0) if base_fcf is not None else None,
+    }
+
     payload = {
         "ticker": ticker.upper(),
         "name": info.get("longName") or info.get("shortName") or ticker.upper(),
@@ -413,6 +498,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "operating_margin": operating_margin,
         "revenue_history": revenue_history,
         "fcf_history": fcf_history,
+        "operating_income_history": operating_income_history,
         "analyst_revenue_plus1y": revenue_plus1y,
         "fcf_ttm": fcf_ttm,
         "auto_projections": {
@@ -425,6 +511,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "flags": projection_flags,
         },
         "classic_ratios": classic_ratios,
+        "growth_metrics": growth_metrics,
         "as_of": datetime.now(timezone.utc).isoformat(),
     }
     return payload

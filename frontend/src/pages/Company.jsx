@@ -27,9 +27,116 @@ const ratioRows = [
     ["Analyst target", "target_mean_price", null, "Precio objetivo medio de los analistas que cubren el valor. Útil como referencia pero ten en cuenta que suelen ser optimistas y reaccionar tarde a malas noticias."],
 ];
 
+// Growth metrics — especially relevant for small high-growth companies that are
+// not yet profitable. Source: data.growth_metrics (computed in backend).
+const growthRows = [
+    ["Crec. Ingresos (YoY)", "revenue_growth_yoy", "pct", "Crecimiento de ingresos del último año fiscal sobre el anterior. Para growth real ≥ 20% es bueno, ≥ 40% excelente. < 0% es contracción."],
+    ["CAGR Ingresos 3y (histórico)", "revenue_cagr_3y_hist", "pct", "Crecimiento anual compuesto histórico de los últimos años. Más estable que el YoY puntual; suaviza altibajos. Compara con el YoY para ver si la empresa acelera o desacelera."],
+    ["Margen FCF (TTM)", "fcf_margin_ttm", "pct", "Free Cash Flow / Ingresos. Mide cuánto efectivo libre genera cada euro de ventas. > 15% sano, > 25% excepcional. Negativo = quema caja (típico en early-stage)."],
+    ["Rule of 40", "rule_of_40", "rule40", "Suma de Crec. Ingresos % + Margen FCF %. Indicador clásico de salud para SaaS y growth: < 20 débil, 20-40 mejorable, > 40 saludable, > 60 excepcional. Equilibra crecimiento y rentabilidad."],
+];
+
 const marginRowsInfo = {
     gross_margin: "Ingresos − coste directo del producto, en %. Mide eficiencia productiva. > 40% suele ser bueno (escala, marca, software). En retail/manufactura puede ser <25% sin que sea mala señal.",
     operating_margin: "Beneficio operativo (antes de impuestos e intereses) / ingresos. Mide eficiencia del negocio core. > 15% sólido, > 25% excelente. Negativo = pierde dinero operando.",
+};
+
+// Health colour for a given ratio key + value. Returns {color, label} or null
+// when no rule applies (e.g. Beta, Analyst target — they don't have a clean good/bad axis).
+const G = "#1D7044", A = "#D97706", R = "#B32A22";
+const ratioHealth = (key, v) => {
+    if (v == null || isNaN(v)) return null;
+    switch (key) {
+        case "trailing_pe":
+        case "forward_pe":
+            if (v < 0) return { color: R, label: "Negativo (pérdidas)" };
+            if (v < 15) return { color: G, label: "Barato" };
+            if (v < 25) return { color: A, label: "Normal" };
+            return { color: R, label: "Caro" };
+        case "peg_ratio":
+            if (v <= 0) return { color: R, label: "No utilizable" };
+            if (v < 1) return { color: G, label: "Infravalorado vs crecimiento" };
+            if (v < 2) return { color: A, label: "Razonable" };
+            return { color: R, label: "Caro vs crecimiento" };
+        case "price_to_book":
+            if (v < 0) return { color: R, label: "Patrimonio negativo" };
+            if (v < 1) return { color: G, label: "Por debajo de book value" };
+            if (v < 3) return { color: A, label: "Normal" };
+            return { color: R, label: "Alto" };
+        case "price_to_sales":
+            if (v < 1) return { color: G, label: "Barato" };
+            if (v < 5) return { color: A, label: "Normal" };
+            return { color: R, label: "Caro" };
+        case "ev_to_ebitda":
+            if (v < 0) return { color: R, label: "EBITDA negativo" };
+            if (v < 8) return { color: G, label: "Barato" };
+            if (v < 15) return { color: A, label: "Normal" };
+            return { color: R, label: "Caro" };
+        case "ev_to_revenue":
+            if (v < 2) return { color: G, label: "Barato" };
+            if (v < 10) return { color: A, label: "Normal" };
+            return { color: R, label: "Caro" };
+        case "roe":
+            if (v < 0) return { color: R, label: "Pérdidas" };
+            if (v < 0.08) return { color: R, label: "Bajo" };
+            if (v < 0.15) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "roa":
+            if (v < 0) return { color: R, label: "Pérdidas" };
+            if (v < 0.02) return { color: R, label: "Bajo" };
+            if (v < 0.05) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "profit_margin":
+            if (v < 0) return { color: R, label: "Pérdidas" };
+            if (v < 0.05) return { color: A, label: "Bajo" };
+            if (v < 0.10) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "debt_to_equity":
+            // yfinance returns this as % (e.g. 150 means 1.5). Normalize.
+            { const vv = v > 10 ? v / 100 : v;
+            if (vv < 0.5) return { color: G, label: "Conservador" };
+            if (vv < 1.5) return { color: A, label: "Normal" };
+            return { color: R, label: "Apalancado" }; }
+        case "current_ratio":
+            if (v < 1) return { color: R, label: "Riesgo liquidez" };
+            if (v < 1.5) return { color: A, label: "Justo" };
+            if (v <= 3) return { color: G, label: "Saludable" };
+            return { color: A, label: "Caja parada" };
+        case "dividend_yield":
+            if (v === 0) return null;
+            if (v < 0.02) return { color: A, label: "Bajo" };
+            if (v <= 0.05) return { color: G, label: "Saludable" };
+            if (v <= 0.07) return { color: A, label: "Alto" };
+            return { color: R, label: "Posible trampa" };
+        case "gross_margin":
+            if (v < 0) return { color: R, label: "Negativo" };
+            if (v < 0.20) return { color: R, label: "Bajo" };
+            if (v < 0.40) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "operating_margin":
+            if (v < 0) return { color: R, label: "Pérdidas operativas" };
+            if (v < 0.05) return { color: A, label: "Bajo" };
+            if (v < 0.15) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "revenue_growth_yoy":
+        case "revenue_cagr_3y_hist":
+            if (v < 0) return { color: R, label: "Contracción" };
+            if (v < 0.05) return { color: A, label: "Bajo" };
+            if (v < 0.20) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Alto" };
+        case "fcf_margin_ttm":
+            if (v < 0) return { color: R, label: "Quema caja" };
+            if (v < 0.05) return { color: A, label: "Bajo" };
+            if (v < 0.15) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "rule_of_40":
+            if (v < 20) return { color: R, label: "Débil" };
+            if (v < 40) return { color: A, label: "Mejorable" };
+            if (v < 60) return { color: G, label: "Saludable" };
+            return { color: G, label: "Excepcional" };
+        default:
+            return null;
+    }
 };
 
 export default function Company() {
@@ -657,35 +764,45 @@ export default function Company() {
                             {ratioRows.map(([label, key, fmt, info]) => {
                                 const v = data.classic_ratios?.[key];
                                 const display = v == null ? "—" : fmt === "pct" ? fmtPct(v) : fmtNum(v);
-                                return (
-                                    <tr key={key} className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                        <td className="px-4 py-2 text-[#4A4A4A]">
-                                            <HoverTip text={info}>
-                                                <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid={`ratio-label-${key}`}>{label}</span>
-                                            </HoverTip>
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono" data-testid={`ratio-${key}`}>{display}</td>
-                                    </tr>
-                                );
+                                return <RatioRow key={key} rowKey={key} label={label} info={info} display={display} value={v} />;
                             })}
-                            <tr className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                <td className="px-4 py-2 text-[#4A4A4A]">
-                                    <HoverTip text={marginRowsInfo.gross_margin}>
-                                        <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid="ratio-label-gross_margin">Gross margin</span>
-                                    </HoverTip>
-                                </td>
-                                <td className="px-4 py-2 text-right font-mono">{fmtPct(data.gross_margin)}</td>
-                            </tr>
-                            <tr className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                <td className="px-4 py-2 text-[#4A4A4A]">
-                                    <HoverTip text={marginRowsInfo.operating_margin}>
-                                        <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid="ratio-label-operating_margin">Operating margin</span>
-                                    </HoverTip>
-                                </td>
-                                <td className="px-4 py-2 text-right font-mono">{fmtPct(data.operating_margin)}</td>
-                            </tr>
+                            <RatioRow rowKey="gross_margin" label="Gross margin" info={marginRowsInfo.gross_margin} display={fmtPct(data.gross_margin)} value={data.gross_margin} />
+                            <RatioRow rowKey="operating_margin" label="Operating margin" info={marginRowsInfo.operating_margin} display={fmtPct(data.operating_margin)} value={data.operating_margin} />
                         </tbody>
                     </table>
+
+                    {data.growth_metrics && (
+                        <>
+                            <div className="p-4 border-t border-b border-black bg-[#FAF6EE]">
+                                <div className="overline text-[#4A4A4A]">Crecimiento y rentabilidad futura</div>
+                                <div className="font-serif text-xl">Para growth y empresas no rentables</div>
+                            </div>
+                            <table className="w-full text-sm" data-testid="growth-ratios">
+                                <tbody>
+                                    {growthRows.map(([label, key, fmt, info]) => {
+                                        const v = data.growth_metrics?.[key];
+                                        let display = "—";
+                                        if (v != null && !isNaN(v)) {
+                                            if (fmt === "pct") display = fmtPct(v);
+                                            else if (fmt === "rule40") display = `${v.toFixed(1)}`;
+                                            else display = fmtNum(v);
+                                        }
+                                        return <RatioRow key={key} rowKey={key} label={label} info={info} display={display} value={v} />;
+                                    })}
+                                    <BreakevenRow label="Breakeven operativo (estimado)"
+                                                  year={data.growth_metrics?.breakeven_year_op}
+                                                  isProfitable={data.growth_metrics?.is_profitable_op}
+                                                  history={data.operating_income_history}
+                                                  info="Año estimado en que el beneficio operativo cruzaría 0 según la trayectoria histórica reciente (regresión lineal sobre los últimos años). Si la empresa ya es rentable se muestra ese año; si la tendencia no converge, se indica 'No converge'." />
+                                    <BreakevenRow label="Breakeven FCF (estimado)"
+                                                  year={data.growth_metrics?.breakeven_year_fcf}
+                                                  isProfitable={data.growth_metrics?.is_profitable_fcf}
+                                                  history={data.fcf_history}
+                                                  info="Año estimado en que el Free Cash Flow cruzaría 0 según la trayectoria reciente. Más relevante que el beneficio operativo para empresas con mucho intangible (software): un FCF positivo es la verdadera señal de autosuficiencia." />
+                                </tbody>
+                            </table>
+                        </>
+                    )}
                 </div>
 
                 <div className="space-y-6">
@@ -799,6 +916,62 @@ function Modal({ title, children, testid }) {
                 {children}
             </div>
         </div>
+    );
+}
+
+function RatioRow({ rowKey, label, info, display, value }) {
+    const h = ratioHealth(rowKey, value);
+    return (
+        <tr className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`row-${rowKey}`}>
+            <td className="px-4 py-2 text-[#4A4A4A]">
+                <HoverTip text={info}>
+                    <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid={`ratio-label-${rowKey}`}>{label}</span>
+                </HoverTip>
+            </td>
+            <td className="px-4 py-2 text-right font-mono" data-testid={`ratio-${rowKey}`}>
+                <span className="inline-flex items-center gap-2 justify-end">
+                    {h && (
+                        <HoverTip text={h.label}>
+                            <span className="inline-block w-2 h-2 rounded-full" style={{ background: h.color }} data-testid={`health-${rowKey}`} />
+                        </HoverTip>
+                    )}
+                    <span>{display}</span>
+                </span>
+            </td>
+        </tr>
+    );
+}
+
+function BreakevenRow({ label, year, isProfitable, history, info }) {
+    let display, color = null, sublabel = null;
+    const currentYear = new Date().getUTCFullYear();
+    if (isProfitable) {
+        display = `Ya rentable (${year ?? "—"})`;
+        color = "#1D7044";
+    } else if (year == null) {
+        // Either no history or trajectory not converging
+        const hasHistory = Array.isArray(history) && history.length > 0;
+        display = hasHistory ? "No converge" : "Sin datos";
+        color = hasHistory ? "#B32A22" : "#4A4A4A";
+        sublabel = hasHistory ? "La tendencia reciente es plana o se deteriora" : null;
+    } else {
+        const delta = year - currentYear;
+        display = `${year}`;
+        if (delta <= 1) color = "#1D7044";
+        else if (delta <= 3) color = "#D97706";
+        else color = "#B32A22";
+        sublabel = delta <= 0 ? "Ya o en el año actual" : `≈ ${delta} año${delta > 1 ? "s" : ""} si la tendencia se mantiene`;
+    }
+    return (
+        <tr className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`breakeven-row-${label.replace(/\s+/g, "-").toLowerCase()}`}>
+            <td className="px-4 py-2 text-[#4A4A4A]">
+                <HoverTip text={info}>
+                    <span className="underline decoration-dotted underline-offset-2 cursor-help">{label}</span>
+                </HoverTip>
+                {sublabel && <div className="text-[10px] text-[#4A4A4A] mt-0.5 font-mono">{sublabel}</div>}
+            </td>
+            <td className="px-4 py-2 text-right font-mono" style={{ color }}>{display}</td>
+        </tr>
     );
 }
 
