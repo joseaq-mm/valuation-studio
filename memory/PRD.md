@@ -40,6 +40,7 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **✅ COMPLETADO (Feb 2026)** — **POC/POV más visibles y avisos de anomalía**: aumentado el tamaño/contraste de POC/POV en hero cards (text-lg, negro, semibold). Nuevo panel rojo `poc-pov-anomalies` que detecta automáticamente tres casos y explica el porqué con datos: (a) POC ≤ 0 señalando qué factor (gross margin, x_raw, CAGRs, etc.) está colapsando, (b) POV < POC por margen operativo negativo (muestra el factor y resultante), (c) POV ≤ 0 con POC > 0 por margen operativo < −100%.
 - **✅ COMPLETADO (Feb 2026)** — **Tooltips ricos en POC/POV y desglose**: componente `HoverTip` con posicionamiento fixed + clamping de viewport. POC y POV en hero cards muestran "Precio Objetivo de Compra/Venta" al pasar el cursor. Las 8 etiquetas del desglose muestran el cálculo concreto (con valores actuales sustituidos) y reglas de ajuste de factores especiales.
 - **✅ COMPLETADO (Mayo 2026)** — **Watchlist con snapshots manuales** según spec del usuario:
   - localStorage v2: `[{ticker, mode: "auto"|"manual", overrides: {field: value, ...} | null, saved_at}]`. Migración automática desde v1 legacy (`["AAPL", ...]`).

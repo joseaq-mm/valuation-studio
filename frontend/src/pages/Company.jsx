@@ -295,6 +295,67 @@ export default function Company() {
     const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, true);
     const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, false);
 
+    // Detect anomalies in POC/POV and explain them based on the actual inputs.
+    // Returns a list of {title, detail} that surface ONLY when the math produces
+    // a clearly unusable price target (negative or POV<POC). Each item points to
+    // the concrete factor that's collapsing the value so the user can act on it.
+    const pocPovAnomalies = (() => {
+        const out = [];
+        if (!cr || !inputs || cr.poc == null || cr.pov == null) return out;
+        const poc = cr.poc, pov = cr.pov;
+        const b = cr.breakdown || {};
+        const gm = inputs.gross_margin;
+        const om = inputs.operating_margin;
+        const revC = inputs.revenue_cagr_4y;
+        const fcfC = inputs.fcf_cagr_4y;
+        const rev2y = inputs.revenue_2y;
+        const xRaw = b.x_raw_pct;
+
+        // POC ≤ 0 — pinpoint which factor flips the sign.
+        if (poc <= 0) {
+            const reasons = [];
+            if (rev2y != null && rev2y < 0) reasons.push(`Ingresos proyectados a 2y son negativos (${fmtCompact(rev2y)}). El primer factor de la fórmula (Ingresos/acción) ya nace negativo.`);
+            if (gm != null && (1 + gm) < 0) reasons.push(`Margen bruto = ${(gm * 100).toFixed(1)}% → factor (1 + margen) = ${(1 + gm).toFixed(2)} es negativo.`);
+            if (xRaw != null && xRaw < -100) reasons.push(`(FCF 2y − Deuda neta) / MCap = ${xRaw.toFixed(1)}%. Como es < −100%, el factor ajustado (1 + x/100 = ${(1 + xRaw / 100).toFixed(2)}) es negativo. Suele indicar deuda neta muy alta o FCF muy negativo respecto a la capitalización.`);
+            if (revC != null && (1 + revC) < 0) reasons.push(`CAGR ingresos 4y = ${(revC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
+            if (fcfC != null && (1 + fcfC) < 0) reasons.push(`CAGR FCF 4y = ${(fcfC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
+            if (!reasons.length) reasons.push("La combinación de factores deja un POC ≤ 0. Revisa manualmente Ingresos 2y, márgenes y CAGRs.");
+            out.push({
+                title: `POC ≤ 0 → ${fmtPrice(poc, cur)}`,
+                detail: "El precio objetivo de compra no es utilizable porque uno o más factores de la fórmula están colapsando el resultado:",
+                bullets: reasons,
+            });
+        }
+
+        // POV < POC — operating margin is dragging POV below POC.
+        if (poc > 0 && pov > 0 && pov < poc) {
+            const yPct = (om ?? 0) * 100;
+            out.push({
+                title: `POV (${fmtPrice(pov, cur)}) < POC (${fmtPrice(poc, cur)})`,
+                detail: "Tu precio objetivo de venta queda por debajo del de compra, lo que invierte la lógica esperada. Causa concreta según la fórmula:",
+                bullets: [
+                    `Margen operativo = ${yPct.toFixed(2)}% → factor ajustado y = ${b.y_factor != null ? b.y_factor.toFixed(3) : "—"} (cuando y < 0%, el factor se aplica como 1 + y/100, que es < 1, así que POV = POC × y_factor termina menor que POC).`,
+                    "Sugerencia: si crees que la empresa va a recuperar márgenes, edita manualmente 'Margen operativo' a un valor positivo para que POV vuelva a quedar por encima de POC.",
+                ],
+            });
+        }
+
+        // POV ≤ 0 with POC > 0 — rare, only if operating margin < -100%
+        if (poc > 0 && pov <= 0) {
+            const yPct = (om ?? 0) * 100;
+            out.push({
+                title: `POV ≤ 0 → ${fmtPrice(pov, cur)}`,
+                detail: "El precio objetivo de venta colapsa por culpa del margen operativo:",
+                bullets: [
+                    `Margen operativo = ${yPct.toFixed(2)}%. Como es < −100%, el factor (1 + y/100) es ≤ 0 y arrastra POV a territorio negativo.`,
+                    "Edita manualmente 'Margen operativo' a un valor más realista (ej. la media histórica del sector) para obtener un POV válido.",
+                ],
+            });
+        }
+
+        return out;
+    })();
+
     return (
         <div data-testid="company-page">
             {/* Header */}
@@ -355,10 +416,10 @@ export default function Company() {
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="ratio-compra-value">
                         {fmtPctSigned(cr.ratio_compra_pct)}
                     </div>
-                    <div className="mt-2 flex items-center gap-3">
+                    <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="signal-compra">{signalLabel(cr.ratio_compra_pct)}</span>
                         <HoverTip text="POC = Precio Objetivo de Compra. Precio al que la acción te parecería barata según tu fórmula.">
-                            <span className="text-xs text-[#4A4A4A] font-mono underline decoration-dotted underline-offset-2 cursor-help" data-testid="poc-label">POC {cr.poc != null ? fmtPrice(cr.poc, cur) : "—"}</span>
+                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="poc-label">POC {cr.poc != null ? fmtPrice(cr.poc, cur) : "—"}</span>
                         </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de compra.</div>
@@ -368,10 +429,10 @@ export default function Company() {
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="ratio-venta-value">
                         {fmtPctSigned(cr.ratio_venta_pct)}
                     </div>
-                    <div className="mt-2 flex items-center gap-3">
+                    <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct)}</span>
                         <HoverTip text="POV = Precio Objetivo de Venta. Precio al que la acción te parecería cara según tu fórmula.">
-                            <span className="text-xs text-[#4A4A4A] font-mono underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
+                            <span className="text-lg font-mono font-semibold text-black underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
                         </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de venta.</div>
@@ -382,6 +443,26 @@ export default function Company() {
                 <div className="border border-[#D97706] bg-white p-3 mb-6 text-xs font-mono flex items-center gap-2" data-testid="missing-inputs-warning">
                     <AlertCircle size={14} className="text-[#D97706]" />
                     Faltan datos para calcular: {cr.missing_inputs.join(", ")}. Edita manualmente los inputs abajo.
+                </div>
+            )}
+
+            {pocPovAnomalies.length > 0 && (
+                <div className="border border-[#B32A22] bg-white p-4 mb-6" data-testid="poc-pov-anomalies">
+                    <div className="flex items-center gap-2 mb-3">
+                        <AlertCircle size={16} className="text-[#B32A22]" />
+                        <div className="overline text-[#B32A22]">Precio objetivo anómalo — revisa los inputs</div>
+                    </div>
+                    <div className="space-y-3">
+                        {pocPovAnomalies.map((a, i) => (
+                            <div key={i} data-testid={`anomaly-${i}`} className="border-l-2 border-[#B32A22] pl-3">
+                                <div className="font-mono text-sm font-semibold text-black">{a.title}</div>
+                                <div className="text-xs text-[#4A4A4A] mt-1">{a.detail}</div>
+                                <ul className="text-xs text-[#4A4A4A] mt-1 list-disc pl-5 space-y-1 font-sans">
+                                    {a.bullets.map((b, j) => <li key={j}>{b}</li>)}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
