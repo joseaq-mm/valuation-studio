@@ -40,6 +40,9 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **✅ COMPLETADO (Feb 2026)** — **Auto-corregir + tooltips didácticos en ratios clásicos**:
+  - Botón "Aplicar N correcciones" en el panel de anomalías POC/POV. Heurísticas: clip de márgenes a 0% si < 0, clip de CAGRs a −30% si < −100%, ajuste de net_debt para llevar x_raw a −50% si está colapsado. Cada corrección muestra preview "valor antiguo → valor nuevo" con razón. Aplicar deja las correcciones marcadas como `session edits` (ámbar) para que el usuario revise antes de guardar.
+  - Tooltip rico (HoverTip) en los 17 ratios clásicos (P/E, PEG, P/B, P/S, EV/EBITDA, EV/Revenue, ROE, ROA, Profit margin, Debt/Equity, Current ratio, Dividend yield, Beta, Analyst target, Gross margin, Operating margin). Explica qué mide y los rangos "barato/normal/caro" como referencia educativa.
 - **✅ COMPLETADO (Feb 2026)** — **POC/POV más visibles y avisos de anomalía**: aumentado el tamaño/contraste de POC/POV en hero cards (text-lg, negro, semibold). Nuevo panel rojo `poc-pov-anomalies` que detecta automáticamente tres casos y explica el porqué con datos: (a) POC ≤ 0 señalando qué factor (gross margin, x_raw, CAGRs, etc.) está colapsando, (b) POV < POC por margen operativo negativo (muestra el factor y resultante), (c) POV ≤ 0 con POC > 0 por margen operativo < −100%.
 - **✅ COMPLETADO (Feb 2026)** — **Tooltips ricos en POC/POV y desglose**: componente `HoverTip` con posicionamiento fixed + clamping de viewport. POC y POV en hero cards muestran "Precio Objetivo de Compra/Venta" al pasar el cursor. Las 8 etiquetas del desglose muestran el cálculo concreto (con valores actuales sustituidos) y reglas de ajuste de factores especiales.
 - **✅ COMPLETADO (Mayo 2026)** — **Watchlist con snapshots manuales** según spec del usuario:

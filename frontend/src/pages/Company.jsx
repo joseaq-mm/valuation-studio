@@ -10,22 +10,27 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 
 const ratioRows = [
-    ["Trailing P/E", "trailing_pe"],
-    ["Forward P/E", "forward_pe"],
-    ["PEG Ratio", "peg_ratio"],
-    ["P/B", "price_to_book"],
-    ["P/S", "price_to_sales"],
-    ["EV/EBITDA", "ev_to_ebitda"],
-    ["EV/Revenue", "ev_to_revenue"],
-    ["ROE", "roe", "pct"],
-    ["ROA", "roa", "pct"],
-    ["Profit margin", "profit_margin", "pct"],
-    ["Debt/Equity", "debt_to_equity"],
-    ["Current ratio", "current_ratio"],
-    ["Dividend yield", "dividend_yield", "pct"],
-    ["Beta", "beta"],
-    ["Analyst target", "target_mean_price"],
+    ["Trailing P/E", "trailing_pe", null, "Precio entre beneficio neto últimos 12m. Mide cuántos años de beneficios actuales pagas por la acción. < 15 suele ser barato, 15-25 normal, > 30 caro. Ojo: muy dependiente del sector y del momento del ciclo."],
+    ["Forward P/E", "forward_pe", null, "Precio entre beneficio esperado a 12m vista. Más útil que el trailing si la empresa va a crecer/decrecer mucho. Usa las estimaciones de analistas (revisa Forward P/E vs Trailing para ver si esperan mejora)."],
+    ["PEG Ratio", "peg_ratio", null, "Forward P/E dividido por el crecimiento esperado de beneficios. < 1 sugiere infravalorado vs su crecimiento, 1-2 razonable, > 2 caro. Inventado por Peter Lynch."],
+    ["P/B", "price_to_book", null, "Precio entre valor contable (patrimonio neto / acciones). < 1 cotiza por debajo del valor contable. Útil en bancos e industria pesada; poco útil en tech (mucho intangible no contabilizado)."],
+    ["P/S", "price_to_sales", null, "Precio entre ventas por acción. Útil cuando no hay beneficio (early stage, ciclos bajos). < 1 barato, 1-3 normal, > 10 muy caro salvo crecimiento extremo."],
+    ["EV/EBITDA", "ev_to_ebitda", null, "Enterprise Value (mcap + deuda neta) entre EBITDA. Más justo que P/E porque normaliza estructura de capital e impuestos. < 8 barato, 8-15 normal, > 20 caro."],
+    ["EV/Revenue", "ev_to_revenue", null, "Enterprise Value entre ventas. Variante de P/S que incluye la deuda. Útil para empresas con poca rentabilidad o pre-beneficio."],
+    ["ROE", "roe", "pct", "Return on Equity: beneficio neto / patrimonio. Cuánto rinde el capital propio. > 15% bueno, > 20% excelente. Cuidado: un ROE alto con mucha deuda puede ser frágil."],
+    ["ROA", "roa", "pct", "Return on Assets: beneficio neto / activos totales. Mide eficiencia del balance completo. > 5% decente, > 10% muy bueno. Mejor que ROE para comparar empresas con apalancamientos distintos."],
+    ["Profit margin", "profit_margin", "pct", "Beneficio neto / ingresos. > 10% saludable, > 20% excelente. Negativos = pérdidas. Compara siempre dentro del mismo sector (retail ~3%, software ~20%)."],
+    ["Debt/Equity", "debt_to_equity", null, "Deuda total / patrimonio. < 0,5 conservador, 0,5-1,5 normal, > 2 apalancado. Depende mucho del sector (utilities y bancos toleran más)."],
+    ["Current ratio", "current_ratio", null, "Activo corriente / pasivo corriente. Liquidez a corto plazo. > 1,5 saludable, < 1 riesgo. > 3 puede indicar caja parada sin uso productivo."],
+    ["Dividend yield", "dividend_yield", "pct", "Dividendo anual / precio. 0% en growth, 2-4% normal, > 6% sospechoso (puede ser trampa de valor o dividendo en peligro)."],
+    ["Beta", "beta", null, "Volatilidad relativa al mercado. 1 = se mueve como el índice, < 1 menos volátil (defensivas), > 1 más volátil (tech, ciclícas). Beta histórico no predice futuro perfectamente."],
+    ["Analyst target", "target_mean_price", null, "Precio objetivo medio de los analistas que cubren el valor. Útil como referencia pero ten en cuenta que suelen ser optimistas y reaccionar tarde a malas noticias."],
 ];
+
+const marginRowsInfo = {
+    gross_margin: "Ingresos − coste directo del producto, en %. Mide eficiencia productiva. > 40% suele ser bueno (escala, marca, software). En retail/manufactura puede ser <25% sin que sea mala señal.",
+    operating_margin: "Beneficio operativo (antes de impuestos e intereses) / ingresos. Mide eficiencia del negocio core. > 15% sólido, > 25% excelente. Negativo = pierde dinero operando.",
+};
 
 export default function Company() {
     const { ticker } = useParams();
@@ -296,12 +301,19 @@ export default function Company() {
     const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, false);
 
     // Detect anomalies in POC/POV and explain them based on the actual inputs.
-    // Returns a list of {title, detail} that surface ONLY when the math produces
-    // a clearly unusable price target (negative or POV<POC). Each item points to
-    // the concrete factor that's collapsing the value so the user can act on it.
-    const pocPovAnomalies = (() => {
-        const out = [];
-        if (!cr || !inputs || cr.poc == null || cr.pov == null) return out;
+    // Each item also contributes suggested corrections (clipping rules) that the
+    // user can apply in one click. Corrections are deduped by field, keeping the
+    // first one (anomalies are checked in order of severity).
+    const { pocPovAnomalies, pocPovCorrections } = (() => {
+        const anomalies = [];
+        const corrByField = new Map(); // field -> {field, from, to, reason}
+        const addCorr = (field, from, to, reason) => {
+            if (corrByField.has(field)) return;
+            corrByField.set(field, { field, from, to, reason });
+        };
+        if (!cr || !inputs || cr.poc == null || cr.pov == null) {
+            return { pocPovAnomalies: anomalies, pocPovCorrections: [] };
+        }
         const poc = cr.poc, pov = cr.pov;
         const b = cr.breakdown || {};
         const gm = inputs.gross_margin;
@@ -314,13 +326,34 @@ export default function Company() {
         // POC ≤ 0 — pinpoint which factor flips the sign.
         if (poc <= 0) {
             const reasons = [];
-            if (rev2y != null && rev2y < 0) reasons.push(`Ingresos proyectados a 2y son negativos (${fmtCompact(rev2y)}). El primer factor de la fórmula (Ingresos/acción) ya nace negativo.`);
-            if (gm != null && (1 + gm) < 0) reasons.push(`Margen bruto = ${(gm * 100).toFixed(1)}% → factor (1 + margen) = ${(1 + gm).toFixed(2)} es negativo.`);
-            if (xRaw != null && xRaw < -100) reasons.push(`(FCF 2y − Deuda neta) / MCap = ${xRaw.toFixed(1)}%. Como es < −100%, el factor ajustado (1 + x/100 = ${(1 + xRaw / 100).toFixed(2)}) es negativo. Suele indicar deuda neta muy alta o FCF muy negativo respecto a la capitalización.`);
-            if (revC != null && (1 + revC) < 0) reasons.push(`CAGR ingresos 4y = ${(revC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
-            if (fcfC != null && (1 + fcfC) < 0) reasons.push(`CAGR FCF 4y = ${(fcfC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
+            if (rev2y != null && rev2y < 0) {
+                reasons.push(`Ingresos proyectados a 2y son negativos (${fmtCompact(rev2y)}). El primer factor de la fórmula (Ingresos/acción) ya nace negativo.`);
+                // No safe auto-fix for negative revenue; user must decide.
+            }
+            if (gm != null && (1 + gm) < 0) {
+                reasons.push(`Margen bruto = ${(gm * 100).toFixed(1)}% → factor (1 + margen) = ${(1 + gm).toFixed(2)} es negativo.`);
+                addCorr("gross_margin", gm, 0, "Clip margen bruto a 0% (neutraliza el factor sin invertirlo).");
+            }
+            if (xRaw != null && xRaw < -100) {
+                reasons.push(`(FCF 2y − Deuda neta) / MCap = ${xRaw.toFixed(1)}%. Como es < −100%, el factor ajustado (1 + x/100 = ${(1 + xRaw / 100).toFixed(2)}) es negativo. Suele indicar deuda neta muy alta o FCF muy negativo respecto a la capitalización.`);
+                // Heuristic: reduce net_debt so that x_raw becomes -50% (penaliza pero no anula).
+                if (inputs.fcf_2y != null && inputs.market_cap != null) {
+                    const safeNetDebt = inputs.fcf_2y + 0.5 * inputs.market_cap;
+                    if (Number.isFinite(safeNetDebt)) {
+                        addCorr("net_debt", inputs.net_debt, safeNetDebt, "Recorta la deuda neta para que x_raw = −50% (penaliza pero no colapsa).");
+                    }
+                }
+            }
+            if (revC != null && (1 + revC) < 0) {
+                reasons.push(`CAGR ingresos 4y = ${(revC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
+                addCorr("revenue_cagr_4y", revC, -0.30, "Clip CAGR ingresos a −30% (suelo razonable para empresas en deterioro).");
+            }
+            if (fcfC != null && (1 + fcfC) < 0) {
+                reasons.push(`CAGR FCF 4y = ${(fcfC * 100).toFixed(1)}% → factor (1 + CAGR) negativo.`);
+                addCorr("fcf_cagr_4y", fcfC, -0.30, "Clip CAGR FCF a −30% (suelo razonable).");
+            }
             if (!reasons.length) reasons.push("La combinación de factores deja un POC ≤ 0. Revisa manualmente Ingresos 2y, márgenes y CAGRs.");
-            out.push({
+            anomalies.push({
                 title: `POC ≤ 0 → ${fmtPrice(poc, cur)}`,
                 detail: "El precio objetivo de compra no es utilizable porque uno o más factores de la fórmula están colapsando el resultado:",
                 bullets: reasons,
@@ -330,7 +363,7 @@ export default function Company() {
         // POV < POC — operating margin is dragging POV below POC.
         if (poc > 0 && pov > 0 && pov < poc) {
             const yPct = (om ?? 0) * 100;
-            out.push({
+            anomalies.push({
                 title: `POV (${fmtPrice(pov, cur)}) < POC (${fmtPrice(poc, cur)})`,
                 detail: "Tu precio objetivo de venta queda por debajo del de compra, lo que invierte la lógica esperada. Causa concreta según la fórmula:",
                 bullets: [
@@ -338,12 +371,13 @@ export default function Company() {
                     "Sugerencia: si crees que la empresa va a recuperar márgenes, edita manualmente 'Margen operativo' a un valor positivo para que POV vuelva a quedar por encima de POC.",
                 ],
             });
+            addCorr("operating_margin", om, 0, "Clip margen operativo a 0% (neutraliza el factor, POV = POC).");
         }
 
         // POV ≤ 0 with POC > 0 — rare, only if operating margin < -100%
         if (poc > 0 && pov <= 0) {
             const yPct = (om ?? 0) * 100;
-            out.push({
+            anomalies.push({
                 title: `POV ≤ 0 → ${fmtPrice(pov, cur)}`,
                 detail: "El precio objetivo de venta colapsa por culpa del margen operativo:",
                 bullets: [
@@ -351,10 +385,47 @@ export default function Company() {
                     "Edita manualmente 'Margen operativo' a un valor más realista (ej. la media histórica del sector) para obtener un POV válido.",
                 ],
             });
+            addCorr("operating_margin", om, 0, "Clip margen operativo a 0% (neutraliza el factor, POV = POC).");
         }
 
-        return out;
+        return { pocPovAnomalies: anomalies, pocPovCorrections: Array.from(corrByField.values()) };
     })();
+
+    const applyAutoCorrections = () => {
+        if (!pocPovCorrections.length) return;
+        setInputs(prev => {
+            const next = { ...prev };
+            for (const c of pocPovCorrections) next[c.field] = c.to;
+            setSessionEdits(prevEdits => {
+                const ne = { ...prevEdits };
+                for (const c of pocPovCorrections) {
+                    const loaded = wlEntry?.overrides?.[c.field] !== undefined ? wlEntry.overrides[c.field] : autoInputs?.[c.field];
+                    if (!valuesEqual(c.to, loaded)) ne[c.field] = true;
+                    else delete ne[c.field];
+                }
+                return ne;
+            });
+            setCustomRatios(computeCustomRatios(next));
+            return next;
+        });
+        toast.success(`${pocPovCorrections.length} input(s) auto-corregido(s). Revisa, edita o guarda.`);
+    };
+
+    // Map field key to its display label (used in the corrections preview)
+    const fieldLabels = {
+        gross_margin: "Margen bruto",
+        operating_margin: "Margen operativo",
+        revenue_cagr_4y: "CAGR ingresos 4y",
+        fcf_cagr_4y: "CAGR FCF 4y",
+        net_debt: "Deuda neta",
+        revenue_2y: "Ingresos proyectados 2y",
+        fcf_2y: "FCF proyectado 2y",
+    };
+    const fmtCorrValue = (field, v) => {
+        if (v == null || isNaN(v)) return "—";
+        if (field === "gross_margin" || field === "operating_margin" || field === "revenue_cagr_4y" || field === "fcf_cagr_4y") return `${(v * 100).toFixed(2)}%`;
+        return fmtCompact(v);
+    };
 
     return (
         <div data-testid="company-page">
@@ -463,6 +534,32 @@ export default function Company() {
                             </div>
                         ))}
                     </div>
+                    {pocPovCorrections.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-black/10" data-testid="auto-correct-section">
+                            <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                                <div>
+                                    <div className="overline text-[#1D7044]">Auto-corregir</div>
+                                    <div className="text-xs text-[#4A4A4A]">Aplica heurísticas sensatas a los inputs problemáticos. Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
+                                </div>
+                                <button onClick={applyAutoCorrections} className="btn-primary whitespace-nowrap" data-testid="auto-correct-apply">
+                                    Aplicar {pocPovCorrections.length} corrección{pocPovCorrections.length > 1 ? "es" : ""}
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                                {pocPovCorrections.map((c, idx) => (
+                                    <div key={c.field} className="border border-black/10 bg-[#FAF6EE] p-2 text-xs font-mono" data-testid={`correction-${idx}`}>
+                                        <div className="font-sans text-[#4A4A4A]">{fieldLabels[c.field] || c.field}</div>
+                                        <div className="mt-1">
+                                            <span className="text-[#B32A22]">{fmtCorrValue(c.field, c.from)}</span>
+                                            <span className="mx-1 text-[#4A4A4A]">→</span>
+                                            <span className="text-[#1D7044]">{fmtCorrValue(c.field, c.to)}</span>
+                                        </div>
+                                        <div className="text-[10px] text-[#4A4A4A] mt-1 font-sans">{c.reason}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -557,22 +654,34 @@ export default function Company() {
                     </div>
                     <table className="w-full text-sm">
                         <tbody>
-                            {ratioRows.map(([label, key, fmt]) => {
+                            {ratioRows.map(([label, key, fmt, info]) => {
                                 const v = data.classic_ratios?.[key];
                                 const display = v == null ? "—" : fmt === "pct" ? fmtPct(v) : fmtNum(v);
                                 return (
                                     <tr key={key} className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                        <td className="px-4 py-2 text-[#4A4A4A]">{label}</td>
+                                        <td className="px-4 py-2 text-[#4A4A4A]">
+                                            <HoverTip text={info}>
+                                                <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid={`ratio-label-${key}`}>{label}</span>
+                                            </HoverTip>
+                                        </td>
                                         <td className="px-4 py-2 text-right font-mono" data-testid={`ratio-${key}`}>{display}</td>
                                     </tr>
                                 );
                             })}
                             <tr className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                <td className="px-4 py-2 text-[#4A4A4A]">Gross margin</td>
+                                <td className="px-4 py-2 text-[#4A4A4A]">
+                                    <HoverTip text={marginRowsInfo.gross_margin}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid="ratio-label-gross_margin">Gross margin</span>
+                                    </HoverTip>
+                                </td>
                                 <td className="px-4 py-2 text-right font-mono">{fmtPct(data.gross_margin)}</td>
                             </tr>
                             <tr className="border-b border-black/10 hover:bg-[#F5E4D4]">
-                                <td className="px-4 py-2 text-[#4A4A4A]">Operating margin</td>
+                                <td className="px-4 py-2 text-[#4A4A4A]">
+                                    <HoverTip text={marginRowsInfo.operating_margin}>
+                                        <span className="underline decoration-dotted underline-offset-2 cursor-help" data-testid="ratio-label-operating_margin">Operating margin</span>
+                                    </HoverTip>
+                                </td>
                                 <td className="px-4 py-2 text-right font-mono">{fmtPct(data.operating_margin)}</td>
                             </tr>
                         </tbody>
