@@ -357,7 +357,9 @@ export default function Company() {
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="signal-compra">{signalLabel(cr.ratio_compra_pct)}</span>
-                        <span className="text-xs text-[#4A4A4A] font-mono">POC {cr.poc != null ? fmtPrice(cr.poc, cur) : "—"}</span>
+                        <HoverTip text="POC = Precio Objetivo de Compra. Precio al que la acción te parecería barata según tu fórmula.">
+                            <span className="text-xs text-[#4A4A4A] font-mono underline decoration-dotted underline-offset-2 cursor-help" data-testid="poc-label">POC {cr.poc != null ? fmtPrice(cr.poc, cur) : "—"}</span>
+                        </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de compra.</div>
                 </div>
@@ -368,7 +370,9 @@ export default function Company() {
                     </div>
                     <div className="mt-2 flex items-center gap-3">
                         <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_venta_pct) }} data-testid="signal-venta">{signalLabel(cr.ratio_venta_pct)}</span>
-                        <span className="text-xs text-[#4A4A4A] font-mono">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
+                        <HoverTip text="POV = Precio Objetivo de Venta. Precio al que la acción te parecería cara según tu fórmula.">
+                            <span className="text-xs text-[#4A4A4A] font-mono underline decoration-dotted underline-offset-2 cursor-help" data-testid="pov-label">POV {cr.pov != null ? fmtPrice(cr.pov, cur) : "—"}</span>
+                        </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de venta.</div>
                 </div>
@@ -610,10 +614,73 @@ function Modal({ title, children, testid }) {
 
 function Stat({ label, value, tooltip }) {
     return (
-        <div className="grid-cell p-2" title={tooltip}>
-            <div className="overline text-[#4A4A4A] cursor-help">{label}</div>
-            <div className="text-base">{value}</div>
-        </div>
+        <HoverTip text={tooltip}>
+            <div className="grid-cell p-2 cursor-help" data-testid="stat-cell">
+                <div className="overline text-[#4A4A4A] underline decoration-dotted underline-offset-2">{label}</div>
+                <div className="text-base">{value}</div>
+            </div>
+        </HoverTip>
+    );
+}
+
+// Lightweight controlled tooltip. Uses fixed positioning + viewport clamping so it never gets cut by overflow.
+function HoverTip({ text, children }) {
+    const [open, setOpen] = React.useState(false);
+    const [pos, setPos] = React.useState({ top: 0, left: 0, placeAbove: false });
+    const wrapRef = React.useRef(null);
+    const tipRef = React.useRef(null);
+
+    const show = () => {
+        if (!wrapRef.current) return;
+        const r = wrapRef.current.getBoundingClientRect();
+        // First show the tooltip so we can measure it, then reposition next tick.
+        setPos({ top: r.bottom + 8, left: r.left, placeAbove: false });
+        setOpen(true);
+    };
+    const hide = () => setOpen(false);
+
+    React.useLayoutEffect(() => {
+        if (!open || !wrapRef.current || !tipRef.current) return;
+        const wrap = wrapRef.current.getBoundingClientRect();
+        const tip = tipRef.current.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 8;
+        let left = wrap.left;
+        // Clamp horizontally so the tooltip stays on screen
+        if (left + tip.width + margin > vw) left = Math.max(margin, vw - tip.width - margin);
+        if (left < margin) left = margin;
+        // Flip above if there isn't enough room below
+        const placeAbove = wrap.bottom + tip.height + margin > vh && wrap.top - tip.height - margin > 0;
+        const top = placeAbove ? wrap.top - tip.height - 8 : wrap.bottom + 8;
+        setPos({ top, left, placeAbove });
+    }, [open]);
+
+    if (!text) return children;
+    return (
+        <>
+            <span
+                ref={wrapRef}
+                onMouseEnter={show}
+                onMouseLeave={hide}
+                onFocus={show}
+                onBlur={hide}
+                tabIndex={0}
+                className="inline-block"
+            >
+                {children}
+            </span>
+            {open && (
+                <div
+                    ref={tipRef}
+                    role="tooltip"
+                    style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 60, maxWidth: 320, whiteSpace: "pre-line" }}
+                    className="bg-[#111111] text-white text-xs font-mono px-3 py-2 border border-black shadow-md leading-relaxed pointer-events-none"
+                >
+                    {text}
+                </div>
+            )}
+        </>
     );
 }
 
