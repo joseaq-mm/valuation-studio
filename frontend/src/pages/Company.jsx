@@ -37,6 +37,7 @@ export default function Company() {
     // Watchlist state
     const [wlEntry, setWlEntry] = useState(null); // {ticker, mode, overrides, saved_at} or null
     const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+    const [confirmRefresh, setConfirmRefresh] = useState(false);
 
     // Inputs lifecycle
     const [autoInputs, setAutoInputs] = useState(null);    // pure Yahoo values
@@ -46,18 +47,18 @@ export default function Company() {
 
     const hasSessionEdits = Object.keys(sessionEdits).length > 0;
 
-    const load = useCallback(async (refresh = false) => {
+    const load = useCallback(async (refresh = false, ignoreOverrides = false) => {
         try {
             setLoading(true); setError(null);
             const d = await getCompany(ticker, refresh);
             const auto = autoInputsFromData(d);
-            const entry = getWatchlistEntry(ticker);
-            setWlEntry(entry);
-            // Apply saved overrides (if any) on top of auto values. Price always from Yahoo.
+            const entry = ignoreOverrides ? null : getWatchlistEntry(ticker);
+            setWlEntry(ignoreOverrides ? (getWatchlistEntry(ticker) || null) : entry);
+            // Apply saved overrides (if any and not ignored) on top of auto values.
             const merged = { ...auto };
             if (entry && entry.overrides) {
                 for (const [k, v] of Object.entries(entry.overrides)) {
-                    if (k === "current_price") continue; // never apply saved price
+                    if (k === "current_price") continue;
                     merged[k] = v;
                 }
             }
@@ -65,7 +66,6 @@ export default function Company() {
             setAutoInputs(auto);
             setInputs(merged);
             setSessionEdits({});
-            // Compute ratios with merged inputs (will match auto if no overrides)
             setCustomRatios(computeCustomRatios(merged));
         } catch (e) {
             setError(e?.response?.data?.detail || e.message || "Error al cargar");
@@ -112,14 +112,28 @@ export default function Company() {
         return () => window.removeEventListener("beforeunload", handler);
     }, [hasSessionEdits]);
 
-    const handleRefresh = async () => {
-        if (hasSessionEdits) {
-            if (!window.confirm("Tienes cambios sin guardar. ¿Refrescar igualmente? Se perderán.")) return;
+    const handleRefresh = () => {
+        // Refresh re-fetches from Yahoo AND discards any saved overrides for this view.
+        // If there's anything to lose, ask first.
+        const hasSavedOverrides = wlEntry && wlEntry.overrides && Object.keys(wlEntry.overrides).length > 0;
+        if (hasSessionEdits || hasSavedOverrides) {
+            setConfirmRefresh(true);
+            return;
         }
+        doRefresh();
+    };
+
+    const doRefresh = async () => {
         setRefreshing(true);
-        await load(true);
+        // If the ticker has saved overrides, downgrade the watchlist entry to "auto" (overrides removed).
+        const hasSavedOverrides = wlEntry && wlEntry.overrides && Object.keys(wlEntry.overrides).length > 0;
+        if (hasSavedOverrides) {
+            saveToWatchlist(ticker, null); // resets entry to mode=auto, no overrides
+        }
+        await load(true, true); // refresh from Yahoo + ignore overrides
         setRefreshing(false);
-        toast.success("Datos actualizados");
+        setConfirmRefresh(false);
+        toast.success("Datos restaurados desde Yahoo");
     };
 
     // "Save snapshot" — captures current overrides (diff vs auto) and stores in watchlist
@@ -514,6 +528,33 @@ export default function Company() {
                     </div>
                 </Modal>
             )}
+
+            {/* Confirm refresh (discard overrides) modal */}
+            {confirmRefresh && (() => {
+                const hasSavedOverrides = wlEntry && wlEntry.overrides && Object.keys(wlEntry.overrides).length > 0;
+                return (
+                    <Modal title="Volver a los datos de Yahoo" testid="refresh-modal">
+                        <p className="text-sm text-[#4A4A4A] mb-3">
+                            Refrescar recarga los fundamentales actualizados desde Yahoo Finance y descarta cualquier valor manual aplicado a esta vista.
+                        </p>
+                        {hasSavedOverrides && (
+                            <p className="text-sm text-[#B32A22] mb-3" data-testid="refresh-warning-saved">
+                                ⚠ Esta acción está en tu watchlist en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. El ticker seguirá en la watchlist.
+                            </p>
+                        )}
+                        {hasSessionEdits && (
+                            <p className="text-sm text-[#D97706] mb-3" data-testid="refresh-warning-session">
+                                ⚠ Tienes cambios sin guardar que también se perderán.
+                            </p>
+                        )}
+                        <p className="text-xs font-mono text-[#4A4A4A] mb-6">¿Continuar?</p>
+                        <div className="flex gap-2 justify-end">
+                            <button onClick={() => setConfirmRefresh(false)} className="btn-ghost" data-testid="refresh-cancel">Cancelar</button>
+                            <button onClick={doRefresh} className="btn-primary" data-testid="refresh-confirm">Volver a Yahoo</button>
+                        </div>
+                    </Modal>
+                );
+            })()}
         </div>
     );
 }
