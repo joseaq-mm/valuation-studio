@@ -869,6 +869,14 @@ async def translate_summary(ticker: str):
     if not source_en.strip():
         return {"ticker": ticker, "summary_es": "", "source_hash": None, "cached": False}
 
+    # Hard truncate to keep per-call cost under the Emergent LLM key budget ($0.001).
+    # ~1400 chars covers the typical Yahoo summary; longer ones get a clean cut at sentence boundary.
+    MAX_CHARS = 1400
+    if len(source_en) > MAX_CHARS:
+        cut = source_en[:MAX_CHARS]
+        last_period = cut.rfind(". ")
+        source_en = (cut[:last_period + 1] if last_period > 500 else cut) + " […]"
+
     import hashlib
     source_hash = hashlib.sha256(source_en.encode("utf-8")).hexdigest()[:16]
 

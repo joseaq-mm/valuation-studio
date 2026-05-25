@@ -46,6 +46,9 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **✅ COMPLETADO (Feb 2026)** — **Phase B completa**: Google Auth opcional (Emergent-managed), watchlist sync entre dispositivos, multimoneda (166 monedas vía open.er-api.com), screener nocturno con Resend + APScheduler cron 06:00 UTC, traducción de resumen empresa al español con cache permanente.
+  - Backend nuevo: `auth.py`, `fx.py`, `screener.py`. Endpoints: `/api/auth/{session,me,logout,watchlist,notify}`, `/api/fx/rates`, `/api/admin/run-screener`, `/api/company/{ticker}/translate-summary` (truncado a 1400 chars).
+  - Frontend nuevo: `AuthProvider`, `AuthCallback`, `AuthButton`, `WatchlistCloudSync`, `FxProvider`, `CurrencySelector`, banner login + card de notificaciones en Watchlist.
 - **✅ COMPLETADO (Feb 2026)** — **Métricas de crecimiento + breakeven + health indicators**:
   - Backend: `data.growth_metrics` con `revenue_growth_yoy`, `revenue_cagr_3y_hist`, `fcf_margin_ttm`, `rule_of_40`, `breakeven_year_op`, `breakeven_year_fcf` (regresión lineal sobre los últimos 4 años del histórico de operating income / FCF, con horizonte máximo 15 años). También expone `operating_income_history`.
   - Frontend: nueva sección "Crecimiento y rentabilidad futura" debajo de los ratios clásicos (más justa para growth/empresas pre-rentables): Crec. Ingresos YoY, CAGR 3y histórico, Margen FCF (TTM), Rule of 40 (clásico de SaaS), y dos filas de breakeven estimado (operativo y FCF) con etiquetas humanas: "Ya rentable (YYYY)" verde, "YYYY" + "≈ N años si la tendencia se mantiene" ámbar/rojo, "No converge" rojo con subtítulo explicando.
