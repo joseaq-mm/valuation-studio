@@ -52,8 +52,8 @@ class WatchlistPayload(BaseModel):
 
 class PortfolioEntry(BaseModel):
     ticker: str
-    shares: float
-    buy_price: float                  # in `buy_currency`
+    shares: Optional[float] = None  # optional — user can save a ticker without position size
+    buy_price: Optional[float] = None  # optional — fillable later
     buy_currency: Optional[str] = None  # if None, treat as the native currency of the ticker
     buy_date: Optional[str] = None    # ISO date
     note: Optional[str] = None

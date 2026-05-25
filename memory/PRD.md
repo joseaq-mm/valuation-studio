@@ -19,6 +19,7 @@
 
 ## Implementado (Feb 2026)
 - **Cartera real** (`/portfolio`) con posiciones (ticker, acciones, precio compra, moneda, fecha, nota), P/L vivo, P/L %, KPIs totales (invertido, valor actual, P/L absoluto, P/L %), sync cloud cuando logueado.
+- **Posiciones "sólo seguimiento"** — `shares` y `buy_price` son opcionales al crear la posición. La fila aparece con etiqueta `SEGUIMIENTO` y datos en "—"; editar la fila más tarde rellena los datos y recalcula KPIs.
 - **Alertas por fila** (campana on/off) en cada entrada de watchlist y cartera. La campana sólo es interactiva si estás logueado (toast de "Inicia sesión…" si no). El screener cruza con `alert_enabled` por entry y la preferencia global `notify.enabled`.
 - **Toggle ES/EN** completo en cabecera (botón EN/ES junto al selector de moneda). Persistencia en localStorage `vs.lang`. Coberturas en EN: nav, page titles, columnas, hero, footer disclaimer. Tooltips y dialogs internos se quedan en español por ahora (primera pasada).
 - `/api/auth/portfolio` GET/PUT y `WatchlistEntry.alert_enabled` añadidos.

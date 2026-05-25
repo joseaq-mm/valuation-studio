@@ -89,20 +89,26 @@ export default function Portfolio() {
     const displayCurFor = (nativeCur) => useDisplay ? displayCur : nativeCur;
 
     // Totals across all rows (converted to display currency for cross-ticker addition).
-    let totInvested = 0, totNow = 0, anyError = false;
+    // Positions with no shares or no buy_price are NOT counted into invested/now; we just
+    // surface them as "tracked" rows. The "Total invested" KPI counts only complete positions.
+    let totInvested = 0, totNow = 0, anyError = false, completeCount = 0;
     for (const r of rows) {
         const p = r.position || {};
+        if (!p.shares || !p.buy_price) continue;
         const buyCur = p.buy_currency || r.currency || "USD";
         const invested = p.shares * p.buy_price;
         const now = (r.current_price || 0) * (p.shares || 0);
         const investedDisp = fxConvert(invested, buyCur);
         const nowDisp = fxConvert(now, r.currency || buyCur);
-        if (investedDisp == null || nowDisp == null) anyError = true;
-        else { totInvested += investedDisp; totNow += nowDisp; }
+        if (investedDisp == null || nowDisp == null) { anyError = true; continue; }
+        totInvested += investedDisp;
+        totNow += nowDisp;
+        completeCount += 1;
     }
-    const totalsCur = useDisplay ? displayCur : "USD"; // when in NATIVE mode show USD as a normalised total
+    const totalsCur = useDisplay ? displayCur : "USD";
     const totalPl = totNow - totInvested;
     const totalPlPct = totInvested > 0 ? (totalPl / totInvested) * 100 : null;
+    const trackedOnly = rows.length - completeCount;
 
     return (
         <div data-testid="portfolio-page">
@@ -126,12 +132,17 @@ export default function Portfolio() {
                 </div>
             )}
 
-            {rows.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {completeCount > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                     <Kpi label={t("portfolio.total_invested")} value={fmtPrice(totInvested, totalsCur)} testid="kpi-invested" />
                     <Kpi label={t("portfolio.total_now")} value={fmtPrice(totNow, totalsCur)} testid="kpi-now" />
                     <Kpi label={t("portfolio.total_pl")} value={fmtPrice(totalPl, totalsCur)} color={totalPl >= 0 ? "var(--cheap)" : "var(--crimson)"} testid="kpi-pl" />
                     <Kpi label={`${t("portfolio.col_pl_pct")} ${anyError ? "(parcial)" : ""}`} value={totalPlPct == null ? "—" : fmtPctSigned(totalPlPct)} color={(totalPlPct || 0) >= 0 ? "var(--cheap)" : "var(--crimson)"} testid="kpi-pl-pct" />
+                </div>
+            )}
+            {trackedOnly > 0 && (
+                <div className="text-xs font-mono text-[#4A4A4A] mb-4" data-testid="portfolio-tracked-only-note">
+                    {trackedOnly} {trackedOnly === 1 ? "posición sin datos" : "posiciones sin datos"} de acciones/precio (sólo seguimiento). Edita la fila para completar.
                 </div>
             )}
 
@@ -175,29 +186,36 @@ export default function Portfolio() {
                                 );
                                 const buyCur = p.buy_currency || r.currency || "USD";
                                 const showCur = displayCurFor(r.currency || buyCur);
-                                const invested = (p.shares || 0) * (p.buy_price || 0);
-                                const investedDisp = convToDisplay(invested, buyCur);
-                                const now = (r.current_price || 0) * (p.shares || 0);
-                                const nowDisp = convToDisplay(now, r.currency || buyCur);
-                                const buyPriceDisp = convToDisplay(p.buy_price, buyCur);
+                                const hasShares = p.shares != null && p.shares > 0;
+                                const hasBuyPrice = p.buy_price != null && p.buy_price > 0;
+                                const isComplete = hasShares && hasBuyPrice;
+                                const invested = isComplete ? (p.shares * p.buy_price) : null;
+                                const investedDisp = invested == null ? null : convToDisplay(invested, buyCur);
+                                const now = hasShares ? ((r.current_price || 0) * p.shares) : null;
+                                const nowDisp = now == null ? null : convToDisplay(now, r.currency || buyCur);
+                                const buyPriceDisp = hasBuyPrice ? convToDisplay(p.buy_price, buyCur) : null;
                                 const curPriceDisp = convToDisplay(r.current_price, r.currency || buyCur);
                                 const pl = (nowDisp != null && investedDisp != null) ? (nowDisp - investedDisp) : null;
-                                const plPct = (invested > 0 && r.current_price != null) ? ((r.current_price / (p.buy_price || 1)) - 1) * 100 : null;
-                                // ^ P/L % uses native ticker price ratio, currency-agnostic
+                                const plPct = (isComplete && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
                                 const cr = r.custom_ratios || {};
+                                const trackedTag = !isComplete && (
+                                    <span className="overline ml-2 px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px] align-middle" data-testid={`tracked-${p.ticker}`}>SEGUIMIENTO</span>
+                                );
                                 return (
                                     <tr key={p.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
                                         <td className="px-3 py-3 font-mono font-semibold">
                                             <Link to={`/company/${p.ticker}`} className="hover:underline">{p.ticker}</Link>
-                                            {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{p.note}</div>}
+                                            {trackedTag}
+                                            {r.name && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{r.name}</div>}
+                                            {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5 italic">{p.note}</div>}
                                         </td>
-                                        <td className="px-3 py-3 text-right font-mono">{fmtNum(p.shares)}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{fmtPrice(buyPriceDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{fmtPrice(investedDisp, showCur)}</td>
+                                        <td className="px-3 py-3 text-right font-mono">{hasShares ? fmtNum(p.shares) : "—"}</td>
+                                        <td className="px-3 py-3 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
+                                        <td className="px-3 py-3 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
                                         <td className="px-3 py-3 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono">{fmtPrice(nowDisp, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono" style={{ color: (pl || 0) >= 0 ? "var(--cheap)" : "var(--crimson)" }}>{fmtPrice(pl, showCur)}</td>
-                                        <td className="px-3 py-3 text-right font-mono" style={{ color: (plPct || 0) >= 0 ? "var(--cheap)" : "var(--crimson)" }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
+                                        <td className="px-3 py-3 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
+                                        <td className="px-3 py-3 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
+                                        <td className="px-3 py-3 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
                                         <td className="px-3 py-3 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
                                         <td className="px-3 py-3 text-center">
                                             <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{signalLabel(cr.ratio_compra_pct)}</span>
@@ -240,18 +258,30 @@ function Kpi({ label, value, color, testid }) {
 function PositionDialog({ initial, onClose, onSave }) {
     const { t } = useI18n();
     const [ticker, setTicker] = useState(initial?.ticker || "");
-    const [shares, setShares] = useState(initial?.shares ?? "");
-    const [buyPrice, setBuyPrice] = useState(initial?.buy_price ?? "");
+    const [shares, setShares] = useState(initial?.shares == null ? "" : initial.shares);
+    const [buyPrice, setBuyPrice] = useState(initial?.buy_price == null ? "" : initial.buy_price);
     const [buyCurrency, setBuyCurrency] = useState(initial?.buy_currency || "");
     const [buyDate, setBuyDate] = useState(initial?.buy_date || "");
     const [note, setNote] = useState(initial?.note || "");
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const sNum = parseFloat(String(shares).replace(",", "."));
-        const pNum = parseFloat(String(buyPrice).replace(",", "."));
-        if (!ticker.trim() || isNaN(sNum) || sNum <= 0 || isNaN(pNum) || pNum <= 0) {
-            toast.error("Revisa los datos: ticker, acciones y precio son obligatorios.");
+        if (!ticker.trim()) {
+            toast.error("El ticker es obligatorio.");
+            return;
+        }
+        // shares + buy_price are optional — allow saving a ticker as "tracked, no position size yet"
+        const sStr = String(shares).trim().replace(",", ".");
+        const pStr = String(buyPrice).trim().replace(",", ".");
+        const sNum = sStr === "" ? null : parseFloat(sStr);
+        const pNum = pStr === "" ? null : parseFloat(pStr);
+        // If either field has text, it must parse to a positive number
+        if (sStr !== "" && (isNaN(sNum) || sNum <= 0)) {
+            toast.error("Acciones debe ser un número positivo (o déjalo vacío).");
+            return;
+        }
+        if (pStr !== "" && (isNaN(pNum) || pNum <= 0)) {
+            toast.error("Precio de compra debe ser un número positivo (o déjalo vacío).");
             return;
         }
         onSave({
@@ -279,11 +309,11 @@ function PositionDialog({ initial, onClose, onSave }) {
                 <Field label={t("portfolio.field_ticker")}>
                     <input value={ticker} onChange={(e) => setTicker(e.target.value)} className="input-paper font-mono w-full" disabled={!!initial} data-testid="pos-ticker" />
                 </Field>
-                <Field label={t("portfolio.field_shares")}>
-                    <input value={shares} onChange={(e) => setShares(e.target.value)} className="input-paper font-mono w-full" inputMode="decimal" data-testid="pos-shares" />
+                <Field label={`${t("portfolio.field_shares")} (opcional)`}>
+                    <input value={shares} onChange={(e) => setShares(e.target.value)} placeholder="Déjalo vacío si aún no quieres registrar la cantidad" className="input-paper font-mono w-full" inputMode="decimal" data-testid="pos-shares" />
                 </Field>
-                <Field label={t("portfolio.field_buy_price")}>
-                    <input value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} className="input-paper font-mono w-full" inputMode="decimal" data-testid="pos-price" />
+                <Field label={`${t("portfolio.field_buy_price")} (opcional)`}>
+                    <input value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="Déjalo vacío para rellenarlo más tarde" className="input-paper font-mono w-full" inputMode="decimal" data-testid="pos-price" />
                 </Field>
                 <Field label={t("portfolio.field_buy_currency")}>
                     <input value={buyCurrency} onChange={(e) => setBuyCurrency(e.target.value)} placeholder="EUR / USD / GBP…" className="input-paper font-mono w-full uppercase" data-testid="pos-currency" />
