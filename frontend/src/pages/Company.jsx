@@ -230,6 +230,17 @@ export default function Company() {
     const cr = customRatios || {};
     const cur = data.currency || "USD";
 
+    // Smart unit suffix for magnitude values (B/M/K)
+    const unitFor = (v) => {
+        if (v == null || isNaN(v)) return "";
+        const a = Math.abs(v);
+        if (a >= 1e9) return "B";
+        if (a >= 1e6) return "M";
+        if (a >= 1e3) return "K";
+        return "";
+    };
+    const fyLabel = `FY${new Date().getFullYear() + 1} con base TTM`;
+
     // Determine if user has edited the 2y projection vs the auto value (small epsilon to avoid float jitter)
     const isEdited = (a, b) => {
         if (a == null || b == null) return false;
@@ -410,21 +421,26 @@ export default function Company() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {[
-                        ["Ingresos proyectados 2y", "revenue_2y", "(magnitud)", false],
-                        ["FCF proyectado 2y", "fcf_2y", "(magnitud)", false],
-                        ["Acciones en circulación", "shares_outstanding", "(número)", false],
-                        ["Margen bruto", "gross_margin", "(en %, p.ej. 70,00)", true],
-                        ["Margen operativo", "operating_margin", "(en %, p.ej. 20,00)", true],
-                        ["Deuda neta", "net_debt", "(magnitud)", false],
-                        ["Capitalización", "market_cap", "(magnitud)", false],
-                        ["CAGR ingresos 4y", "revenue_cagr_4y", "(en %, p.ej. 23,40)", true],
-                        ["CAGR FCF 4y", "fcf_cagr_4y", "(en %, p.ej. 12,30)", true],
-                        ["Precio acción", "current_price", `(${cur})`, false],
-                    ].map(([label, key, hint, isPercent]) => {
+                        // [label, key, isPercent, magnitudeUnit, helperText]
+                        ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel],
+                        ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel],
+                        ["Acciones en circulación", "shares_outstanding", false, false, ""],
+                        ["Margen bruto", "gross_margin", true, false, ""],
+                        ["Margen operativo", "operating_margin", true, false, ""],
+                        ["Deuda neta", "net_debt", false, true, ""],
+                        ["Capitalización", "market_cap", false, true, ""],
+                        ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, fyLabel],
+                        ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fyLabel],
+                        ["Precio acción", "current_price", false, false, cur],
+                    ].map(([label, key, isPercent, isMagnitude, hint]) => {
                         const status = fieldStatus(key);
                         const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "#111111";
                         const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
                         const statusDot = status === "session" ? "●" : status === "saved" ? "●" : "○";
+                        // Per user's spec: % suffix removed for margins & CAGRs; magnitude inputs get B/M/K when they have a value
+                        const v = inputs?.[key];
+                        const hasValue = v != null && !isNaN(v);
+                        const sideSuffix = (isMagnitude && hasValue) ? unitFor(v) : "";
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
@@ -436,10 +452,11 @@ export default function Company() {
                                     style={{ color: statusColor, fontStyle: status === "session" ? "italic" : "normal", fontWeight: status === "saved" ? 600 : 400 }}
                                     value={inputs?.[key]}
                                     percent={isPercent}
+                                    suffix={!isPercent ? sideSuffix : undefined}
                                     onChange={(num) => updateInput(key, num)}
                                     data-testid={`input-${key}`}
                                 />
-                                <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono">{hint}</div>
+                                <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono min-h-[14px]">{hint}</div>
                             </div>
                         );
                     })}
@@ -487,14 +504,31 @@ export default function Company() {
             {cr.breakdown && (
                 <div className="border border-black bg-white p-4" data-testid="breakdown-section">
                     <div className="overline text-[#4A4A4A] mb-2">Desglose del cálculo POC / POV</div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4 text-sm font-mono">
-                        <Stat label="Rev/Acción 2y" value={fmtNum(cr.breakdown.rev_per_share_2y)} />
-                        <Stat label="× Margen bruto" value={fmtNum(cr.breakdown.margin_factor)} />
-                        <Stat label="x bruto (FCF-NetDebt)/MCap %" value={cr.breakdown.x_raw_pct != null ? fmtNum(cr.breakdown.x_raw_pct) : "—"} />
-                        <Stat label="× x factor (ajustado)" value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)} />
-                        <Stat label="× CAGR Ingresos 4y" value={fmtNum(cr.breakdown.rev_growth_factor)} />
-                        <Stat label="× CAGR FCF 4y" value={fmtNum(cr.breakdown.fcf_growth_factor)} />
-                        <Stat label="× Factor MgOp (POV)" value={cr.breakdown.y_factor != null ? fmtNum(cr.breakdown.y_factor) : "—"} />
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 text-sm font-mono">
+                        <Stat label="Rev/Acción 2y"
+                              value={fmtNum(cr.breakdown.rev_per_share_2y)}
+                              tooltip={`Ingresos 2y / Acciones en circulación = ${fmtNum(inputs?.revenue_2y || 0)} / ${fmtNum(inputs?.shares_outstanding || 0)}`} />
+                        <Stat label="× Margen bruto"
+                              value={fmtNum(cr.breakdown.margin_factor)}
+                              tooltip={`1 + Margen bruto = 1 + ${((inputs?.gross_margin || 0) * 100).toFixed(2)}%`} />
+                        <Stat label="× (FCF-NetDebt)/MCap"
+                              value={cr.breakdown.x_raw_pct != null ? fmtNum(cr.breakdown.x_raw_pct) : "—"}
+                              tooltip={`((FCF 2y − Deuda neta) / Capitalización) × 100 = ((${fmtNum(inputs?.fcf_2y || 0)} − ${fmtNum(inputs?.net_debt || 0)}) / ${fmtNum(inputs?.market_cap || 0)}) × 100`} />
+                        <Stat label="× (FCF-NetDebt)/MCap (ajustado)"
+                              value={fmtNum(cr.breakdown.fcf_minus_netdebt_over_mcap_pct)}
+                              tooltip={`Ajuste sobre el factor anterior:\n• si x < 0  → 1 + x/100  (penaliza pero no anula)\n• si 0 ≤ x ≤ 1  → 1  (neutralidad financiera)\n• si x > 1  → x  (sin cambio)`} />
+                        <Stat label="× CAGR Ingresos 4y"
+                              value={fmtNum(cr.breakdown.rev_growth_factor)}
+                              tooltip={`1 + CAGR ingresos 4y = 1 + ${((inputs?.revenue_cagr_4y || 0) * 100).toFixed(2)}%`} />
+                        <Stat label="× CAGR FCF 4y"
+                              value={fmtNum(cr.breakdown.fcf_growth_factor)}
+                              tooltip={`1 + CAGR FCF 4y = 1 + ${((inputs?.fcf_cagr_4y || 0) * 100).toFixed(2)}%`} />
+                        <Stat label="× Margen operativo"
+                              value={fmtNum(1 + (inputs?.operating_margin || 0))}
+                              tooltip={`1 + Margen operativo = 1 + ${((inputs?.operating_margin || 0) * 100).toFixed(2)}% (coeficiente sin ajustar)`} />
+                        <Stat label="× Margen operativo (ajustado)"
+                              value={cr.breakdown.y_factor != null ? fmtNum(cr.breakdown.y_factor) : "—"}
+                              tooltip={`Ajuste sobre el margen operativo (factor en POV = POC × este factor):\n• si y < 0%  → 1 + y/100  (penaliza pero no anula)\n• si 0% ≤ y ≤ 1%  → 1  (neutralidad)\n• si y > 1%  → 1 + y/100  (sin cambio)`} />
                     </div>
                 </div>
             )}
@@ -574,10 +608,10 @@ function Modal({ title, children, testid }) {
     );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, tooltip }) {
     return (
-        <div className="grid-cell p-2">
-            <div className="overline text-[#4A4A4A]">{label}</div>
+        <div className="grid-cell p-2" title={tooltip}>
+            <div className="overline text-[#4A4A4A] cursor-help">{label}</div>
             <div className="text-base">{value}</div>
         </div>
     );
