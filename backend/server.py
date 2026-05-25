@@ -732,7 +732,7 @@ async def admin_run_screener():
             cached = await db.fundamentals.find_one({"ticker": ticker.upper()}, {"_id": 0})
             return cached.get("data") if cached else None
 
-    return await run_screener(db, _fetch, compute_custom_ratios)
+    return {"ok": True, **(await run_screener(db, _fetch, compute_custom_ratios))}
 
 
 @api_router.post("/company/{ticker}/calculate")
