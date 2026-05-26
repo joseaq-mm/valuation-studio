@@ -74,6 +74,9 @@ export default function Watchlist() {
     useEffect(() => {
         const es = getWatchlist();
         setEntries(es);
+        if (es.length > 100) {
+            toast.warning(`Tu watchlist tiene ${es.length} tickers (límite recomendado: 100). El rendimiento puede verse afectado.`);
+        }
         load(es);
     }, []);
 

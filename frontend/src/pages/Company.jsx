@@ -503,15 +503,6 @@ export default function Company() {
     // Convert a value from native currency to display currency; null-safe.
     const convertCur = (v) => (v == null || isNaN(v)) ? v : fxConvert(v, nativeCur);
 
-    // Smart unit suffix for magnitude values (B/M/K)
-    const unitFor = (v) => {
-        if (v == null || isNaN(v)) return "";
-        const a = Math.abs(v);
-        if (a >= 1e9) return "B";
-        if (a >= 1e6) return "M";
-        if (a >= 1e3) return "K";
-        return "";
-    };
     const fyLabel = `FY${new Date().getFullYear() + 1} con base TTM`;
 
     // Determine if user has edited the 2y projection vs the auto value (small epsilon to avoid float jitter)
@@ -942,7 +933,7 @@ export default function Company() {
                         // [label, key, isPercent, magnitudeUnit, helperText]
                         ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel],
                         ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel],
-                        ["Acciones en circulación", "shares_outstanding", false, false, ""],
+                        ["Acciones en circulación", "shares_outstanding", false, true, ""],
                         ["Margen bruto", "gross_margin", true, false, ""],
                         ["Margen operativo", "operating_margin", true, false, ""],
                         ["Deuda neta", "net_debt", false, true, ""],
@@ -955,10 +946,10 @@ export default function Company() {
                         const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "var(--text-primary)";
                         const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
                         const statusDot = status === "session" ? "●" : status === "saved" ? "●" : "○";
-                        // Per user's spec: % suffix removed for margins & CAGRs; magnitude inputs get B/M/K when they have a value
+                        // Per user's spec: % suffix removed for margins & CAGRs; magnitude inputs
+                        // are displayed in compact form (M/B/T) when not focused, expanding to the
+                        // full number on focus for precise editing.
                         const v = inputs?.[key];
-                        const hasValue = v != null && !isNaN(v);
-                        const sideSuffix = (isMagnitude && hasValue) ? unitFor(v) : "";
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
@@ -968,9 +959,9 @@ export default function Company() {
                                 <LocaleNumberInput
                                     className="input-paper text-base"
                                     style={{ color: statusColor, fontStyle: status === "session" ? "italic" : "normal", fontWeight: status === "saved" ? 600 : 400 }}
-                                    value={inputs?.[key]}
+                                    value={v}
                                     percent={isPercent}
-                                    suffix={!isPercent ? sideSuffix : undefined}
+                                    compact={isMagnitude}
                                     onChange={(num) => updateInput(key, num)}
                                     data-testid={`input-${key}`}
                                 />

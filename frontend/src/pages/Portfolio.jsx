@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Trash2, Plus, X } from "lucide-react";
+import { Trash2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { compare } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert } from "@/lib/portfolio";
@@ -127,7 +127,6 @@ export default function Portfolio() {
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("portfolio.title")}</h1>
                 </div>
                 <div className="flex gap-2">
-                    <Link to="/watchlist" className="btn-ghost" data-testid="portfolio-to-watchlist">{t("watchlist.title")} <ArrowRight size={12} className="inline ml-1" /></Link>
                     <button onClick={() => { setEditing(null); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="portfolio-add">
                         <Plus size={14} /> {t("portfolio.add_position")}
                     </button>

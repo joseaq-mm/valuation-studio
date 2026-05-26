@@ -921,8 +921,8 @@ async def translate_summary(ticker: str):
 @api_router.get("/compare")
 async def compare(tickers: str = Query(..., description="Comma-separated tickers")):
     syms = [s.strip().upper() for s in tickers.split(",") if s.strip()]
-    if not syms or len(syms) > 50:
-        raise HTTPException(status_code=400, detail="Provide 1 to 50 tickers")
+    if not syms or len(syms) > 100:
+        raise HTTPException(status_code=400, detail="Provide 1 to 100 tickers")
     results = []
     for s in syms:
         try:
