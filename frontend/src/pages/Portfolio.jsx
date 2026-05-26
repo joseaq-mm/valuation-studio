@@ -170,6 +170,7 @@ export default function Portfolio() {
                                 <th className="overline text-right px-2 py-2">{t("portfolio.col_buy_price")}</th>
                                 <th className="overline text-right px-2 py-2">{t("portfolio.col_invested")}</th>
                                 <th className="overline text-right px-2 py-2">{t("watchlist.col_price")}</th>
+                                <th className="overline text-right px-2 py-2">{t("watchlist.col_mcap")}</th>
                                 <th className="overline text-right px-2 py-2">{t("portfolio.col_now")}</th>
                                 <th className="overline text-right px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_pl")}>
@@ -198,13 +199,13 @@ export default function Portfolio() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="14" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="15" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {!loading && rows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">
                                         <td className="px-2 py-2 font-mono">{p.ticker}</td>
-                                        <td colSpan="12" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td colSpan="13" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(p.ticker)} data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
                                         </td>
@@ -225,7 +226,9 @@ export default function Portfolio() {
                                 const plPct = (isComplete && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
                                 const cr = r.custom_ratios || {};
                                 const trackedTag = !isComplete && (
-                                    <span className="overline ml-2 px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px] align-middle" data-testid={`tracked-${p.ticker}`}>SEGUIMIENTO</span>
+                                    <HoverTip text="Seguimiento (sin posición real registrada)">
+                                        <span className="overline ml-2 px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px] align-middle cursor-help" data-testid={`tracked-${p.ticker}`}>SEG</span>
+                                    </HoverTip>
                                 );
                                 const manualTag = p.mode === "manual" && (
                                     <span className="overline ml-2 px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px] align-middle" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>
@@ -243,6 +246,7 @@ export default function Portfolio() {
                                         <td className="px-2 py-2 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
                                         <td className="px-2 py-2 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
                                         <td className="px-2 py-2 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
