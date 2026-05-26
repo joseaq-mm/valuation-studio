@@ -38,6 +38,12 @@ export const removePosition = (ticker) => {
     return list;
 };
 
+export const setAllPositionAlerts = (enabled) => {
+    const list = _read().map(p => ({ ...p, alert_enabled: !!enabled }));
+    _write(list);
+    return list;
+};
+
 export const setPositionAlert = (ticker, enabled) => {
     const t = (ticker || "").toUpperCase();
     const list = _read().map(p => (p.ticker || "").toUpperCase() === t ? { ...p, alert_enabled: !!enabled } : p);
