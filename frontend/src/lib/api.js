@@ -13,8 +13,18 @@ export const getCompany = (ticker, refresh = false) =>
 export const recalc = (ticker, inputs) =>
     api.post(`/company/${encodeURIComponent(ticker)}/calculate`, inputs).then(r => r.data);
 
-export const compare = (tickers) =>
-    api.get(`/compare`, { params: { tickers: tickers.join(",") } }).then(r => r.data);
+export const compare = async (tickers) => {
+    if (!tickers || tickers.length === 0) return { results: [] };
+    // Chunk to keep each request small (yfinance + cache friendly)
+    const CHUNK = 6;
+    const chunks = [];
+    for (let i = 0; i < tickers.length; i += CHUNK) chunks.push(tickers.slice(i, i + CHUNK));
+    const responses = await Promise.all(
+        chunks.map(c => api.get(`/compare`, { params: { tickers: c.join(",") } }).then(r => r.data))
+    );
+    const merged = responses.flatMap(r => r.results || []);
+    return { results: merged };
+};
 
 export const searchTickers = (q) =>
     api.get(`/search`, { params: { q } }).then(r => r.data);
