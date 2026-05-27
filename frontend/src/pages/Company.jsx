@@ -1028,7 +1028,7 @@ export default function Company() {
                 <div className="space-y-6">
                     <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
                     <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
-                    <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price) }))} currency={cur} />
+                    <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) }))} currency={cur} />
                 </div>
             </div>
 
@@ -1297,16 +1297,24 @@ function ChartBlock({ title, data, unit, color, type = "line", testid, userEdite
 }
 
 
-// Custom tooltip used by the dual-axis ratio + price chart.
+// Custom tooltip used by the historical POC/POV vs price chart.
 function RatioHistoryTooltip({ active, payload, label, currency }) {
     if (!active || !payload || !payload.length) return null;
     const row = payload[0]?.payload || {};
+    const aboveBuy = row.price != null && row.poc != null ? (row.price <= row.poc) : null;
+    const belowSell = row.price != null && row.pov != null ? (row.price <= row.pov) : null;
     return (
         <div className="bg-white border border-black px-3 py-2 font-mono text-xs">
             <div className="text-[#4A4A4A] mb-1">{label}</div>
-            <div>R. Compra: <span style={{ color: ratioColor(row.ratio_compra_pct) }}>{fmtPctSigned(row.ratio_compra_pct)}</span></div>
-            <div>R. Venta: <span style={{ color: ratioColor(row.ratio_venta_pct, "venta") }}>{fmtPctSigned(row.ratio_venta_pct)}</span></div>
-            <div className="mt-1">Precio cierre: {fmtPrice(row.price, currency)}</div>
+            <div>POC: <span style={{ color: "#B32A22" }}>{fmtPrice(row.poc, currency)}</span></div>
+            <div>POV: <span style={{ color: "#1D7044" }}>{fmtPrice(row.pov, currency)}</span></div>
+            <div className="mt-1">Precio cierre: <span style={{ color: "#052049" }}>{fmtPrice(row.price, currency)}</span></div>
+            {aboveBuy != null && (
+                <div className="mt-1 text-[10px] text-[#4A4A4A]">
+                    Vs POC: {aboveBuy ? "precio ≤ POC (barata)" : "precio > POC"}
+                    {belowSell != null && ` · Vs POV: ${belowSell ? "precio ≤ POV" : "precio > POV"}`}
+                </div>
+            )}
         </div>
     );
 }
@@ -1315,25 +1323,25 @@ function RatioHistoryChart({ series, currency }) {
     if (!series || series.length === 0) {
         return (
             <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
-                <div className="overline text-[#4A4A4A] mb-1">Histórico Ratio Compra / Venta vs Precio</div>
+                <div className="overline text-[#4A4A4A] mb-1">Histórico POC / POV vs Precio</div>
                 <div className="text-sm text-[#4A4A4A]">Sin datos históricos suficientes para reconstruir la serie.</div>
             </div>
         );
     }
     const data = series.map(s => ({
         year: String(s.year),
-        ratio_compra_pct: s.ratio_compra_pct,
-        ratio_venta_pct: s.ratio_venta_pct,
+        poc: s.poc,
+        pov: s.pov,
         price: s.price,
     }));
     return (
         <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
             <div className="flex items-start justify-between mb-1">
                 <div>
-                    <div className="overline text-[#4A4A4A]">Histórico Ratio Compra / Venta vs Precio</div>
+                    <div className="overline text-[#4A4A4A]">Histórico POC / POV vs Precio</div>
                     <div className="font-serif text-xl">Tendencia anual</div>
                     <div className="text-[10px] font-mono text-[#4A4A4A] mt-1 max-w-md leading-relaxed">
-                        Si el ratio cae con el precio: posible deterioro fundamental. Si el ratio cae mientras el precio sube: el mercado paga más por menos → posible trampa al alza. Si el ratio sube con caída de precio: posible oportunidad si los fundamentales aguantan.
+                        Compara precio de cierre contra <span style={{ color: "#B32A22" }} className="font-semibold">POC</span> (precio objetivo de compra) y <span style={{ color: "#1D7044" }} className="font-semibold">POV</span> (precio objetivo de venta). Si el precio cae por debajo del POC: zona barata histórica. Si los POC/POV caen con el precio: deterioro fundamental real. Si los POC/POV suben mientras el precio cae: posible oportunidad.
                     </div>
                 </div>
             </div>
@@ -1341,15 +1349,13 @@ function RatioHistoryChart({ series, currency }) {
                 <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
                     <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                    <YAxis yAxisId="left" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
-                           tickFormatter={(v) => `${Math.round(v)}%`} label={{ value: "Ratio (%)", angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
-                           tickFormatter={(v) => fmtCompact(v)} label={{ value: `Precio (${currency})`, angle: 90, position: "insideRight", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
+                    <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
+                           tickFormatter={(v) => fmtCompact(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
                     <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
                     <Legend wrapperStyle={{ fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    <Line yAxisId="left" type="monotone" dataKey="ratio_compra_pct" name="R. Compra" stroke="#B32A22" strokeWidth={2} dot={{ r: 4, fill: "#B32A22" }} />
-                    <Line yAxisId="left" type="monotone" dataKey="ratio_venta_pct" name="R. Venta" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 4, fill: "#1D7044" }} />
-                    <Line yAxisId="right" type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2} strokeDasharray="2 4" dot={{ r: 3, fill: "#052049" }} />
+                    <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={{ r: 4, fill: "#B32A22" }} connectNulls />
+                    <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 4, fill: "#1D7044" }} connectNulls />
+                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: 3, fill: "#052049" }} />
                 </ComposedChart>
             </ResponsiveContainer>
         </div>

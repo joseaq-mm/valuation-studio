@@ -850,6 +850,8 @@ async def ratio_history(ticker: str):
             "price": price,
             "ratio_compra_pct": ratios.get("ratio_compra_pct"),
             "ratio_venta_pct": ratios.get("ratio_venta_pct"),
+            "poc": ratios.get("poc"),
+            "pov": ratios.get("pov"),
         })
 
     return {"ticker": ticker, "series": series}
