@@ -134,6 +134,12 @@ export default function Portfolio() {
                 <div>
                     <div className="overline text-[#B32A22]">{t("portfolio.tag")}</div>
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("portfolio.title")}</h1>
+                    {positions.length > 0 && (
+                        <div className="text-xs text-[#4A4A4A] font-mono mt-1" data-testid="portfolio-count">
+                            {positions.length} {positions.length === 1 ? "posición" : "posiciones"}
+                            {trackedOnly > 0 && <span className="opacity-70"> · {completeCount} con datos · {trackedOnly} en seguimiento</span>}
+                        </div>
+                    )}
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => { setEditing(null); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="portfolio-add">

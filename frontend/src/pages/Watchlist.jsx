@@ -79,6 +79,20 @@ export default function Watchlist() {
             toast.warning(`Tu watchlist tiene ${es.length} tickers (límite recomendado: 100). El rendimiento puede verse afectado.`);
         }
         load(es);
+        // Stay in sync with localStorage updates (e.g. per-row alert toggle,
+        // master alert toggle, or adds from another page). We only refresh
+        // `entries` so the master bell + counter reflect the new state;
+        // `rows` keep their fresh Yahoo data and we just re-merge each entry.
+        const onChange = () => {
+            const next = getWatchlist();
+            setEntries(next);
+            setRows((prev) => prev.map(r => {
+                const updated = next.find(e => e.ticker === r.entry.ticker);
+                return updated ? { ...r, entry: updated } : r;
+            }));
+        };
+        window.addEventListener("vs:watchlist-changed", onChange);
+        return () => window.removeEventListener("vs:watchlist-changed", onChange);
     }, []);
 
     const handleRemove = (t) => {
@@ -103,6 +117,12 @@ export default function Watchlist() {
                 <div>
                     <div className="overline text-[#B32A22]">{t("watchlist.tag")}</div>
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("watchlist.title")}</h1>
+                    {entries.length > 0 && (
+                        <div className="text-xs text-[#4A4A4A] font-mono mt-1" data-testid="watchlist-count">
+                            {entries.length} {entries.length === 1 ? "empresa" : "empresas"}
+                            {activeAlertCount > 0 && <span className="opacity-70"> · {activeAlertCount} con alerta activa</span>}
+                        </div>
+                    )}
                 </div>
                 <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">{t("nav.compare")} <ArrowRight size={12} className="inline ml-1" /></Link>
             </div>
