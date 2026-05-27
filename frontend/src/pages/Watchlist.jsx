@@ -10,8 +10,9 @@ import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { notifyGet, notifyPut } from "@/lib/api";
 import AlertToggle from "@/components/AlertToggle";
+import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
-import { Trash2, ArrowRight, Bell, BellOff } from "lucide-react";
+import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 /**
@@ -87,11 +88,10 @@ export default function Watchlist() {
         toast("Quitada");
     };
 
-    const allAlertsOn = entries.length > 0 && entries.every(e => e.alert_enabled);
-    const toggleAllAlerts = () => {
+    const activeAlertCount = entries.filter(e => e.alert_enabled).length;
+    const toggleAllAlerts = (next) => {
         if (!user) { toast.message(t("alerts.requires_login")); return; }
         if (entries.length === 0) return;
-        const next = !allAlertsOn;
         const list = setAllWatchlistAlerts(next);
         setEntries(list);
         toast.success(next ? "Alertas activadas en toda la watchlist" : "Alertas desactivadas en toda la watchlist");
@@ -188,18 +188,12 @@ export default function Watchlist() {
                                     </HoverTip>
                                 </th>
                                 <th className="overline text-center px-2 py-2">
-                                    <HoverTip text={allAlertsOn ? "Desactivar todas las alertas" : "Activar todas las alertas"}>
-                                        <button
-                                            type="button"
-                                            onClick={toggleAllAlerts}
-                                            className="inline-flex items-center justify-center hover:opacity-70 transition-opacity"
-                                            style={{ color: allAlertsOn ? "var(--cheap)" : "var(--text-primary)" }}
-                                            data-testid="alert-toggle-all"
-                                            aria-pressed={allAlertsOn}
-                                        >
-                                            {allAlertsOn ? <Bell size={14} /> : <BellOff size={14} />}
-                                        </button>
-                                    </HoverTip>
+                                    <MasterAlertToggle
+                                        total={entries.length}
+                                        activeCount={activeAlertCount}
+                                        onChange={toggleAllAlerts}
+                                        disabled={!user}
+                                    />
                                 </th>
                                 <th className="px-2 py-2" />
                             </tr>

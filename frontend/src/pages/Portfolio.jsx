@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, Plus, X, Bell, BellOff } from "lucide-react";
+import { Trash2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { compare } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import AlertToggle from "@/components/AlertToggle";
+import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 
@@ -93,11 +94,10 @@ export default function Portfolio() {
         toast.success(next ? t("alerts.row_on") : t("alerts.row_off"));
     };
 
-    const allAlertsOn = positions.length > 0 && positions.every(p => p.alert_enabled);
-    const toggleAllAlerts = () => {
+    const activeAlertCount = positions.filter(p => p.alert_enabled).length;
+    const toggleAllAlerts = (next) => {
         if (!user) { toast.message(t("alerts.requires_login")); return; }
         if (positions.length === 0) return;
-        const next = !allAlertsOn;
         setAllPositionAlerts(next);
         toast.success(next ? "Alertas activadas en todas las posiciones" : "Alertas desactivadas en todas las posiciones");
     };
@@ -204,18 +204,12 @@ export default function Portfolio() {
                                     </HoverTip>
                                 </th>
                                 <th className="overline text-center px-2 py-2">
-                                    <HoverTip text={allAlertsOn ? "Desactivar todas las alertas" : "Activar todas las alertas"}>
-                                        <button
-                                            type="button"
-                                            onClick={toggleAllAlerts}
-                                            className="inline-flex items-center justify-center hover:opacity-70 transition-opacity"
-                                            style={{ color: allAlertsOn ? "var(--cheap)" : "var(--text-primary)" }}
-                                            data-testid="alert-toggle-all"
-                                            aria-pressed={allAlertsOn}
-                                        >
-                                            {allAlertsOn ? <Bell size={14} /> : <BellOff size={14} />}
-                                        </button>
-                                    </HoverTip>
+                                    <MasterAlertToggle
+                                        total={positions.length}
+                                        activeCount={activeAlertCount}
+                                        onChange={toggleAllAlerts}
+                                        disabled={!user}
+                                    />
                                 </th>
                                 <th className="overline text-right px-2 py-2"></th>
                             </tr>
