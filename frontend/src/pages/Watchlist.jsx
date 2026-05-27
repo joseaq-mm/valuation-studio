@@ -10,6 +10,7 @@ import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { notifyGet, notifyPut } from "@/lib/api";
 import AlertToggle from "@/components/AlertToggle";
+import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
 import { Trash2, ArrowRight } from "lucide-react";
@@ -46,9 +47,25 @@ export default function Watchlist() {
 
     useEffect(() => {
         if (!user) { setNotify(null); return; }
-        notifyGet().then(setNotify).catch(() => setNotify({ enabled: false, cross_buy_zone: true, cross_sell_zone: true }));
+        notifyGet().then((n) => {
+            // The per-row bell is now the single source of truth for activation.
+            // Auto-enable the global flags silently so emails actually flow when
+            // the user toggles a row bell. We only push to backend if something
+            // is missing to avoid spurious writes on every mount.
+            const desired = {
+                enabled: true,
+                cross_buy_zone: n?.cross_buy_zone !== false,
+                cross_sell_zone: n?.cross_sell_zone !== false,
+            };
+            setNotify(desired);
+            if (!n?.enabled || n?.cross_buy_zone === false || n?.cross_sell_zone === false) {
+                notifyPut(desired).catch(() => { /* non-fatal */ });
+            }
+        }).catch(() => setNotify({ enabled: true, cross_buy_zone: true, cross_sell_zone: true }));
     }, [user]);
 
+    // Kept for potential future preferences UI; not used by the simplified banner.
+    // eslint-disable-next-line no-unused-vars
     const updateNotify = async (patch) => {
         const next = { ...(notify || {}), ...patch };
         setNotify(next);
@@ -136,48 +153,7 @@ export default function Watchlist() {
                 </div>
             )}
 
-            {user && notify && (
-                <div className="border border-black bg-white p-4 mb-6" data-testid="notify-card">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <div className="overline text-[#4A4A4A]">{t("alerts.tag")}</div>
-                            <div className="text-xs text-[#4A4A4A] max-w-md">
-                                Cada noche (06:00 UTC) revisamos los tickers que tengan la <span className="font-semibold">campana activada</span> en tu watchlist y cartera. Te avisamos solo cuando una acción <span className="text-[#1D7044] font-semibold">cruza a barata</span> o <span className="text-[#B32A22] font-semibold">deja de estar barata</span>.
-                            </div>
-                        </div>
-                        <label className="flex items-center gap-2 cursor-pointer" data-testid="notify-enabled">
-                            <input
-                                type="checkbox"
-                                checked={!!notify.enabled}
-                                onChange={(e) => updateNotify({ enabled: e.target.checked })}
-                            />
-                            <span className="overline">{notify.enabled ? "Activadas" : "Desactivadas"}</span>
-                        </label>
-                    </div>
-                    {notify.enabled && (
-                        <div className="flex flex-wrap gap-4 mt-3 text-xs">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={!!notify.cross_buy_zone}
-                                    onChange={(e) => updateNotify({ cross_buy_zone: e.target.checked })}
-                                    data-testid="notify-buy"
-                                />
-                                <span>Avisarme cuando cruza a <span className="text-[#1D7044] font-semibold">BARATA</span></span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={!!notify.cross_sell_zone}
-                                    onChange={(e) => updateNotify({ cross_sell_zone: e.target.checked })}
-                                    data-testid="notify-sell"
-                                />
-                                <span>Avisarme cuando <span className="text-[#B32A22] font-semibold">deja de estar barata</span></span>
-                            </label>
-                        </div>
-                    )}
-                </div>
-            )}
+            {entries.length > 0 && <AlertInfoBanner context="watchlist" />}
 
             {!entries.length ? (
                 <div className="border border-black bg-white p-12 text-center" data-testid="watchlist-empty">

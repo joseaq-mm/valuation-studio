@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import AlertToggle from "@/components/AlertToggle";
+import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
@@ -154,6 +155,8 @@ export default function Portfolio() {
                     <div className="text-[#4A4A4A]">{t("watchlist.login_prompt_text")}</div>
                 </div>
             )}
+
+            {positions.length > 0 && <AlertInfoBanner context="portfolio" />}
 
             {completeCount > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
