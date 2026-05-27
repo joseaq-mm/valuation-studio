@@ -73,7 +73,7 @@ export const savePortfolioOverrides = (ticker, overrides) => {
             mode: overrides ? "manual" : "auto",
             overrides: overrides || null,
             saved_at: new Date().toISOString(),
-            alert_enabled: false,
+            alert_enabled: true,
         });
     } else {
         list[idx] = {

@@ -25,10 +25,22 @@ export default function MasterAlertToggle({ total, activeCount, onChange, disabl
     const state = activeCount === 0 ? "off" : activeCount === total ? "on" : "indeterminate";
     const next = state === "on" ? false : true;
 
-    const tip =
+    const headline =
         state === "on" ? `Desactivar todas las alertas (${activeCount}/${total} activas)`
         : state === "off" ? `Activar todas las alertas (${activeCount}/${total} activas)`
         : `Activar todas las alertas (${activeCount}/${total} activas)`;
+
+    const tip = (
+        <div className="space-y-2 text-left">
+            <div className="font-semibold">{headline}</div>
+            <div>
+                Cuando están activadas, cada noche (06:00 UTC) recibirás un email si la acción <span className="text-[var(--cheap)] font-semibold">cruza a BARATA</span> o <span className="text-[var(--crimson)] font-semibold">deja de estar barata</span> según tu Ratio Compra y umbrales.
+            </div>
+            <div className="text-[11px] opacity-80 pt-1 border-t border-white/20">
+                Por defecto: <span className="font-semibold">Cartera ACTIVADAS</span> (te avisa de lo que ya tienes) · <span className="font-semibold">Watchlist DESACTIVADAS</span> (lista amplia — activa sólo las que de verdad quieres vigilar).
+            </div>
+        </div>
+    );
 
     const baseColor =
         state === "on" ? "var(--cheap)"
@@ -51,7 +63,7 @@ export default function MasterAlertToggle({ total, activeCount, onChange, disabl
                 className="inline-flex items-center justify-center w-6 h-6 hover:opacity-70 transition-opacity disabled:opacity-40"
                 style={{ color: baseColor, ...bgStyle }}
                 aria-pressed={state === "on"}
-                aria-label={tip}
+                aria-label={headline}
                 data-testid={testid}
                 data-state={state}
             >

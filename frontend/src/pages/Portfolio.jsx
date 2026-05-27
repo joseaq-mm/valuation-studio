@@ -345,7 +345,7 @@ function PositionDialog({ initial, onClose, onSave }) {
             buy_currency: buyCurrency.trim().toUpperCase() || null,
             buy_date: buyDate || null,
             note: note.trim() || null,
-            alert_enabled: initial?.alert_enabled || false,
+            alert_enabled: initial ? !!initial.alert_enabled : true,
         });
     };
 
