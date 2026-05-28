@@ -51,6 +51,18 @@ export default function Compare() {
 
     const metricRows = [
         { label: "Precio", get: r => fmtPrice(convPrice(r), displayCurFor(r)), align: "right" },
+        { label: "POC (objetivo compra)", get: r => {
+            const v = r.custom_ratios?.poc;
+            if (v == null) return "—";
+            const conv = useDisplay ? fxConvert(v, r.currency) : v;
+            return <span style={{ color: "#B32A22" }}>{fmtPrice(conv, displayCurFor(r))}</span>;
+        }, align: "right" },
+        { label: "POV (objetivo venta)", get: r => {
+            const v = r.custom_ratios?.pov;
+            if (v == null) return "—";
+            const conv = useDisplay ? fxConvert(v, r.currency) : v;
+            return <span style={{ color: "#1D7044" }}>{fmtPrice(conv, displayCurFor(r))}</span>;
+        }, align: "right" },
         { label: "Market Cap", get: r => fmtNum(convMcap(r)), align: "right" },
         { label: "Currency", get: r => useDisplay ? `${r.currency} → ${displayCur}` : (r.currency || "—"), align: "center" },
         { label: "Ratio Compra", get: r => {
