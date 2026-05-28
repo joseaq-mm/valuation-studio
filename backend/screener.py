@@ -38,28 +38,36 @@ def _signal_for(pct: Optional[float], cheap: float, fair: float) -> str:
 
 
 def _crossed_into_buy_zone(prev: str, now: str) -> bool:
+    """Ratio Compra crossed to BARATA: precio ≤ POC."""
     return prev != "BARATA" and now == "BARATA"
 
 
-def _crossed_out_of_buy_zone(prev: str, now: str) -> bool:
-    return prev == "BARATA" and now != "BARATA"
+def _crossed_into_sell_zone(prev: str, now: str) -> bool:
+    """Ratio Venta crossed to CARA: precio > POV (target sell reached/exceeded)."""
+    return prev != "CARA" and now == "CARA"
 
 
 def _build_email_html(user_name: str, events: List[Dict[str, Any]]) -> str:
     rows = []
     for e in events:
-        color = "#1D7044" if e["direction"] == "into_buy" else "#B32A22"
-        arrow = "→" if e["direction"] == "into_buy" else "←"
+        is_buy = e["direction"] == "into_buy"
+        color = "#1D7044" if is_buy else "#B32A22"
+        arrow = "→"
+        kind_label = "Ratio Compra · cruza a BARATA" if is_buy else "Ratio Venta · cruza a CARA"
+        ratio_pct = e["now_ratio_compra"] if is_buy else e["now_ratio_venta"]
         rows.append(f"""
             <tr>
-                <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:monospace;font-weight:600;">{e['ticker']}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:monospace;font-weight:600;vertical-align:top;">
+                    {e['ticker']}
+                    <div style="font-family:sans-serif;font-size:10px;color:#4A4A4A;font-weight:400;margin-top:2px;">{kind_label}</div>
+                </td>
                 <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:sans-serif;">
                     <span style="color:#4A4A4A;">{e['prev_signal']}</span>
                     <span style="color:{color};margin:0 6px;">{arrow}</span>
                     <span style="color:{color};font-weight:600;">{e['now_signal']}</span>
                 </td>
                 <td style="padding:8px 12px;border-bottom:1px solid #00000010;text-align:right;font-family:monospace;color:{color};">
-                    {e['now_ratio_compra']:+.1f}%
+                    {ratio_pct:+.1f}%
                 </td>
             </tr>""")
     rows_html = "".join(rows)
@@ -192,24 +200,29 @@ async def run_screener(db, get_company_data, compute_custom_ratios) -> Dict[str,
             ratios = compute_custom_ratios(merged)
             now_rc = ratios.get("ratio_compra_pct")
             now_rv = ratios.get("ratio_venta_pct")
-            now_signal = _signal_for(now_rc, cheap, fair)
+            now_signal_buy = _signal_for(now_rc, cheap, fair)
+            now_signal_sell = _signal_for(now_rv, cheap, fair)
 
             prev_doc = await db.screener_last_signals.find_one(
                 {"user_id": user_id, "ticker": ticker}, {"_id": 0}
             )
-            prev_signal = (prev_doc or {}).get("signal") or "—"
+            prev_signal_buy = (prev_doc or {}).get("signal") or "—"
+            prev_signal_sell = (prev_doc or {}).get("signal_sell") or "—"
 
             direction = None
-            if want_buy and _crossed_into_buy_zone(prev_signal, now_signal):
+            event_signal = None
+            if want_buy and _crossed_into_buy_zone(prev_signal_buy, now_signal_buy):
                 direction = "into_buy"
-            elif want_sell and _crossed_out_of_buy_zone(prev_signal, now_signal):
-                direction = "out_of_buy"
+                event_signal = (prev_signal_buy, now_signal_buy)
+            elif want_sell and _crossed_into_sell_zone(prev_signal_sell, now_signal_sell):
+                direction = "into_sell"
+                event_signal = (prev_signal_sell, now_signal_sell)
 
-            if direction and prev_signal != "—":
+            if direction and event_signal[0] != "—":
                 events.append({
                     "ticker": ticker,
-                    "prev_signal": prev_signal,
-                    "now_signal": now_signal,
+                    "prev_signal": event_signal[0],
+                    "now_signal": event_signal[1],
                     "now_ratio_compra": now_rc or 0.0,
                     "now_ratio_venta": now_rv or 0.0,
                     "direction": direction,
@@ -220,7 +233,8 @@ async def run_screener(db, get_company_data, compute_custom_ratios) -> Dict[str,
                 {"$set": {
                     "user_id": user_id,
                     "ticker": ticker,
-                    "signal": now_signal,
+                    "signal": now_signal_buy,
+                    "signal_sell": now_signal_sell,
                     "ratio_compra_pct": now_rc,
                     "ratio_venta_pct": now_rv,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
