@@ -4,7 +4,8 @@ import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from 
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import { getWatchlistTickers } from "@/lib/storage";
-import { X, Plus } from "lucide-react";
+import TickerAutocomplete from "@/components/TickerAutocomplete";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Compare() {
@@ -21,7 +22,7 @@ export default function Compare() {
     const displayCurFor = (r) => useDisplay ? displayCur : r.currency;
 
     const add = (t) => {
-        const sym = t.trim().toUpperCase();
+        const sym = (t || "").trim().toUpperCase();
         if (!sym || tickers.includes(sym)) return;
         if (tickers.length >= 6) { toast.error("Máximo 6 empresas"); return; }
         setTickers([...tickers, sym]);
@@ -88,16 +89,14 @@ export default function Compare() {
 
             <div className="border border-black bg-white p-4 mb-6" data-testid="compare-toolbar">
                 <div className="flex flex-wrap gap-2 items-center">
-                    <div className="flex border border-black">
-                        <input
+                    <div className="w-72">
+                        <TickerAutocomplete
                             value={input}
-                            onChange={(e) => setInput(e.target.value.toUpperCase())}
-                            onKeyDown={(e) => { if (e.key === "Enter") add(input); }}
-                            placeholder="Añadir ticker"
-                            className="px-3 py-2 outline-none font-mono text-sm"
-                            data-testid="compare-input"
+                            onChange={setInput}
+                            onPick={(r) => add(r.symbol)}
+                            placeholder="Buscar empresa o ticker (AAPL, Apple, SAN.MC…)"
+                            testid="compare-input"
                         />
-                        <button onClick={() => add(input)} className="btn-primary !py-2" data-testid="compare-add"><Plus size={14} /></button>
                     </div>
                     <button onClick={loadFromWl} className="btn-ghost" data-testid="compare-from-watchlist">Cargar watchlist</button>
                     <button onClick={loadAll} className="btn-primary" disabled={!tickers.length || loading} data-testid="compare-load">
