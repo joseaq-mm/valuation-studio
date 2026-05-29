@@ -136,8 +136,8 @@ export default function Watchlist() {
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("watchlist.title")}</h1>
                     {entries.length > 0 && (
                         <div className="text-xs text-[#4A4A4A] font-mono mt-1" data-testid="watchlist-count">
-                            {entries.length} {entries.length === 1 ? "empresa" : "empresas"}
-                            {activeAlertCount > 0 && <span className="opacity-70"> · {activeAlertCount} con alerta activa</span>}
+                            {t("watchlist.count_companies", { n: entries.length })}
+                            {activeAlertCount > 0 && <span className="opacity-70"> · {t("watchlist.count_with_alert", { n: activeAlertCount })}</span>}
                         </div>
                     )}
                 </div>

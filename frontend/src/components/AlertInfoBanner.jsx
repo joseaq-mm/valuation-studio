@@ -1,5 +1,6 @@
 import React from "react";
 import { Bell } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 /**
  * Wide info banner shown above the Watchlist / Portfolio table that explains
@@ -9,10 +10,30 @@ import { Bell } from "lucide-react";
  * with the table — purely informational.
  */
 export default function AlertInfoBanner({ context = "watchlist" }) {
+    const { t } = useI18n();
     const isPortfolio = context === "portfolio";
-    const defaultLine = isPortfolio
-        ? <>En esta página las alertas se <span className="font-semibold text-[#1D7044]">activan por defecto</span> al añadir una posición (te interesa que te avisen de lo que ya tienes en cartera).</>
-        : <>En esta página las alertas vienen <span className="font-semibold">desactivadas por defecto</span> al añadir una empresa, para evitar ruido en listas amplias de seguimiento — activa la campanita en las que de verdad quieras vigilar.</>;
+    // Inline color spans for the templated strings
+    const cheap = <span className="text-[#1D7044] font-semibold">↓</span>;
+    const expensive = <span className="text-[#B32A22] font-semibold">↑</span>;
+    const bellActive = <span className="font-semibold" style={{ color: "var(--cheap)" }}>•</span>;
+    const active = <span className="font-semibold text-[#1D7044]">●</span>;
+    const off = <span className="font-semibold">○</span>;
+
+    const fillTemplate = (key, vars) => {
+        const src = t(key);
+        const out = [];
+        let s = src;
+        for (const [k, node] of Object.entries(vars)) {
+            const idx = s.indexOf(`{${k}}`);
+            if (idx >= 0) {
+                if (idx > 0) out.push(s.slice(0, idx));
+                out.push(<React.Fragment key={k}>{node}</React.Fragment>);
+                s = s.slice(idx + k.length + 2);
+            }
+        }
+        if (s) out.push(s);
+        return out;
+    };
 
     return (
         <div className="border border-black bg-white p-4 mb-6 flex flex-wrap items-start gap-3 text-sm" data-testid={`alert-info-${context}`}>
@@ -20,19 +41,21 @@ export default function AlertInfoBanner({ context = "watchlist" }) {
                 <Bell size={16} />
             </div>
             <div className="flex-1 min-w-[260px] space-y-2">
-                <div className="overline text-[#4A4A4A]">Alertas por email — campanita</div>
+                <div className="overline text-[#4A4A4A]">{t("alerts.banner.eyebrow")}</div>
                 <div className="text-[#4A4A4A] leading-relaxed">
-                    Cuando una acción tiene la campanita <span className="font-semibold" style={{ color: "var(--cheap)" }}>activada</span>, cada noche (06:00 UTC) revisamos sus ratios y te enviamos un email en <span className="font-semibold">dos situaciones</span>:
+                    {fillTemplate("alerts.banner.intro", { bell_active: bellActive })}
                 </div>
                 <ul className="text-[#4A4A4A] leading-relaxed list-disc pl-5 space-y-0.5">
-                    <li>El precio <span className="text-[#1D7044] font-semibold">cruza a BARATA</span> según tu <span className="font-semibold">Ratio Compra</span> (precio actual ≤ POC, tu precio objetivo de compra).</li>
-                    <li>El precio <span className="text-[#B32A22] font-semibold">cruza a CARA</span> según tu <span className="font-semibold">Ratio Venta</span> (precio actual ≥ POV, tu precio objetivo de venta — momento natural de plantearse vender).</li>
+                    <li>{fillTemplate("alerts.banner.case_buy", { cheap })}</li>
+                    <li>{fillTemplate("alerts.banner.case_sell", { expensive })}</li>
                 </ul>
-                <div className="text-[#4A4A4A] leading-relaxed">
-                    La campanita de la cabecera activa/desactiva todas las filas a la vez.
-                </div>
+                <div className="text-[#4A4A4A] leading-relaxed">{t("alerts.banner.master")}</div>
                 <div className="text-xs text-[#4A4A4A] opacity-90 pt-1 border-t border-black/10">
-                    {defaultLine} Requiere iniciar sesión con Google para recibir los emails.
+                    {isPortfolio
+                        ? fillTemplate("alerts.banner.default_portfolio", { active })
+                        : fillTemplate("alerts.banner.default_watchlist", { off })}
+                    {" "}
+                    {t("alerts.banner.login_req")}
                 </div>
             </div>
         </div>

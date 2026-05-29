@@ -137,8 +137,8 @@ export default function Portfolio() {
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("portfolio.title")}</h1>
                     {positions.length > 0 && (
                         <div className="text-xs text-[#4A4A4A] font-mono mt-1" data-testid="portfolio-count">
-                            {positions.length} {positions.length === 1 ? "posición" : "posiciones"}
-                            {trackedOnly > 0 && <span className="opacity-70"> · {completeCount} con datos · {trackedOnly} en seguimiento</span>}
+                            {t("portfolio.count_positions", { n: positions.length })}
+                            {trackedOnly > 0 && <span className="opacity-70"> · {t("portfolio.count_with_data", { n: completeCount })} · {t("portfolio.count_tracked", { n: trackedOnly })}</span>}
                         </div>
                     )}
                 </div>

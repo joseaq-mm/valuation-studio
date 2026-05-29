@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import { LogIn, LogOut, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cloudWatchlistGet, cloudWatchlistPut } from "@/lib/api";
@@ -15,6 +16,7 @@ function startLogin() {
 
 export default function AuthButton() {
     const { user, loading, logout } = useAuth();
+    const { t } = useI18n();
     const [syncing, setSyncing] = useState(false);
 
     const handleSyncFromCloud = async () => {
@@ -79,7 +81,7 @@ export default function AuthButton() {
             data-testid="auth-login"
             title="Iniciar sesión con Google — sincroniza tu watchlist entre dispositivos"
         >
-            <LogIn size={14} /> Entrar
+            <LogIn size={14} /> {t("nav.login")}
         </button>
     );
 }

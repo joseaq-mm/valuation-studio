@@ -1,11 +1,14 @@
 import React from "react";
 import { useFx, SUPPORTED_CURRENCIES } from "@/lib/fx";
+import { useI18n } from "@/lib/i18n";
 import { Globe } from "lucide-react";
 
 export default function CurrencySelector() {
     const { display, setDisplay, ready } = useFx();
+    const { t, lang } = useI18n();
+    const nativeLabel = lang === "en" ? "Native" : "Nativa";
     return (
-        <label className="flex items-center gap-1" title="Moneda para mostrar precios">
+        <label className="flex items-center gap-1" title={t("nav.currency_title") || "Currency for prices"}>
             <Globe size={12} className="text-[#4A4A4A]" />
             <select
                 value={display}
@@ -14,7 +17,7 @@ export default function CurrencySelector() {
                 className="input-paper font-mono text-xs !py-0 !px-1"
                 data-testid="currency-selector"
             >
-                <option value="NATIVE">Nativa</option>
+                <option value="NATIVE">{nativeLabel}</option>
                 {SUPPORTED_CURRENCIES.filter(c => c !== "NATIVE").map(c => (
                     <option key={c} value={c}>{c}</option>
                 ))}

@@ -291,9 +291,18 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     # Auto-compute projections (2y forward)
     latest_revenue = revenue_history[-1]["value"] if revenue_history else None
     latest_fcf_annual = fcf_history[-1]["value"] if fcf_history else None
-    # Use TTM as the base for FCF projections when it's positive and more recent than last annual
+    # Pick the base for FCF projections. Yahoo's `info.freeCashflow` (TTM) is sometimes
+    # stale or based on partial-quarter aggregation — for some tickers (e.g. ABNB) it is
+    # noticeably BELOW the most recent annual FCF, which would produce an artificial
+    # downward projection. Guard against that: prefer the higher of (TTM, latest annual)
+    # when both are positive AND TTM is materially lower than the latest annual, the
+    # annual is almost certainly the more reliable signal.
     if fcf_ttm is not None and fcf_ttm > 0:
-        latest_fcf = fcf_ttm
+        if latest_fcf_annual is not None and latest_fcf_annual > 0 and fcf_ttm < latest_fcf_annual * 0.85:
+            # TTM lags the most recent annual by >15% → likely Yahoo data issue, use annual
+            latest_fcf = latest_fcf_annual
+        else:
+            latest_fcf = fcf_ttm
     else:
         latest_fcf = latest_fcf_annual
 

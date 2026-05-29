@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { loadThresholds, saveThresholds, resetThresholds, DEFAULT_THRESHOLDS } from "@/lib/thresholds";
+import { useI18n } from "@/lib/i18n";
 import { Sliders, X, RotateCcw } from "lucide-react";
 
 export default function ThresholdsDialog() {
     const [open, setOpen] = useState(false);
     const [t, setT] = useState(loadThresholds());
+    const { t: tr } = useI18n();
 
     useEffect(() => {
         if (open) setT(loadThresholds());
@@ -43,7 +45,7 @@ export default function ThresholdsDialog() {
                 data-testid="thresholds-open"
                 title="Configurar umbrales de señal cara / justa / barata"
             >
-                <Sliders size={14} /> Umbrales
+                <Sliders size={14} /> {tr("nav.thresholds")}
             </button>
 
             {open && (

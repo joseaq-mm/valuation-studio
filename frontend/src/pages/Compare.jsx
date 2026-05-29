@@ -3,6 +3,7 @@ import { compare } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
+import { useI18n } from "@/lib/i18n";
 import { getWatchlistTickers } from "@/lib/storage";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 import { X } from "lucide-react";
@@ -14,6 +15,7 @@ export default function Compare() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const { display: displayCur, convert: fxConvert } = useFx();
+    const { t } = useI18n();
     useThresholds();
 
     const useDisplay = displayCur && displayCur !== "NATIVE";
@@ -21,11 +23,11 @@ export default function Compare() {
     const convMcap = (r) => useDisplay ? fxConvert(r.market_cap, r.currency) : r.market_cap;
     const displayCurFor = (r) => useDisplay ? displayCur : r.currency;
 
-    const add = (t) => {
-        const sym = (t || "").trim().toUpperCase();
-        if (!sym || tickers.includes(sym)) return;
-        if (tickers.length >= 6) { toast.error("Máximo 6 empresas"); return; }
-        setTickers([...tickers, sym]);
+    const add = (sym) => {
+        const s = (sym || "").trim().toUpperCase();
+        if (!s || tickers.includes(s)) return;
+        if (tickers.length >= 6) { toast.error(t("compare.max_companies")); return; }
+        setTickers([...tickers, s]);
         setInput("");
     };
 
@@ -50,34 +52,34 @@ export default function Compare() {
     };
 
     const metricRows = [
-        { label: "Precio", get: r => fmtPrice(convPrice(r), displayCurFor(r)), align: "right" },
-        { label: "POC (objetivo compra)", get: r => {
+        { label: t("compare.row_price"), get: r => fmtPrice(convPrice(r), displayCurFor(r)), align: "right" },
+        { label: t("compare.row_poc"), get: r => {
             const v = r.custom_ratios?.poc;
             if (v == null) return "—";
             const conv = useDisplay ? fxConvert(v, r.currency) : v;
-            return <span style={{ color: "#B32A22" }}>{fmtPrice(conv, displayCurFor(r))}</span>;
+            return <span style={{ color: ratioColor(r.custom_ratios?.ratio_compra_pct, "compra") }}>{fmtPrice(conv, displayCurFor(r))}</span>;
         }, align: "right" },
-        { label: "POV (objetivo venta)", get: r => {
+        { label: t("compare.row_pov"), get: r => {
             const v = r.custom_ratios?.pov;
             if (v == null) return "—";
             const conv = useDisplay ? fxConvert(v, r.currency) : v;
-            return <span style={{ color: "#1D7044" }}>{fmtPrice(conv, displayCurFor(r))}</span>;
+            return <span style={{ color: ratioColor(r.custom_ratios?.ratio_venta_pct, "venta") }}>{fmtPrice(conv, displayCurFor(r))}</span>;
         }, align: "right" },
-        { label: "Market Cap", get: r => fmtNum(convMcap(r)), align: "right" },
-        { label: "Currency", get: r => useDisplay ? `${r.currency} → ${displayCur}` : (r.currency || "—"), align: "center" },
-        { label: "Ratio Compra", get: r => {
+        { label: t("compare.row_mcap"), get: r => fmtNum(convMcap(r)), align: "right" },
+        { label: t("compare.row_currency"), get: r => useDisplay ? `${r.currency} → ${displayCur}` : (r.currency || "—"), align: "center" },
+        { label: t("company.ratio_compra"), get: r => {
             const v = r.custom_ratios?.ratio_compra_pct;
             return v == null ? "—" : (
                 <span style={{ color: ratioColor(v) }}>{fmtPctSigned(v)}</span>
             );
         }, align: "right" },
-        { label: "Ratio Venta", get: r => {
+        { label: t("company.ratio_venta"), get: r => {
             const v = r.custom_ratios?.ratio_venta_pct;
             return v == null ? "—" : (
                 <span style={{ color: ratioColor(v, "venta") }}>{fmtPctSigned(v)}</span>
             );
         }, align: "right" },
-        { label: "Señal", get: r => {
+        { label: t("compare.row_signal"), get: r => {
             const v = r.custom_ratios?.ratio_compra_pct;
             return <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(v) }}>{signalLabel(v)}</span>;
         }, align: "center" },
@@ -95,8 +97,8 @@ export default function Compare() {
     return (
         <div data-testid="compare-page">
             <div className="mb-6">
-                <div className="overline text-[#B32A22]">Side-by-side</div>
-                <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">Comparar empresas</h1>
+                <div className="overline text-[#B32A22]">{t("compare.tag")}</div>
+                <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("compare.title")}</h1>
             </div>
 
             <div className="border border-black bg-white p-4 mb-6" data-testid="compare-toolbar">
@@ -106,13 +108,13 @@ export default function Compare() {
                             value={input}
                             onChange={setInput}
                             onPick={(r) => add(r.symbol)}
-                            placeholder="Buscar empresa o ticker (AAPL, Apple, SAN.MC…)"
+                            placeholder={t("compare.search_placeholder")}
                             testid="compare-input"
                         />
                     </div>
-                    <button onClick={loadFromWl} className="btn-ghost" data-testid="compare-from-watchlist">Cargar watchlist</button>
+                    <button onClick={loadFromWl} className="btn-ghost" data-testid="compare-from-watchlist">{t("compare.load_watchlist")}</button>
                     <button onClick={loadAll} className="btn-primary" disabled={!tickers.length || loading} data-testid="compare-load">
-                        {loading ? "Cargando…" : "Comparar"}
+                        {loading ? t("compare.running") : t("compare.run")}
                     </button>
                 </div>
                 {tickers.length > 0 && (
@@ -132,7 +134,7 @@ export default function Compare() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-4 py-3 sticky left-0 bg-white">Métrica</th>
+                                <th className="overline text-left px-4 py-3 sticky left-0 bg-white">{t("compare.metric")}</th>
                                 {rows.map(r => (
                                     <th key={r.ticker} className="overline text-right px-4 py-3 border-l border-black/20">
                                         <div className="font-mono text-base text-black">{r.ticker}</div>
