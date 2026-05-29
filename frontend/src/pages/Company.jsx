@@ -972,9 +972,9 @@ export default function Company() {
                                 : "Método: CAGR HISTÓRICO\nUsamos la CAGR de FCF positivo histórico aplicada al último FCF disponible.";
 
                             // Compute alternative base projections so the user can swap with one
-                            // click without manually editing the input. Only meaningful when the
-                            // CAGR method was used AND both candidates exist.
-                            const canSwap = method === "historical-cagr" && cb && cb.growth_pct != null && cb.fcf_ttm && cb.latest_annual && cb.latest_annual > 0;
+                            // click. Available whenever the historical CAGR can be computed —
+                            // even for bottom-up companies (offered as 2nd/3rd manual options).
+                            const canSwap = cb && cb.growth_pct != null && cb.fcf_ttm && cb.latest_annual && cb.latest_annual > 0;
                             const g = canSwap ? cb.growth_pct : 0;
                             const projFromTtm = canSwap ? cb.fcf_ttm * Math.pow(1 + g, 2) : null;
                             const projFromAnnual = canSwap ? cb.latest_annual * Math.pow(1 + g, 2) : null;
@@ -983,23 +983,36 @@ export default function Company() {
                             const isUsingTtm = canSwap && within(currentVal, projFromTtm);
                             const isUsingAnnual = canSwap && within(currentVal, projFromAnnual);
 
+                            const buFcfPlus2y = (method === "bottom-up" && bu) ? data?.auto_projections?.fcf_2y : null;
+                            const isUsingBu = buFcfPlus2y != null && within(currentVal, buFcfPlus2y);
+
                             return (
                                 <span className="inline-flex items-center gap-1 ml-2">
                                     <HoverTip text={method === "bottom-up" ? buText : cagrText}>
-                                        <span
-                                            className="overline px-1.5 py-0.5 border text-[9px] cursor-help"
-                                            style={{
-                                                borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                                color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                            }}
-                                            data-testid="fcf-method-badge"
-                                        >
-                                            {method === "bottom-up" ? "BU" : "CAGR"}
-                                        </span>
+                                        {method === "bottom-up" ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => updateInput("fcf_2y", buFcfPlus2y)}
+                                                className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                style={{
+                                                    background: isUsingBu ? "#1D7044" : "transparent",
+                                                    color: isUsingBu ? "white" : "#1D7044",
+                                                    borderColor: "#1D7044",
+                                                }}
+                                                data-testid="fcf-method-badge"
+                                                aria-pressed={isUsingBu}
+                                            >BU</button>
+                                        ) : (
+                                            <span
+                                                className="overline px-1.5 py-0.5 border text-[9px] cursor-help"
+                                                style={{ borderColor: "#4A4A4A", color: "#4A4A4A" }}
+                                                data-testid="fcf-method-badge"
+                                            >CAGR</span>
+                                        )}
                                     </HoverTip>
                                     {canSwap && (
                                         <>
-                                            <HoverTip text={`Usar TTM Yahoo como base: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}`}>
+                                            <HoverTip text={`Usar TTM Yahoo como base CAGR: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromTtm)}
@@ -1013,7 +1026,7 @@ export default function Company() {
                                                     aria-pressed={isUsingTtm}
                                                 >TTM</button>
                                             </HoverTip>
-                                            <HoverTip text={`Usar último FCF anual como base: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}`}>
+                                            <HoverTip text={`Usar último FCF anual como base CAGR: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromAnnual)}

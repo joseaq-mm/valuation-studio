@@ -115,8 +115,8 @@ export default function Layout({ children }) {
                     <div className="py-2 flex items-center justify-between gap-4 flex-wrap">
                         <nav className="flex items-center gap-1 flex-wrap">
                             <Link to="/" className={navClass("/")} data-testid="nav-link-home">{t("nav.home")}</Link>
-                            <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
                             <Link to="/portfolio" className={navClass("/portfolio")} data-testid="nav-link-portfolio">{t("nav.portfolio")}</Link>
+                            <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
                             <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">{t("nav.compare")}</Link>
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">

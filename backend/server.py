@@ -524,44 +524,43 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     except Exception as e:
         logger.info(f"bottom-up FCF computation failed for {ticker}: {e}")
 
-    # ---- Method 2: historical FCF CAGR (fallback) ----
+    # ---- Always compute the CAGR-based breakdown when feasible, even if bottom-up was
+    # chosen — this lets the UI offer TTM/ANUAL alternative bases as additional manual
+    # options on top of the primary projection method.
     cagr_breakdown = None
-    if fcf_2y is None:
-        try:
-            fvals = [p["value"] for p in fcf_history if p["value"] is not None]
-            if any(v <= 0 for v in fvals):
-                projection_flags["fcf_history_has_negatives"] = True
-            pos_vals = [v for v in fvals if v > 0]
-            if len(pos_vals) >= 2:
-                n = len(pos_vals) - 1
-                raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
-                fcf_growth_fwd = _clamp(raw_fg, -0.30, 0.50)
-                if raw_fg != fcf_growth_fwd:
-                    projection_flags["fcf_projection_capped"] = True
-        except Exception:
-            pass
+    fcf_cagr_growth = None  # CAGR growth rate (independent of which method "won")
+    try:
+        fvals = [p["value"] for p in fcf_history if p["value"] is not None]
+        if any(v <= 0 for v in fvals):
+            projection_flags["fcf_history_has_negatives"] = True
+        pos_vals = [v for v in fvals if v > 0]
+        if len(pos_vals) >= 2:
+            n = len(pos_vals) - 1
+            raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
+            fcf_cagr_growth = _clamp(raw_fg, -0.30, 0.50)
+            if raw_fg != fcf_cagr_growth:
+                projection_flags["fcf_projection_capped"] = True
+    except Exception:
+        pass
 
+    if latest_fcf is not None and fcf_cagr_growth is not None:
+        cagr_breakdown = {
+            "base_value": latest_fcf,
+            "base_source": fcf_base_source,
+            "latest_annual": latest_fcf_annual,
+            "fcf_ttm": fcf_ttm,
+            "growth_pct": fcf_cagr_growth,
+            "positive_years_used": len([v for v in [p["value"] for p in fcf_history if p["value"] is not None] if v > 0]),
+        }
+
+    # ---- Method 2: historical FCF CAGR (fallback if bottom-up didn't apply) ----
+    if fcf_2y is None:
+        fcf_growth_fwd = fcf_cagr_growth
         if latest_fcf and fcf_growth_fwd is not None:
             fcf_2y = latest_fcf * (1 + fcf_growth_fwd) ** 2
         elif latest_fcf:
             # If we can't compute growth (e.g., negative FCF in history), assume flat
             fcf_2y = latest_fcf
-
-        # Surface the inputs the user would otherwise have to guess at — particularly
-        # the BASE used (TTM vs annual) and the growth rate applied.
-        if latest_fcf is not None:
-            try:
-                fcf_pos_hist = [v for v in [p["value"] for p in fcf_history if p["value"] is not None] if v > 0]
-                cagr_breakdown = {
-                    "base_value": latest_fcf,
-                    "base_source": fcf_base_source,
-                    "latest_annual": latest_fcf_annual,
-                    "fcf_ttm": fcf_ttm,
-                    "growth_pct": fcf_growth_fwd,
-                    "positive_years_used": len(fcf_pos_hist),
-                }
-            except Exception:
-                pass
 
     # ----- 1y forward values (for charting projections) -----
     revenue_1y = revenue_plus1y
