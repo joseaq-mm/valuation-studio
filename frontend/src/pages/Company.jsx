@@ -720,12 +720,12 @@ export default function Company() {
             <div className="border border-black bg-white p-6 mb-6" data-testid="company-header">
                 <div className="flex items-start justify-between flex-wrap gap-4">
                     <div>
-                        <div className="overline text-[#4A4A4A]">
-                            <HoverTip text={exchangeFullName(data.exchange) || "Código de mercado no reconocido"}>
-                                <span className={exchangeFullName(data.exchange) ? "underline decoration-dotted underline-offset-2 cursor-help" : ""} data-testid="exchange-code">{data.exchange}</span>
-                            </HoverTip>
-                            {" · "}{data.currency}{data.sector ? ` · ${data.sector}` : ""}
-                        </div>
+                        <HoverTip text={`${exchangeFullName(data.exchange) || data.exchange}${data.currency ? ` · Moneda: ${data.currency}` : ""}${data.sector ? ` · Sector: ${data.sector}` : ""}`}>
+                            <div className="overline text-[#4A4A4A] cursor-help" data-testid="exchange-code">
+                                {data.exchange}
+                                {" · "}{data.currency}{data.sector ? ` · ${data.sector}` : ""}
+                            </div>
+                        </HoverTip>
                         <h1 className="font-serif text-4xl sm:text-5xl tracking-tight mt-1" data-testid="company-name">{data.name}</h1>
                         <div className="font-mono text-lg text-[#052049] mt-1" data-testid="company-ticker">{data.ticker}</div>
                     </div>
