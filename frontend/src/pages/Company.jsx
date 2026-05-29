@@ -986,10 +986,13 @@ export default function Company() {
                             const buFcfPlus2y = (method === "bottom-up" && bu) ? data?.auto_projections?.fcf_2y : null;
                             const isUsingBu = buFcfPlus2y != null && within(currentVal, buFcfPlus2y);
 
+                            // Build a uniform [BU?] [TTM] [ANUAL] toolbar. The CAGR informational
+                            // badge is intentionally NOT rendered: the hover tooltip on each
+                            // button explains everything without adding noise to the label.
                             return (
                                 <span className="inline-flex items-center gap-1 ml-2">
-                                    <HoverTip text={method === "bottom-up" ? buText : cagrText}>
-                                        {method === "bottom-up" ? (
+                                    {method === "bottom-up" && buFcfPlus2y != null && (
+                                        <HoverTip text={buText}>
                                             <button
                                                 type="button"
                                                 onClick={() => updateInput("fcf_2y", buFcfPlus2y)}
@@ -1002,17 +1005,11 @@ export default function Company() {
                                                 data-testid="fcf-method-badge"
                                                 aria-pressed={isUsingBu}
                                             >BU</button>
-                                        ) : (
-                                            <span
-                                                className="overline px-1.5 py-0.5 border text-[9px] cursor-help"
-                                                style={{ borderColor: "#4A4A4A", color: "#4A4A4A" }}
-                                                data-testid="fcf-method-badge"
-                                            >CAGR</span>
-                                        )}
-                                    </HoverTip>
+                                        </HoverTip>
+                                    )}
                                     {canSwap && (
                                         <>
-                                            <HoverTip text={`Usar TTM Yahoo como base CAGR: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}`}>
+                                            <HoverTip text={`Usar TTM Yahoo como base CAGR: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}\n\n${cagrText}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromTtm)}
@@ -1026,7 +1023,7 @@ export default function Company() {
                                                     aria-pressed={isUsingTtm}
                                                 >TTM</button>
                                             </HoverTip>
-                                            <HoverTip text={`Usar último FCF anual como base CAGR: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}`}>
+                                            <HoverTip text={`Usar último FCF anual como base CAGR: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}\n\n${cagrText}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromAnnual)}
