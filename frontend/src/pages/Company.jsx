@@ -1475,7 +1475,7 @@ const SENS_AXES = [
 ];
 
 function SensitivityMatrix({ inputs, basePoc, basePov, basePrice, currency, convertCur }) {
-    const [axisX, setAxisX] = useState("operating_margin");
+    const [axisX, setAxisX] = useState("fcf_cagr_4y");
     const [axisY, setAxisY] = useState("revenue_cagr_4y");
     const [delta, setDelta] = useState(10); // ±%
     const [metric, setMetric] = useState("ratio_compra"); // "ratio_compra" | "ratio_venta" | "poc" | "pov"
