@@ -900,6 +900,16 @@ export default function Company() {
                 if (f.fcf_cagr_fallback) warnings.push("CAGR del FCF a 4 años calculado por fallback (no por la fórmula estándar 2y atrás → 2y adelante).");
                 if (f.revenue_cagr_fallback) warnings.push("CAGR de ingresos a 4 años calculado por fallback.");
                 if (f.fcf_bottom_up_ni_suspicious) warnings.push("La estimación de Net Income de analistas parecía anómala (crecimiento >150% o <−50%). La proyección de FCF se ha hecho con el método histórico como precaución.");
+
+                // TTM stale: explicit warning when the backend dropped Yahoo's TTM FCF and
+                // switched to the last annual value as the base for the CAGR projection.
+                const cb = data.auto_projections.cagr_breakdown;
+                if (cb?.base_source === "annual_latest_yahoo_ttm_stale") {
+                    const fmtBn = (n) => n == null ? "—" : (Math.abs(n) >= 1e9 ? `${(n/1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `${(n/1e6).toFixed(0)}M` : `${n.toFixed(0)}`);
+                    const gap = (cb.fcf_ttm && cb.latest_annual) ? Math.round((1 - cb.fcf_ttm / cb.latest_annual) * 100) : null;
+                    warnings.push(`Yahoo TTM FCF (${fmtBn(cb.fcf_ttm)}) cae ${gap != null ? gap + "% " : ""}por debajo del último FCF anual (${fmtBn(cb.latest_annual)}). Suele indicar dato Yahoo desactualizado o agregación trimestral incompleta. Por seguridad usamos el ANUAL como base por defecto; puedes cambiar a TTM con el botón si confías en el dato.`);
+                }
+
                 if (!warnings.length) return null;
                 return (
                     <div className="border border-[#D97706] bg-white p-4 mb-6" data-testid="projection-warnings">
