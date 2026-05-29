@@ -957,7 +957,7 @@ export default function Company() {
                         const isFcfRow = key === "fcf_2y";
                         const method = data?.auto_projections?.projection_method;
                         const bu = data?.auto_projections?.bottom_up_breakdown;
-                        const methodBadge = (isFcfRow && status === "auto" && method) ? (() => {
+                        const methodBadge = (isFcfRow && method) ? (() => {
                             const cb = data?.auto_projections?.cagr_breakdown;
                             // Format helpers for the tooltip
                             const fmtBn = (n) => n == null ? "—" : (Math.abs(n) >= 1e9 ? `$${(n/1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n/1e6).toFixed(0)}M` : `$${n.toFixed(0)}`);
@@ -970,19 +970,66 @@ export default function Company() {
                             const cagrText = cb
                                 ? `Método: CAGR HISTÓRICO (fallback)\n\nPaso 1 — Base usada: ${fmtBn(cb.base_value)} (fuente: ${baseSourceLabel})\n   • TTM Yahoo:        ${fmtBn(cb.fcf_ttm)}\n   • Último FCF anual: ${fmtBn(cb.latest_annual)}\n\nPaso 2 — Crecimiento: ${cb.growth_pct != null ? `${(cb.growth_pct*100).toFixed(1)}% anual` : "—"} (CAGR de ${cb.positive_years_used} año(s) positivo(s) del histórico)\n\nPaso 3 — Proyección:\n   FCF +1y = base × (1 + g)\n   FCF +2y = base × (1 + g)²\n\nNota: este método se usa cuando los datos de analistas de NI no permiten el modelo bottom-up (NI negativo, histórico corto, etc.).`
                                 : "Método: CAGR HISTÓRICO\nUsamos la CAGR de FCF positivo histórico aplicada al último FCF disponible.";
+
+                            // Compute alternative base projections so the user can swap with one
+                            // click without manually editing the input. Only meaningful when the
+                            // CAGR method was used AND both candidates exist.
+                            const canSwap = method === "historical-cagr" && cb && cb.growth_pct != null && cb.fcf_ttm && cb.latest_annual && cb.latest_annual > 0;
+                            const g = canSwap ? cb.growth_pct : 0;
+                            const projFromTtm = canSwap ? cb.fcf_ttm * Math.pow(1 + g, 2) : null;
+                            const projFromAnnual = canSwap ? cb.latest_annual * Math.pow(1 + g, 2) : null;
+                            const currentVal = inputs?.fcf_2y;
+                            const within = (a, b) => a != null && b != null && Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1) < 0.001;
+                            const isUsingTtm = canSwap && within(currentVal, projFromTtm);
+                            const isUsingAnnual = canSwap && within(currentVal, projFromAnnual);
+
                             return (
-                                <HoverTip text={method === "bottom-up" ? buText : cagrText}>
-                                    <span
-                                        className="overline ml-2 px-1.5 py-0.5 border text-[9px] cursor-help"
-                                        style={{
-                                            borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                            color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                        }}
-                                        data-testid="fcf-method-badge"
-                                    >
-                                        {method === "bottom-up" ? "BU" : "CAGR"}
-                                    </span>
-                                </HoverTip>
+                                <span className="inline-flex items-center gap-1 ml-2">
+                                    <HoverTip text={method === "bottom-up" ? buText : cagrText}>
+                                        <span
+                                            className="overline px-1.5 py-0.5 border text-[9px] cursor-help"
+                                            style={{
+                                                borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                                color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                            }}
+                                            data-testid="fcf-method-badge"
+                                        >
+                                            {method === "bottom-up" ? "BU" : "CAGR"}
+                                        </span>
+                                    </HoverTip>
+                                    {canSwap && (
+                                        <>
+                                            <HoverTip text={`Usar TTM Yahoo como base: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}`}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateInput("fcf_2y", projFromTtm)}
+                                                    className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                    style={{
+                                                        background: isUsingTtm ? "#052049" : "transparent",
+                                                        color: isUsingTtm ? "white" : "#052049",
+                                                        borderColor: "#052049",
+                                                    }}
+                                                    data-testid="fcf-base-ttm"
+                                                    aria-pressed={isUsingTtm}
+                                                >TTM</button>
+                                            </HoverTip>
+                                            <HoverTip text={`Usar último FCF anual como base: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}`}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateInput("fcf_2y", projFromAnnual)}
+                                                    className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                    style={{
+                                                        background: isUsingAnnual ? "#052049" : "transparent",
+                                                        color: isUsingAnnual ? "white" : "#052049",
+                                                        borderColor: "#052049",
+                                                    }}
+                                                    data-testid="fcf-base-annual"
+                                                    aria-pressed={isUsingAnnual}
+                                                >ANUAL</button>
+                                            </HoverTip>
+                                        </>
+                                    )}
+                                </span>
                             );
                         })() : null;
                         return (
