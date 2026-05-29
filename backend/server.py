@@ -240,16 +240,30 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
 
     # FCF: try direct, else OCF - |CapEx|
     fcf_series = _get_row(cf, ["Free Cash Flow", "FreeCashFlow"])
-    if fcf_series is None:
-        ocf = _get_row(cf, ["Operating Cash Flow", "Total Cash From Operating Activities", "CashFlowFromContinuingOperatingActivities"])
-        capex = _get_row(cf, ["Capital Expenditure", "Capital Expenditures", "CapitalExpenditure"])
-        if ocf is not None and capex is not None:
-            # capex usually negative
-            fcf_series = ocf + capex
+    ocf_series = _get_row(cf, ["Operating Cash Flow", "Total Cash From Operating Activities", "CashFlowFromContinuingOperatingActivities"])
+    capex_series = _get_row(cf, ["Capital Expenditure", "Capital Expenditures", "CapitalExpenditure"])
+    if fcf_series is None and ocf_series is not None and capex_series is not None:
+        # capex usually negative
+        fcf_series = ocf_series + capex_series
     fcf_history = _series_to_pairs(fcf_series, limit=6)
+    ocf_history = _series_to_pairs(ocf_series, limit=6)
+    # CapEx is stored as negative in cashflow statements. We'll work with the absolute value
+    # for ratios/intensities to keep the math intuitive.
+    capex_history = []
+    if capex_series is not None:
+        try:
+            capex_history = _series_to_pairs(capex_series.abs(), limit=6)
+        except Exception:
+            capex_history = _series_to_pairs(capex_series, limit=6)
+
+    # Net Income history (needed for the bottom-up FCF model)
+    ni_series = _get_row(fin, ["Net Income", "NetIncome", "Net Income Common Stockholders", "NetIncomeCommonStockholders"])
+    ni_history = _series_to_pairs(ni_series, limit=6)
 
     # TTM (trailing 12 months) FCF from Yahoo's pre-computed field — more current than last annual
     fcf_ttm = _safe_float(info.get("freeCashflow"))
+    # EBITDA for the leverage gate (net_debt / EBITDA)
+    ebitda_ttm = _safe_float(info.get("ebitda"))
 
     # Margins (most recent)
     gross_margin = _safe_float(info.get("grossMargins"))
@@ -285,6 +299,23 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     except Exception as e:
         logger.info(f"revenue_estimate not available: {e}")
 
+    # Earnings estimates - analyst forecast for next-year EPS (and we'll derive NI)
+    eps_plus1y = None
+    try:
+        earn_est = t.earnings_estimate
+        if earn_est is not None and not earn_est.empty:
+            for idx in ['+1y', '+1Y']:
+                if idx in earn_est.index:
+                    avg = earn_est.loc[idx].get('avg')
+                    eps_plus1y = _safe_float(avg)
+                    break
+    except Exception as e:
+        logger.info(f"earnings_estimate not available: {e}")
+
+    ni_plus1y = None
+    if eps_plus1y is not None and shares and shares > 0:
+        ni_plus1y = eps_plus1y * shares
+
     # Revenue growth (annualized) — DO NOT use earningsGrowth (EPS, volatile)
     revenue_growth_yoy = _safe_float(info.get("revenueGrowth"))
 
@@ -319,6 +350,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "fcf_history_has_negatives": False,
         "fcf_cagr_fallback": False,
         "revenue_cagr_fallback": False,
+        "fcf_bottom_up_ni_suspicious": False,
     }
 
     # ----- Revenue 2y projection -----
@@ -357,28 +389,159 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             pass
 
     # ----- FCF 2y projection -----
-    # Use historical FCF CAGR (NOT earningsGrowth). Capped to avoid wild extrapolations.
+    # Two methods, in order of preference:
+    #
+    # 1) Bottom-up (preferred when analyst NI is available + clean history):
+    #       OCF_+1y   = NI_+1y × mean(OCF_t / NI_t)            ← uses analyst signal
+    #       CapEx_+1y = mean(CapEx/Revenue) × Revenue_+1y      ← base intensity
+    #                   × trend_factor                          ← recent CapEx behaviour
+    #                   × earnings_modifier                     ← reinvestment momentum
+    #                   × leverage_modifier                     ← balance-sheet constraints
+    #       FCF_+1y   = OCF_+1y − CapEx_+1y
+    #       FCF_+2y   = FCF_+1y × (1 + g_capped)
+    # 2) Historical FCF CAGR (current method, used as fallback when bottom-up isn't safe).
     fcf_2y = None
+    fcf_1y_bu = None
     fcf_growth_fwd = None
-    try:
-        fvals = [p["value"] for p in fcf_history if p["value"] is not None]
-        if any(v <= 0 for v in fvals):
-            projection_flags["fcf_history_has_negatives"] = True
-        pos_vals = [v for v in fvals if v > 0]
-        if len(pos_vals) >= 2:
-            n = len(pos_vals) - 1
-            raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
-            fcf_growth_fwd = _clamp(raw_fg, -0.30, 0.50)
-            if raw_fg != fcf_growth_fwd:
-                projection_flags["fcf_projection_capped"] = True
-    except Exception:
-        pass
+    bottom_up_breakdown = None
+    projection_method = "historical-cagr"
 
-    if latest_fcf and fcf_growth_fwd is not None:
-        fcf_2y = latest_fcf * (1 + fcf_growth_fwd) ** 2
-    elif latest_fcf:
-        # If we can't compute growth (e.g., negative FCF in history), assume flat
-        fcf_2y = latest_fcf
+    # ---- Method 1: bottom-up ----
+    try:
+        ni_pos = [p["value"] for p in ni_history if p["value"] is not None and p["value"] > 0]
+        # Pair them up by index from the most recent backwards. We need at least 3 paired
+        # positive years to derive a stable OCF/NI ratio (avoids divide-by-near-zero noise).
+        paired_ratios = []
+        for ni_p, ocf_p in zip(reversed(ni_history), reversed(ocf_history)):
+            ni_v = ni_p.get("value")
+            ocf_v = ocf_p.get("value")
+            if ni_v and ocf_v and ni_v > 0 and ocf_v > 0:
+                paired_ratios.append(ocf_v / ni_v)
+            if len(paired_ratios) >= 4:
+                break
+
+        rev_pairs = [p["value"] for p in revenue_history if p["value"] and p["value"] > 0]
+
+        intensities = []
+        for cx_p, rv_p in zip(reversed(capex_history), reversed(revenue_history)):
+            cx_v, rv_v = cx_p.get("value"), rv_p.get("value")
+            if cx_v and rv_v and rv_v > 0:
+                intensities.append(cx_v / rv_v)
+            if len(intensities) >= 4:
+                break
+
+        bottom_up_eligible = (
+            ni_plus1y is not None and ni_plus1y > 0
+            and revenue_2y is not None and revenue_plus1y is not None and revenue_plus1y > 0
+            and len(paired_ratios) >= 3
+            and len(intensities) >= 3
+            and ni_pos                # need ≥1 positive historical NI for momentum
+        )
+
+        # Sanity-guard analyst NI estimate: yfinance occasionally returns malformed
+        # earnings_estimate values (wrong fiscal year, share-count mismatch). Reject
+        # estimates that imply >150% YoY growth or <-50% — those are almost always data
+        # issues, not real expectations.
+        if bottom_up_eligible and ni_pos:
+            latest_ni_for_check = ni_pos[-1]
+            if latest_ni_for_check > 0:
+                ni_growth_check = ni_plus1y / latest_ni_for_check - 1
+                if ni_growth_check > 1.5 or ni_growth_check < -0.5:
+                    bottom_up_eligible = False
+                    projection_flags["fcf_bottom_up_ni_suspicious"] = True
+
+        if bottom_up_eligible:
+            ocf_to_ni_ratio = sum(paired_ratios) / len(paired_ratios)
+            # Sanity bounds: 0.3x (highly tax-heavy capital-light) ≤ ratio ≤ 4x (extreme D&A)
+            ocf_to_ni_ratio = max(0.3, min(4.0, ocf_to_ni_ratio))
+
+            capex_intensity = sum(intensities) / len(intensities)
+            capex_intensity = max(0.01, min(0.50, capex_intensity))
+
+            ocf_plus1y = ni_plus1y * ocf_to_ni_ratio
+            capex_base = capex_intensity * revenue_plus1y
+
+            # Recent trend on CapEx intensity (TTM vs structural). When we don't have OCF/CapEx
+            # TTM cleanly, we approximate "recent" with the latest annual.
+            latest_capex = capex_history[-1]["value"] if capex_history else None
+            latest_rev = rev_pairs[-1] if rev_pairs else None
+            if latest_capex and latest_rev and latest_rev > 0:
+                recent_intensity = latest_capex / latest_rev
+                trend_factor = _clamp(recent_intensity / capex_intensity, 0.7, 1.3) if capex_intensity > 0 else 1.0
+            else:
+                trend_factor = 1.0
+
+            # Earnings momentum modifier
+            latest_ni = next((v for v in reversed(ni_pos) if v), None)
+            if latest_ni and latest_ni > 0:
+                earnings_momentum = ni_plus1y / latest_ni - 1
+                earnings_mod = 1.0 + max(-0.05, min(0.10, earnings_momentum * 0.25))
+            else:
+                earnings_mod = 1.0
+
+            # Leverage modifier
+            leverage_mod = 1.0
+            if net_debt is not None:
+                if ebitda_ttm and ebitda_ttm > 0:
+                    if net_debt / ebitda_ttm > 3:
+                        leverage_mod = 0.90
+                    elif net_debt < 0:
+                        leverage_mod = 1.05
+                elif net_debt < 0:
+                    leverage_mod = 1.05
+
+            capex_plus1y = capex_base * trend_factor * earnings_mod * leverage_mod
+            fcf_1y_bu = ocf_plus1y - capex_plus1y
+
+            # Year 2: grow FCF +1y by capped revenue growth (most defensible proxy)
+            g_step = rev_growth_fwd if rev_growth_fwd is not None else 0.05
+            g_step = _clamp(g_step, -0.10, 0.20)
+            fcf_2y_candidate = fcf_1y_bu * (1 + g_step)
+
+            # Final sanity: bottom-up FCF should be in a reasonable band relative to TTM/last annual
+            # to avoid pathological cases (e.g., one-off charge year).
+            ref_fcf = latest_fcf or fcf_ttm
+            if fcf_2y_candidate is not None and ref_fcf:
+                ratio = fcf_2y_candidate / ref_fcf
+                if 0.3 <= ratio <= 4.0:
+                    fcf_2y = fcf_2y_candidate
+                    projection_method = "bottom-up"
+                    bottom_up_breakdown = {
+                        "ocf_to_ni_ratio": round(ocf_to_ni_ratio, 3),
+                        "capex_intensity": round(capex_intensity, 4),
+                        "trend_factor": round(trend_factor, 3),
+                        "earnings_mod": round(earnings_mod, 3),
+                        "leverage_mod": round(leverage_mod, 3),
+                        "ni_plus1y": ni_plus1y,
+                        "ocf_plus1y": ocf_plus1y,
+                        "capex_plus1y": capex_plus1y,
+                        "fcf_plus1y": fcf_1y_bu,
+                        "g_step": round(g_step, 3),
+                    }
+    except Exception as e:
+        logger.info(f"bottom-up FCF computation failed for {ticker}: {e}")
+
+    # ---- Method 2: historical FCF CAGR (fallback) ----
+    if fcf_2y is None:
+        try:
+            fvals = [p["value"] for p in fcf_history if p["value"] is not None]
+            if any(v <= 0 for v in fvals):
+                projection_flags["fcf_history_has_negatives"] = True
+            pos_vals = [v for v in fvals if v > 0]
+            if len(pos_vals) >= 2:
+                n = len(pos_vals) - 1
+                raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
+                fcf_growth_fwd = _clamp(raw_fg, -0.30, 0.50)
+                if raw_fg != fcf_growth_fwd:
+                    projection_flags["fcf_projection_capped"] = True
+        except Exception:
+            pass
+
+        if latest_fcf and fcf_growth_fwd is not None:
+            fcf_2y = latest_fcf * (1 + fcf_growth_fwd) ** 2
+        elif latest_fcf:
+            # If we can't compute growth (e.g., negative FCF in history), assume flat
+            fcf_2y = latest_fcf
 
     # ----- 1y forward values (for charting projections) -----
     revenue_1y = revenue_plus1y
@@ -386,7 +549,9 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         revenue_1y = latest_revenue * (1 + rev_growth_fwd)
 
     fcf_1y = None
-    if latest_fcf and fcf_growth_fwd is not None:
+    if fcf_1y_bu is not None and projection_method == "bottom-up":
+        fcf_1y = fcf_1y_bu
+    elif latest_fcf and fcf_growth_fwd is not None:
         fcf_1y = latest_fcf * (1 + fcf_growth_fwd)
     elif latest_fcf:
         fcf_1y = latest_fcf
@@ -525,6 +690,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "revenue_cagr_4y": revenue_cagr_4y,
             "fcf_cagr_4y": fcf_cagr_4y,
             "flags": projection_flags,
+            "projection_method": projection_method,
+            "bottom_up_breakdown": bottom_up_breakdown,
         },
         "classic_ratios": classic_ratios,
         "growth_metrics": growth_metrics,

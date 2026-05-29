@@ -899,6 +899,7 @@ export default function Company() {
                 if (f.fcf_projection_capped) warnings.push("El crecimiento histórico del FCF se ha capado para evitar extrapolaciones extremas.");
                 if (f.fcf_cagr_fallback) warnings.push("CAGR del FCF a 4 años calculado por fallback (no por la fórmula estándar 2y atrás → 2y adelante).");
                 if (f.revenue_cagr_fallback) warnings.push("CAGR de ingresos a 4 años calculado por fallback.");
+                if (f.fcf_bottom_up_ni_suspicious) warnings.push("La estimación de Net Income de analistas parecía anómala (crecimiento >150% o <−50%). La proyección de FCF se ha hecho con el método histórico como precaución.");
                 if (!warnings.length) return null;
                 return (
                     <div className="border border-[#D97706] bg-white p-4 mb-6" data-testid="projection-warnings">
@@ -950,10 +951,34 @@ export default function Company() {
                         // are displayed in compact form (M/B/T) when not focused, expanding to the
                         // full number on focus for precise editing.
                         const v = inputs?.[key];
+                        // Badge with the projection method for FCF 2y so the user knows whether the
+                        // number came from the bottom-up analyst-based model or the historical
+                        // CAGR fallback.
+                        const isFcfRow = key === "fcf_2y";
+                        const method = data?.auto_projections?.projection_method;
+                        const bu = data?.auto_projections?.bottom_up_breakdown;
+                        const methodBadge = (isFcfRow && status === "auto" && method) ? (
+                            <HoverTip
+                                text={method === "bottom-up"
+                                    ? `Método: BOTTOM-UP (analystas + intensidad CapEx)\n\nFCF +1y = OCF +1y − CapEx +1y\nOCF +1y = NI estimado por analistas × ratio OCF/NI histórica (${bu?.ocf_to_ni_ratio}x)\nCapEx +1y = intensidad CapEx/Ventas histórica (${((bu?.capex_intensity || 0) * 100).toFixed(2)}%) × Ingresos +1y\n\nAjustes aplicados:\n• Tendencia reciente: ×${bu?.trend_factor}\n• Momento de earnings: ×${bu?.earnings_mod}\n• Apalancamiento: ×${bu?.leverage_mod}`
+                                    : "Método: HISTORICAL CAGR\n\nUsamos la CAGR de FCF de los últimos años. Aplicamos: FCF base × (1 + CAGR)².\n\nEste método se usa cuando los datos de analistas de NI no están disponibles o parecen anómalos."}
+                            >
+                                <span
+                                    className="overline ml-2 px-1.5 py-0.5 border text-[9px] cursor-help"
+                                    style={{
+                                        borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                        color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                    }}
+                                    data-testid="fcf-method-badge"
+                                >
+                                    {method === "bottom-up" ? "BU" : "CAGR"}
+                                </span>
+                            </HoverTip>
+                        ) : null;
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
-                                    <label className="overline text-[#4A4A4A]">{label}</label>
+                                    <label className="overline text-[#4A4A4A] flex items-center">{label}{methodBadge}</label>
                                     <span className="text-xs font-mono" style={{ color: statusColor }} title={statusLabel} data-testid={`input-status-${key}`}>{statusDot}</span>
                                 </div>
                                 <LocaleNumberInput
