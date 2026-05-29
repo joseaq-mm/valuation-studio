@@ -332,10 +332,13 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         if latest_fcf_annual is not None and latest_fcf_annual > 0 and fcf_ttm < latest_fcf_annual * 0.85:
             # TTM lags the most recent annual by >15% → likely Yahoo data issue, use annual
             latest_fcf = latest_fcf_annual
+            fcf_base_source = "annual_latest_yahoo_ttm_stale"
         else:
             latest_fcf = fcf_ttm
+            fcf_base_source = "ttm_yahoo"
     else:
         latest_fcf = latest_fcf_annual
+        fcf_base_source = "annual_latest"
 
     def _clamp(x, lo, hi):
         if x is None:
@@ -522,6 +525,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         logger.info(f"bottom-up FCF computation failed for {ticker}: {e}")
 
     # ---- Method 2: historical FCF CAGR (fallback) ----
+    cagr_breakdown = None
     if fcf_2y is None:
         try:
             fvals = [p["value"] for p in fcf_history if p["value"] is not None]
@@ -542,6 +546,22 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         elif latest_fcf:
             # If we can't compute growth (e.g., negative FCF in history), assume flat
             fcf_2y = latest_fcf
+
+        # Surface the inputs the user would otherwise have to guess at — particularly
+        # the BASE used (TTM vs annual) and the growth rate applied.
+        if latest_fcf is not None:
+            try:
+                fcf_pos_hist = [v for v in [p["value"] for p in fcf_history if p["value"] is not None] if v > 0]
+                cagr_breakdown = {
+                    "base_value": latest_fcf,
+                    "base_source": fcf_base_source,
+                    "latest_annual": latest_fcf_annual,
+                    "fcf_ttm": fcf_ttm,
+                    "growth_pct": fcf_growth_fwd,
+                    "positive_years_used": len(fcf_pos_hist),
+                }
+            except Exception:
+                pass
 
     # ----- 1y forward values (for charting projections) -----
     revenue_1y = revenue_plus1y
@@ -692,6 +712,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "flags": projection_flags,
             "projection_method": projection_method,
             "bottom_up_breakdown": bottom_up_breakdown,
+            "cagr_breakdown": cagr_breakdown,
         },
         "classic_ratios": classic_ratios,
         "growth_metrics": growth_metrics,

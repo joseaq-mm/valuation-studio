@@ -957,24 +957,34 @@ export default function Company() {
                         const isFcfRow = key === "fcf_2y";
                         const method = data?.auto_projections?.projection_method;
                         const bu = data?.auto_projections?.bottom_up_breakdown;
-                        const methodBadge = (isFcfRow && status === "auto" && method) ? (
-                            <HoverTip
-                                text={method === "bottom-up"
-                                    ? `Método: BOTTOM-UP (analystas + intensidad CapEx)\n\nFCF +1y = OCF +1y − CapEx +1y\nOCF +1y = NI estimado por analistas × ratio OCF/NI histórica (${bu?.ocf_to_ni_ratio}x)\nCapEx +1y = intensidad CapEx/Ventas histórica (${((bu?.capex_intensity || 0) * 100).toFixed(2)}%) × Ingresos +1y\n\nAjustes aplicados:\n• Tendencia reciente: ×${bu?.trend_factor}\n• Momento de earnings: ×${bu?.earnings_mod}\n• Apalancamiento: ×${bu?.leverage_mod}`
-                                    : "Método: HISTORICAL CAGR\n\nUsamos la CAGR de FCF de los últimos años. Aplicamos: FCF base × (1 + CAGR)².\n\nEste método se usa cuando los datos de analistas de NI no están disponibles o parecen anómalos."}
-                            >
-                                <span
-                                    className="overline ml-2 px-1.5 py-0.5 border text-[9px] cursor-help"
-                                    style={{
-                                        borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                        color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
-                                    }}
-                                    data-testid="fcf-method-badge"
-                                >
-                                    {method === "bottom-up" ? "BU" : "CAGR"}
-                                </span>
-                            </HoverTip>
-                        ) : null;
+                        const methodBadge = (isFcfRow && status === "auto" && method) ? (() => {
+                            const cb = data?.auto_projections?.cagr_breakdown;
+                            // Format helpers for the tooltip
+                            const fmtBn = (n) => n == null ? "—" : (Math.abs(n) >= 1e9 ? `$${(n/1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n/1e6).toFixed(0)}M` : `$${n.toFixed(0)}`);
+                            const buText = `Método: BOTTOM-UP (analistas + intensidad CapEx)\n\nFCF +1y = OCF +1y − CapEx +1y\nOCF +1y = NI estimado por analistas × ratio OCF/NI histórica (${bu?.ocf_to_ni_ratio}x)\nCapEx +1y = intensidad CapEx/Ventas histórica (${((bu?.capex_intensity || 0) * 100).toFixed(2)}%) × Ingresos +1y\n\nAjustes aplicados:\n• Tendencia reciente: ×${bu?.trend_factor}\n• Momento de earnings: ×${bu?.earnings_mod}\n• Apalancamiento: ×${bu?.leverage_mod}`;
+                            const baseSourceLabel = {
+                                "ttm_yahoo": "TTM Yahoo (últimos 12 meses)",
+                                "annual_latest_yahoo_ttm_stale": "último anual (TTM Yahoo era inconsistente)",
+                                "annual_latest": "último anual",
+                            }[cb?.base_source] || cb?.base_source || "desconocido";
+                            const cagrText = cb
+                                ? `Método: CAGR HISTÓRICO (fallback)\n\nPaso 1 — Base usada: ${fmtBn(cb.base_value)} (fuente: ${baseSourceLabel})\n   • TTM Yahoo:        ${fmtBn(cb.fcf_ttm)}\n   • Último FCF anual: ${fmtBn(cb.latest_annual)}\n\nPaso 2 — Crecimiento: ${cb.growth_pct != null ? `${(cb.growth_pct*100).toFixed(1)}% anual` : "—"} (CAGR de ${cb.positive_years_used} año(s) positivo(s) del histórico)\n\nPaso 3 — Proyección:\n   FCF +1y = base × (1 + g)\n   FCF +2y = base × (1 + g)²\n\nNota: este método se usa cuando los datos de analistas de NI no permiten el modelo bottom-up (NI negativo, histórico corto, etc.).`
+                                : "Método: CAGR HISTÓRICO\nUsamos la CAGR de FCF positivo histórico aplicada al último FCF disponible.";
+                            return (
+                                <HoverTip text={method === "bottom-up" ? buText : cagrText}>
+                                    <span
+                                        className="overline ml-2 px-1.5 py-0.5 border text-[9px] cursor-help"
+                                        style={{
+                                            borderColor: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                            color: method === "bottom-up" ? "#1D7044" : "#4A4A4A",
+                                        }}
+                                        data-testid="fcf-method-badge"
+                                    >
+                                        {method === "bottom-up" ? "BU" : "CAGR"}
+                                    </span>
+                                </HoverTip>
+                            );
+                        })() : null;
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
