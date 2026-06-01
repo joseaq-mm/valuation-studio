@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
-import { ScoreBar, ScoreBadge, ValueBox, fmtTamScore, tamColor } from "./ScoreBar";
+import { ScoreBar, ScoreBadge, ValueBox, tamColor } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
 import CompanyThesisLinker from "./CompanyThesisLinker";
@@ -134,7 +134,7 @@ function SourcesList({ sources }) {
 function TamScoreBadge({ data, loading, ticker }) {
     const isLoading = loading && !data;
     const v = data ? data.tam_score : null;
-    const txt = isLoading ? null : fmtTamScore(v);
+    const txt = isLoading ? null : (v == null || isNaN(v) ? null : v.toFixed(2));
     // Nothing to show (computed but null) and not loading → render nothing.
     if (!isLoading && txt == null) return null;
     const color = isLoading ? "#9CA3AF" : tamColor(v);
