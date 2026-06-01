@@ -10,6 +10,7 @@ import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides 
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import HoverTip from "@/components/HoverTip";
+import CompanyQualCard from "@/components/thesis/CompanyQualCard";
 import { Star, RefreshCw, AlertCircle, Save, X, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
@@ -806,6 +807,9 @@ export default function Company() {
                     </div>
                 )}
             </div>
+
+            {/* Qualitative thesis bridge (Thesis Engine ↔ quant dashboard) */}
+            <CompanyQualCard ticker={data.ticker} />
 
             {/* Hero KPIs - Ratio Compra & Venta */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-black mb-6" data-testid="hero-kpis">

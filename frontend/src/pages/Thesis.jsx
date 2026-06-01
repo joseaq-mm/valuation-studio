@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -14,10 +14,19 @@ const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
 
 export default function Thesis() {
     const { user } = useAuth();
+    const [searchParams] = useSearchParams();
     const [mode, setMode] = useState("trend");
     const [subject, setSubject] = useState("");
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
+
+    // Prefill from a ?company=TICKER / ?trend=... deep link (e.g. from the company dashboard).
+    useEffect(() => {
+        const co = searchParams.get("company");
+        const tr = searchParams.get("trend");
+        if (co) { setMode("company"); setSubject(co); }
+        else if (tr) { setMode("trend"); setSubject(tr); }
+    }, [searchParams]);
 
     const [folders, setFolders] = useState([]);
     const [saved, setSaved] = useState([]);
