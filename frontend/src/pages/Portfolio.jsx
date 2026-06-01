@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Trash2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +15,9 @@ import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
+import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
+
+const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv"]);
 
 // Apply manual overrides to the API-fetched company snapshot before recomputing
 // ratios. Mirrors the same logic the Watchlist page uses.
@@ -51,6 +54,7 @@ export default function Portfolio() {
     const [loading, setLoading] = useState(false);
     const [showAdd, setShowAdd] = useState(false);
     const [editing, setEditing] = useState(null);
+    const [sort, setSort] = useState(null);
     useThresholds();
 
     const load = async (poss) => {
@@ -106,6 +110,36 @@ export default function Portfolio() {
     const useDisplay = displayCur && displayCur !== "NATIVE";
     const convToDisplay = (v, fromCur) => useDisplay ? fxConvert(v, fromCur) : v;
     const displayCurFor = (nativeCur) => useDisplay ? displayCur : nativeCur;
+
+    const onSort = (key) => setSort((prev) => nextSort(prev, key, PF_NUMERIC_KEYS));
+    const sortVal = (key, r) => {
+        const p = r.position || {};
+        const buyCur = p.buy_currency || r.currency || "USD";
+        switch (key) {
+            case "ticker": return p.ticker;
+            case "shares": return p.shares;
+            case "buy_price": return p.buy_price != null ? convToDisplay(p.buy_price, buyCur) : null;
+            case "invested": return (p.shares && p.buy_price) ? convToDisplay(p.shares * p.buy_price, buyCur) : null;
+            case "price": return convToDisplay(r.current_price, r.currency || buyCur);
+            case "mcap": return convToDisplay(r.market_cap, r.currency || buyCur);
+            case "now": return p.shares ? convToDisplay((r.current_price || 0) * p.shares, r.currency || buyCur) : null;
+            case "pl": {
+                if (!p.shares || !p.buy_price) return null;
+                const investedDisp = convToDisplay(p.shares * p.buy_price, buyCur);
+                const nowDisp = convToDisplay((r.current_price || 0) * p.shares, r.currency || buyCur);
+                return (nowDisp != null && investedDisp != null) ? nowDisp - investedDisp : null;
+            }
+            case "pl_pct": return (p.buy_price && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
+            case "rc": return r.custom_ratios?.ratio_compra_pct;
+            case "rv": return r.custom_ratios?.ratio_venta_pct;
+            default: return null;
+        }
+    };
+    const sortedRows = useMemo(() => {
+        if (!sort) return rows;
+        return [...rows].sort(makeSorter((r) => sortVal(sort.key, r), sort.dir));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rows, sort, displayCur]);
 
     // Totals across all rows (converted to display currency for cross-ticker addition).
     // Positions with no shares or no buy_price are NOT counted into invested/now; we just
@@ -183,30 +217,30 @@ export default function Portfolio() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-2 py-2">{t("watchlist.col_ticker")}</th>
-                                <th className="overline text-right px-2 py-2">{t("portfolio.col_shares")}</th>
-                                <th className="overline text-right px-2 py-2">{t("portfolio.col_buy_price")}</th>
-                                <th className="overline text-right px-2 py-2">{t("portfolio.col_invested")}</th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_price")}</th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_mcap")}</th>
-                                <th className="overline text-right px-2 py-2">{t("portfolio.col_now")}</th>
-                                <th className="overline text-right px-2 py-2">
+                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" />
+                                <SortableTh label={t("portfolio.col_shares")} sortKey="shares" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("portfolio.col_buy_price")} sortKey="buy_price" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("portfolio.col_invested")} sortKey="invested" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("portfolio.col_now")} sortKey="now" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh sortKey="pl" sort={sort} onSort={onSort} align="right">
                                     <HoverTip text={t("portfolio.tt_pl")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl")}</span>
                                     </HoverTip>
-                                </th>
-                                <th className="overline text-right px-2 py-2">
+                                </SortableTh>
+                                <SortableTh sortKey="pl_pct" sort={sort} onSort={onSort} align="right">
                                     <HoverTip text={t("portfolio.tt_pl_pct")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl_pct")}</span>
                                     </HoverTip>
-                                </th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rc")}</th>
+                                </SortableTh>
+                                <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_buy_signal")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal")}</span>
                                     </HoverTip>
                                 </th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rv")}</th>
+                                <SortableTh label={t("watchlist.col_rv")} sortKey="rv" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_sell_signal")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
@@ -225,7 +259,7 @@ export default function Portfolio() {
                         </thead>
                         <tbody>
                             {loading && <tr><td colSpan="15" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
-                            {!loading && rows.map((r, i) => {
+                            {!loading && sortedRows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">

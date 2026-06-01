@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { getWatchlist, getWatchlistTickers, removeFromWatchlist, setWatchlistAlert, setAllWatchlistAlerts } from "@/lib/storage";
 import { compare } from "@/lib/api";
@@ -39,6 +39,7 @@ export default function Watchlist() {
     const [entries, setEntries] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [sort, setSort] = useState(null);
     const { user } = useAuth();
     const [notify, setNotify] = useState(null);
     const { display: displayCur, convert: fxConvert } = useFx();
@@ -128,6 +129,12 @@ export default function Watchlist() {
         toast.success(next ? "Alertas activadas en toda la watchlist" : "Alertas desactivadas en toda la watchlist");
     };
 
+    const onSort = (key) => setSort((prev) => nextSort(prev, key, WL_NUMERIC_KEYS));
+    const sortedRows = useMemo(() => {
+        if (!sort || !WL_ACCESSORS[sort.key]) return rows;
+        return [...rows].sort(makeSorter(WL_ACCESSORS[sort.key], sort.dir));
+    }, [rows, sort]);
+
     return (
         <div data-testid="watchlist-page">
             <div className="flex justify-between items-end mb-6">
@@ -166,18 +173,18 @@ export default function Watchlist() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <th className="overline text-left px-2 py-2">{t("watchlist.col_ticker")}</th>
-                                <th className="overline text-left px-2 py-2">{t("watchlist.col_company")}</th>
+                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" />
+                                <SortableTh label={t("watchlist.col_company")} sortKey="name" sort={sort} onSort={onSort} align="left" />
                                 <th className="overline text-center px-2 py-2">{t("watchlist.col_mode")}</th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_price")}</th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_mcap")}</th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rc")}</th>
+                                <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_buy_signal")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal")}</span>
                                     </HoverTip>
                                 </th>
-                                <th className="overline text-right px-2 py-2">{t("watchlist.col_rv")}</th>
+                                <SortableTh label={t("watchlist.col_rv")} sortKey="rv" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_sell_signal")}>
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
@@ -196,7 +203,7 @@ export default function Watchlist() {
                         </thead>
                         <tbody>
                             {loading && <tr><td colSpan="11" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
-                            {rows.map(({ entry, data: r }) => {
+                            {sortedRows.map(({ entry, data: r }) => {
                                 if (r.error) return (
                                     <tr key={r.ticker} className="border-b border-black/10">
                                         <td className="px-2 py-2 font-mono">{r.ticker}</td>

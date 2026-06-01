@@ -72,8 +72,12 @@
   - Modal de confirmación al sobrescribir snapshot existente.
   - Modal de aviso al navegar con cambios sin guardar (interceptor manual de clicks en links, sin `useBlocker` porque la app no usa data router) + `beforeunload` para cierre de pestaña/refresh.
   - Watchlist y compare aplican overrides client-side vía `customRatios.js` (réplica JS de la fórmula del backend) → ratios reflejan tu análisis manual.
-- **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).
-- **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
+- **✅ COMPLETADO (Feb 2026)** — **Ordenamiento de columnas en Watchlist y Cartera**:
+  - Nuevo componente reutilizable `components/SortableTh.jsx` (encabezado clicable con flecha asc/desc + helpers `makeSorter` y `nextSort`).
+  - **Watchlist**: ordena por Ticker, Empresa (alfabético), Precio, MCap, Ratio Compra, Ratio Venta (numérico). Strings → asc por defecto; números → desc por defecto. Nulos/errores siempre al fondo.
+  - **Cartera**: ordena por Ticker, Acciones, Precio compra, Invertido, Precio, MCap, Valor actual, P/L, P/L %, Ratio Compra, Ratio Venta. Valores numéricos convertidos a la moneda de visualización antes de comparar para orden correcto cross-divisa.
+  - Ordenamiento 100% client-side sobre las filas ya cargadas (no re-fetch). Las columnas de señal/modo/alerta no son ordenables (derivadas).
+- **P1** — Histórico de ratios (gráfico de evolución temporal de Ratio Compra/Venta).- **P1** — Umbrales de señal configurables por el usuario (sliders cheap/expensive).
 - **P1** — Aviso visual cuando una proyección automática viene de un CAGR extremo (capado), para que el usuario sepa que debe revisar manualmente.
 - **P2** — Exportar análisis a PDF / Excel.
 - **P2** — Modo "Sensibilidad": cómo cambia POC al variar márgenes/crecimientos ±10%.
