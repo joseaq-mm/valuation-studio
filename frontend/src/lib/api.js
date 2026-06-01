@@ -59,6 +59,8 @@ const thesisApi = axios.create({ baseURL: API, timeout: 180000, withCredentials:
 
 export const thesisGenerate = (type, subject) =>
     thesisApi.post(`/thesis/generate`, { type, subject }).then(r => r.data);
+export const thesisGenerateContra = (id) =>
+    thesisApi.post(`/thesis/${id}/contra`).then(r => r.data);
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);
 export const thesisGet = (id) => api.get(`/thesis/${id}`).then(r => r.data);
 export const thesisDelete = (id) => api.delete(`/thesis/${id}`).then(r => r.data);

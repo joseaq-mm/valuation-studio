@@ -21,6 +21,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from fastapi.concurrency import run_in_threadpool
+
 logger = logging.getLogger(__name__)
 
 INVESTIGATOR_MODEL = ("openai", "gpt-5.2")
@@ -85,6 +87,11 @@ def gather_sources(subject: str, kind: str, max_results: int = 5) -> list:
     return out[:18]
 
 
+async def run_in_threadpool_safe(subject: str, kind: str) -> list:
+    """Run the synchronous live web search off the event loop."""
+    return await run_in_threadpool(gather_sources, subject, kind)
+
+
 def _sources_block(sources: list) -> str:
     lines = []
     for i, s in enumerate(sources, 1):
@@ -135,6 +142,15 @@ def _clamp_score(v):
     except (TypeError, ValueError):
         return None
     return max(0, min(100, round(v)))
+
+
+def _clamp10(v):
+    """Probability on a 0-10 integer scale (0 = very unlikely, 10 = near certainty)."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(10, round(v)))
 
 
 # ---------------------- Flow A: Trend → companies ----------------------
@@ -197,8 +213,11 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         "query": trend,
         "title": inv.get("title") or trend,
         "summary": inv.get("summary"),
+        "probability": _clamp10(syn.get("thesis_probability")),
+        "probability_rationale": syn.get("thesis_probability_rationale"),
         "value_chain": inv.get("value_chain") or [],
         "companies": merged,
+        "contra": None,
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -208,7 +227,10 @@ SYNTHESIZER_TREND_SYS = (
     "Eres un gestor de carteras value con criterio cualitativo riguroso. Recibes una "
     "tendencia y una lista de empresas con su rol en la cadena de valor. Asignas puntuaciones "
     "cualitativas de 0 a 100 (mayor = mejor) en cuatro dimensiones y un score global, además "
-    "de una tesis breve y los riesgos clave. Sé exigente: reserva >85 para líderes claros. "
+    "de una tesis breve y los riesgos clave. También estimas la PROBABILIDAD (entero 0 a 10, "
+    "0 = muy improbable, 10 = certeza casi absoluta) de que la tesis se materialice, calibrada "
+    "según la evidencia, con una justificación breve. Sé exigente: reserva >85 para líderes "
+    "claros y reserva probabilidades >=8 solo para tendencias con evidencia muy sólida. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
@@ -222,6 +244,8 @@ async def _synthesize_companies(trend: str, summary: str, companies: list) -> di
         f"TENDENCIA: {trend}\nCONTEXTO: {summary}\n\nEMPRESAS:\n{lst}\n\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
+        '  "thesis_probability": 0-10,\n'
+        '  "thesis_probability_rationale": "1-2 frases justificando la probabilidad de que la tesis se cumpla",\n'
         '  "companies": [{\n'
         '    "ticker": "TICKER",\n'
         '    "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
@@ -291,8 +315,11 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "company": {"name": comp.get("name") or company, "ticker": (comp.get("ticker") or "").upper().strip()},
         "title": comp.get("name") or company,
         "summary": inv.get("summary"),
+        "probability": _clamp10(syn.get("overall_probability")),
+        "probability_rationale": syn.get("overall_probability_rationale"),
         "trends": merged,
         "overall_relevance": _clamp_score(syn.get("overall_relevance")),
+        "contra": None,
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -302,7 +329,9 @@ SYNTHESIZER_COMPANY_SYS = (
     "Eres un estratega de inversión. Recibes una empresa y una lista de megatendencias en las "
     "que encaja. Asignas a cada tendencia un score de RELEVANCIA de 0 a 100 (cuánto pesa esa "
     "tendencia en la tesis de la empresa) con una justificación breve, y un score global de "
-    "relevancia temática. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "relevancia temática. También estimas la PROBABILIDAD (entero 0 a 10) de que la tesis "
+    "alcista temática de la empresa se materialice, con una justificación breve. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
@@ -313,6 +342,8 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "overall_relevance": 0-100,\n'
+        '  "overall_probability": 0-10,\n'
+        '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática",\n'
         '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "rationale": "1-2 frases"}]\n'
         "}\n"
         "Incluye TODAS las tendencias con su mismo nombre."
@@ -320,3 +351,104 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-syn-co-{datetime.now(timezone.utc).timestamp()}",
                      SYNTHESIZER_COMPANY_SYS, user)
     return _extract_json(raw)
+
+
+# ---------------------- Contra-thesis (antítesis, bajo demanda) ----------------------
+
+CONTRA_INVESTIGATOR_TREND_SYS = (
+    "Eres un analista bajista (bear) riguroso. Construyes la CONTRATESIS de una megatendencia: "
+    "el escenario o contra-tendencia que la invalidaría y QUÉ empresas cotizadas saldrían más "
+    "perjudicadas si esa contratesis se cumple. Usas resultados REALES de búsqueda web reciente, "
+    "NO inventas. Identifica empresas cotizadas con su TICKER canónico (formato Yahoo Finance). "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+CONTRA_INVESTIGATOR_COMPANY_SYS = (
+    "Eres un analista bajista (bear) riguroso. Construyes la CONTRATESIS de una empresa cotizada: "
+    "las tendencias o escenarios que le harían PERDER valor (la tesis perdedora). Usas resultados "
+    "REALES de búsqueda web reciente, NO inventas. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+CONTRA_SYNTHESIZER_SYS = (
+    "Eres un gestor de riesgos. Recibes una contratesis (escenario bajista) y estimas la "
+    "PROBABILIDAD (entero 0 a 10, 0 = muy improbable, 10 = casi seguro) de que se materialice, "
+    "calibrada según la evidencia, con una justificación breve. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+)
+
+
+async def _contra_probability(summary: str) -> dict:
+    user = (
+        f"CONTRATESIS (escenario bajista):\n{summary}\n\n"
+        "Devuelve un JSON con esta forma EXACTA:\n"
+        '{ "probability": 0-10, "probability_rationale": "1-2 frases" }'
+    )
+    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-contra-syn-{datetime.now(timezone.utc).timestamp()}",
+                     CONTRA_SYNTHESIZER_SYS, user)
+    return _extract_json(raw)
+
+
+async def run_trend_contra(title: str, summary: str) -> dict:
+    sources = await run_in_threadpool_safe(f"{title} bear case riesgos amenazas disrupción contra", "trend")
+    inv_user = (
+        f"TESIS ORIGINAL (alcista): {title}\nCONTEXTO: {summary}\n\n"
+        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{_sources_block(sources)}\n\n"
+        "Construye la CONTRATESIS. Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "summary": "2-3 frases: qué escenario o contra-tendencia invalidaría la tesis original y por qué",\n'
+        '  "value_chain": [{"stage": "eslabón afectado", "description": "cómo se ve perjudicado"}],\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "harm_reason": "1-2 frases sobre por qué saldría perjudicada"}]\n'
+        "}\n"
+        "Incluye entre 3 y 6 empresas cotizadas reales que saldrían más perjudicadas, con su TICKER canónico."
+    )
+    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-trend-{datetime.now(timezone.utc).timestamp()}",
+                         CONTRA_INVESTIGATOR_TREND_SYS, inv_user)
+    inv = _extract_json(inv_raw)
+    summary_contra = inv.get("summary") or ""
+    prob = await _contra_probability(summary_contra)
+    companies = []
+    for c in (inv.get("companies") or []):
+        companies.append({
+            "name": c.get("name"),
+            "ticker": (c.get("ticker") or "").upper().strip(),
+            "harm_reason": c.get("harm_reason"),
+        })
+    return {
+        "kind": "trend",
+        "summary": summary_contra,
+        "probability": _clamp10(prob.get("probability")),
+        "probability_rationale": prob.get("probability_rationale"),
+        "value_chain": inv.get("value_chain") or [],
+        "companies": companies,
+        "sources": sources,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def run_company_contra(company: str, summary: str) -> dict:
+    sources = await run_in_threadpool_safe(f"{company} bear case riesgos amenazas pérdida de valor", "company")
+    inv_user = (
+        f"EMPRESA: {company}\nCONTEXTO: {summary}\n\n"
+        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{_sources_block(sources)}\n\n"
+        "Construye la CONTRATESIS (tesis perdedora). Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "summary": "2-3 frases: qué escenario haría perder valor a la empresa",\n'
+        '  "losing_trends": [{"name": "tendencia/escenario perjudicial", "harm_reason": "1-2 frases sobre el daño"}]\n'
+        "}\n"
+        "Incluye entre 2 y 5 tendencias/escenarios perjudiciales."
+    )
+    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-co-{datetime.now(timezone.utc).timestamp()}",
+                         CONTRA_INVESTIGATOR_COMPANY_SYS, inv_user)
+    inv = _extract_json(inv_raw)
+    summary_contra = inv.get("summary") or ""
+    prob = await _contra_probability(summary_contra)
+    return {
+        "kind": "company",
+        "summary": summary_contra,
+        "probability": _clamp10(prob.get("probability")),
+        "probability_rationale": prob.get("probability_rationale"),
+        "losing_trends": inv.get("losing_trends") or [],
+        "sources": sources,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }

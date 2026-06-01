@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { thesisGet } from "@/lib/api";
+import { thesisGet, thesisGenerateContra } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
 
 export default function ThesisDetail() {
     const { id } = useParams();
+    const { user } = useAuth();
     const [thesis, setThesis] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [generatingContra, setGeneratingContra] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -19,6 +23,18 @@ export default function ThesisDetail() {
             .finally(() => { if (alive) setLoading(false); });
         return () => { alive = false; };
     }, [id]);
+
+    const generateContra = async () => {
+        setGeneratingContra(true);
+        try {
+            const contra = await thesisGenerateContra(id);
+            setThesis((prev) => ({ ...prev, contra }));
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo generar la contratesis");
+        } finally {
+            setGeneratingContra(false);
+        }
+    };
 
     return (
         <div data-testid="thesis-detail-page">
@@ -33,7 +49,14 @@ export default function ThesisDetail() {
             {error && !loading && (
                 <div className="border border-[#B32A22]/40 bg-white p-6 text-[#B32A22]" data-testid="thesis-detail-error">{error}</div>
             )}
-            {thesis && !loading && <ThesisResult thesis={thesis} />}
+            {thesis && !loading && (
+                <ThesisResult
+                    thesis={thesis}
+                    canGenerateContra={!!user}
+                    onGenerateContra={generateContra}
+                    generatingContra={generatingContra}
+                />
+            )}
         </div>
     );
 }

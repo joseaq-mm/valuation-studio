@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisList, thesisFolders, thesisCreateFolder,
+    thesisGenerate, thesisGenerateContra, thesisList, thesisFolders, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
@@ -19,6 +19,7 @@ export default function Thesis() {
     const [subject, setSubject] = useState("");
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
+    const [generatingContra, setGeneratingContra] = useState(false);
 
     // Prefill from a ?company=TICKER / ?trend=... deep link (e.g. from the company dashboard).
     useEffect(() => {
@@ -58,6 +59,22 @@ export default function Thesis() {
             toast.error(msg);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const generateContra = async () => {
+        if (!result?.id) {
+            toast.error("Inicia sesión para añadir la contratesis");
+            return;
+        }
+        setGeneratingContra(true);
+        try {
+            const contra = await thesisGenerateContra(result.id);
+            setResult((prev) => ({ ...prev, contra }));
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo generar la contratesis");
+        } finally {
+            setGeneratingContra(false);
         }
     };
 
@@ -195,7 +212,14 @@ export default function Thesis() {
                     )}
 
                     {/* Result */}
-                    {result ? <ThesisResult thesis={result} /> : !loading && (
+                    {result ? (
+                        <ThesisResult
+                            thesis={result}
+                            canGenerateContra={!!result.id}
+                            onGenerateContra={generateContra}
+                            generatingContra={generatingContra}
+                        />
+                    ) : !loading && (
                         <div className="border border-dashed border-black/30 p-10 text-center text-[#4A4A4A]" data-testid="thesis-empty">
                             <Sparkles size={28} className="mx-auto mb-3 opacity-50" />
                             <p className="text-sm">Genera tu primera tesis cualitativa.</p>

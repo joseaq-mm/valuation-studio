@@ -14,7 +14,10 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from services.thesis import gather_sources, run_trend_thesis, run_company_thesis
+from services.thesis import (
+    gather_sources, run_trend_thesis, run_company_thesis,
+    run_trend_contra, run_company_contra,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +193,28 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
         return {"ok": True, "folder_id": req.folder_id}
+
+    @router.post("/{thesis_id}/contra")
+    async def generate_contra(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis no encontrada")
+        if doc.get("contra"):
+            return doc["contra"]
+        try:
+            if doc.get("type") == "company":
+                name = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
+                contra = await run_company_contra(name, doc.get("summary") or "")
+            else:
+                contra = await run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or "")
+        except Exception as e:
+            logger.error(f"contra generation failed ({thesis_id}): {e}")
+            raise HTTPException(status_code=502, detail=f"Error generando la contratesis: {e}")
+        await db.theses.update_one(
+            {"id": thesis_id, "user_id": user["user_id"]},
+            {"$set": {"contra": contra}},
+        )
+        return contra
 
     @router.delete("/{thesis_id}")
     async def delete_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
