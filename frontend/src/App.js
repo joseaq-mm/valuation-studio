@@ -8,6 +8,8 @@ import Company from "@/pages/Company";
 import Watchlist from "@/pages/Watchlist";
 import Portfolio from "@/pages/Portfolio";
 import Compare from "@/pages/Compare";
+import Thesis from "@/pages/Thesis";
+import ThesisDetail from "@/pages/ThesisDetail";
 import AuthCallback from "@/pages/AuthCallback";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
@@ -29,6 +31,8 @@ function AppRouter() {
                 <Route path="/watchlist" element={<Watchlist />} />
                 <Route path="/portfolio" element={<Portfolio />} />
                 <Route path="/compare" element={<Compare />} />
+                <Route path="/thesis" element={<Thesis />} />
+                <Route path="/thesis/:id" element={<ThesisDetail />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
             </Routes>
         </Layout>

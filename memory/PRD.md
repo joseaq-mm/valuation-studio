@@ -52,6 +52,15 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **✅ COMPLETADO (Feb 2026)** — **Thesis Engine MVP (módulo cualitativo con IA)**:
+  - Arquitectura IA dual vía Emergent LLM Key: GPT-5.2 (Investigador) + Claude Sonnet 4.5 (Sintetizador).
+  - **Búsqueda web en vivo**: el proxy de Emergent NO soporta web-search nativa de OpenAI (`web_search_options`/`web_search_preview` rechazados; solo tools `function`/`custom`). Solución: el backend hace la búsqueda en tiempo real con **DuckDuckGo (`ddgs`)** y pasa los resultados frescos a GPT-5.2, que estructura cadena de valor + empresas con TICKER canónico citando fuentes; Claude asigna scores cualitativos.
+  - **Flujo A** (Tendencia → cadena de valor → empresas líderes + 4 sub-scores [posición competitiva, momentum sector, calidad management, resiliencia financiera] + score global + tesis + riesgos).
+  - **Flujo B inverso** (Empresa → tendencias donde encaja + rol en cadena + score de relevancia + relevancia temática global).
+  - **Datos**: cada empresa indexada por TICKER en `qual_snapshots` para enlazar con `/company/{ticker}`. Guardado en carpetas (`thesis_folders`, `theses`).
+  - Backend nuevo: `services/thesis.py`, `routes/thesis.py`. Endpoints `/api/thesis/{generate,list,folders,folders/{id},{id},{id}/folder,company/{ticker}}`. Generación funciona anónima (efímera); guardar/listar requiere login Google.
+  - Frontend nuevo: `pages/Thesis.jsx`, `pages/ThesisDetail.jsx`, `components/thesis/{ThesisResult,ScoreBar}.jsx`. Nav "Tesis". Estética FT salmón. Timeout API 180s (generación ~40-90s).
+  - Tested: ambos flujos vía curl (NVDA/MSFT/AVGO, ASML); CRUD con login vía Bearer seed; render UI vía screenshot; 7 tests pytest de helpers puros. NO probado por testing_agent (para no consumir créditos de generación LLM).
 - **✅ COMPLETADO (Feb 2026)** — **Phase B completa**: Google Auth opcional (Emergent-managed), watchlist sync entre dispositivos, multimoneda (166 monedas vía open.er-api.com), screener nocturno con Resend + APScheduler cron 06:00 UTC, traducción de resumen empresa al español con cache permanente.
   - Backend nuevo: `auth.py`, `fx.py`, `screener.py`. Endpoints: `/api/auth/{session,me,logout,watchlist,notify}`, `/api/fx/rates`, `/api/admin/run-screener`, `/api/company/{ticker}/translate-summary` (truncado a 1400 chars).
   - Frontend nuevo: `AuthProvider`, `AuthCallback`, `AuthButton`, `WatchlistCloudSync`, `FxProvider`, `CurrencySelector`, banner login + card de notificaciones en Watchlist.

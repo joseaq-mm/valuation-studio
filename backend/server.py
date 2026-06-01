@@ -30,6 +30,9 @@ api_router = APIRouter(prefix="/api")
 auth_router, _auth_required, _auth_optional = make_auth_router(db)
 api_router.include_router(auth_router)
 
+from routes.thesis import make_router as make_thesis_router
+api_router.include_router(make_thesis_router(db, _auth_required, _auth_optional))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 

@@ -51,3 +51,21 @@ export const notifyPut = (prefs) => api.put(`/auth/notify`, prefs).then(r => r.d
 
 // ---------------- FX ----------------
 export const fxRates = () => api.get(`/fx/rates`).then(r => r.data);
+
+// ---------------- Thesis Engine (qualitative AI) ----------------
+// Generation runs a live web search + GPT-5.2 + Claude pipeline → ~40-90s,
+// so it needs a much longer timeout than the default api instance.
+const thesisApi = axios.create({ baseURL: API, timeout: 180000, withCredentials: true });
+
+export const thesisGenerate = (type, subject) =>
+    thesisApi.post(`/thesis/generate`, { type, subject }).then(r => r.data);
+export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);
+export const thesisGet = (id) => api.get(`/thesis/${id}`).then(r => r.data);
+export const thesisDelete = (id) => api.delete(`/thesis/${id}`).then(r => r.data);
+export const thesisAssignFolder = (id, folder_id) =>
+    api.put(`/thesis/${id}/folder`, { folder_id }).then(r => r.data);
+export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
+export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
+export const thesisDeleteFolder = (id) => api.delete(`/thesis/folders/${id}`).then(r => r.data);
+export const thesisCompanyQual = (ticker) =>
+    api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);
