@@ -3,8 +3,31 @@ import { Link } from "react-router-dom";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
 import { ScoreBar, ScoreBadge } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
+import HoverTip from "@/components/HoverTip";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
+
+// TAM is expressed in USD billions (miles de millones). Show $B, or $T when ≥1000.
+function fmtTam(busd) {
+    if (busd == null || isNaN(busd)) return null;
+    if (busd >= 1000) return `$${(busd / 1000).toFixed(busd >= 10000 ? 0 : 1)} T`;
+    if (busd >= 10) return `$${Math.round(busd)} B`;
+    return `$${busd} B`;
+}
+
+function TamBadge({ busd, label, note, big = false }) {
+    const txt = fmtTam(busd);
+    if (!txt) return null;
+    const inner = (
+        <div className="flex flex-col items-center gap-0.5" data-testid="tam-badge">
+            <div className={`font-mono font-bold leading-none text-[#1E7D45] ${big ? "text-2xl" : "text-base"}`}>{txt}</div>
+            <span className="overline text-[#4A4A4A] text-center leading-tight">{label}</span>
+        </div>
+    );
+    return note
+        ? <HoverTip text={`${note}\n\n(TAM en miles de millones de USD)`} maxWidth={300}><div className="cursor-help">{inner}</div></HoverTip>
+        : <HoverTip text="TAM en miles de millones de USD" maxWidth={260}><div className="cursor-help">{inner}</div></HoverTip>;
+}
 
 function ContraSection({ contra, isTrend, canGenerate, onGenerate, generating }) {
     // Not generated yet → on-demand button (saves credits).
@@ -107,10 +130,17 @@ function SourcesList({ sources }) {
 }
 
 function CompanyCard({ c }) {
+    const isDisruptor = c.category === "disruptor";
     return (
         <div className="border border-black bg-white p-5" data-testid={`thesis-company-${c.ticker}`}>
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
+                    <span
+                        className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${isDisruptor ? "bg-[#B32A22] text-white" : "bg-[#052049] text-[#FDF1E6]"}`}
+                        data-testid={`category-${c.ticker}`}
+                    >
+                        {isDisruptor ? "Disruptor" : "Líder"}
+                    </span>
                     <div className="font-serif text-xl font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
@@ -145,6 +175,64 @@ function CompanyCard({ c }) {
             )}
         </div>
     );
+}
+
+const _norm = (s) => (s || "").trim().toLowerCase();
+
+function StageRow({ group }) {
+    const { stage, leaders, disruptors } = group;
+    return (
+        <div className="mb-8" data-testid={`stage-row-${_norm(stage.stage).slice(0, 16)}`}>
+            <div className="flex items-end justify-between gap-3 border-b-2 border-black pb-1.5 mb-3">
+                <div className="min-w-0">
+                    <div className="font-serif text-lg font-medium leading-tight">{stage.stage}</div>
+                    {stage.description && <div className="text-xs text-[#4A4A4A] leading-snug mt-0.5">{stage.description}</div>}
+                </div>
+                <TamBadge busd={stage.tam_busd} label="TAM 2027e" />
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                    <div className="overline text-[#052049] mb-2">Líderes establecidos</div>
+                    <div className="space-y-4">
+                        {leaders.length
+                            ? leaders.map((c, i) => <CompanyCard key={i} c={c} />)
+                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin líder identificado en este eslabón.</div>}
+                    </div>
+                </div>
+                <div>
+                    <div className="overline text-[#B32A22] mb-2">Disruptores / líderes del cambio</div>
+                    <div className="space-y-4">
+                        {disruptors.length
+                            ? disruptors.map((c, i) => <CompanyCard key={i} c={c} />)
+                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin disruptor identificado en este eslabón.</div>}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function CompaniesByStage({ valueChain, companies }) {
+    const stages = valueChain || [];
+    const used = new Set();
+    const groups = stages.map((s) => {
+        const inStage = (companies || []).filter((c) => _norm(c.value_chain_role) === _norm(s.stage));
+        inStage.forEach((c) => used.add(c.ticker));
+        return {
+            stage: s,
+            leaders: inStage.filter((c) => c.category !== "disruptor"),
+            disruptors: inStage.filter((c) => c.category === "disruptor"),
+        };
+    });
+    const leftover = (companies || []).filter((c) => !used.has(c.ticker));
+    if (leftover.length) {
+        groups.push({
+            stage: { stage: stages.length ? "Otros" : "Empresas", description: "", tam_busd: null },
+            leaders: leftover.filter((c) => c.category !== "disruptor"),
+            disruptors: leftover.filter((c) => c.category === "disruptor"),
+        });
+    }
+    return <>{groups.map((g, i) => <StageRow key={i} group={g} />)}</>;
 }
 
 function TrendCard({ t }) {
@@ -199,6 +287,9 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         {!isTrend && (
                             <ScoreBadge value={thesis.overall_relevance} label="Relevancia temática global" />
                         )}
+                        {isTrend && thesis.tam?.global_busd != null && (
+                            <TamBadge busd={thesis.tam.global_busd} label={`TAM ${thesis.tam?.year || 2027}e`} note={thesis.tam?.note} big />
+                        )}
                         <ProbabilityCircle value={thesis.probability} rationale={thesis.probability_rationale} label="Prob. de la tesis" testid="thesis-probability" />
                     </div>
                 </div>
@@ -215,27 +306,14 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             />
 
             {/* Value chain (trend only) */}
-            {isTrend && thesis.value_chain?.length > 0 && (
-                <div className="mb-6" data-testid="thesis-value-chain">
-                    <div className="overline text-[#4A4A4A] mb-2">Cadena de valor</div>
-                    <div className="flex flex-wrap gap-2">
-                        {thesis.value_chain.map((v, i) => (
-                            <div key={i} className="border border-black bg-[#F5E4D4] px-3 py-2 max-w-xs">
-                                <div className="font-semibold text-sm">{v.stage}</div>
-                                <div className="text-xs text-[#4A4A4A] mt-0.5 leading-snug">{v.description}</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Companies / Trends grid */}
+            {/* Value chain + companies by stage (leaders / disruptors), trend only */}
             {isTrend ? (
                 <>
-                    <div className="overline text-[#4A4A4A] mb-2">Empresas líderes</div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                        {(thesis.companies || []).map((c, i) => <CompanyCard key={i} c={c} />)}
+                    <div className="flex items-baseline justify-between gap-2 mb-3">
+                        <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. disruptores</div>
+                        <div className="overline text-[#9CA3AF] hidden sm:block">TAM 2027e por eslabón</div>
                     </div>
+                    <CompaniesByStage valueChain={thesis.value_chain} companies={thesis.companies} />
                 </>
             ) : (
                 <>

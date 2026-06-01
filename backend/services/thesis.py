@@ -153,6 +153,42 @@ def _clamp10(v):
     return max(0, min(10, round(v)))
 
 
+def _busd(v):
+    """Coerce a TAM value to a non-negative number of USD billions (or None)."""
+    if isinstance(v, str):
+        v = v.replace(",", "").replace("$", "").strip()
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+    return round(v, 1)
+
+
+def _normalize_tam(tam):
+    if not isinstance(tam, dict):
+        return None
+    return {
+        "global_busd": _busd(tam.get("global_busd")),
+        "year": tam.get("year") or 2027,
+        "note": tam.get("note"),
+    }
+
+
+def _normalize_value_chain(vc):
+    out = []
+    for s in (vc or []):
+        if not isinstance(s, dict):
+            continue
+        out.append({
+            "stage": s.get("stage"),
+            "description": s.get("description"),
+            "tam_busd": _busd(s.get("tam_busd")),
+        })
+    return out
+
+
 # ---------------------- Flow A: Trend → companies ----------------------
 
 INVESTIGATOR_TREND_SYS = (
@@ -161,6 +197,10 @@ INVESTIGATOR_TREND_SYS = (
     "información, NO inventar. Identifica empresas COTIZADAS con su TICKER bursátil canónico "
     "exacto tal como aparece en Yahoo Finance (ej. NVDA, ASML.AS, TSM, 005930.KS). "
     "Si una empresa no cotiza o no estás seguro del ticker, no la incluyas. "
+    "Clasificas cada empresa como 'leader' (líder establecido que ya domina su eslabón) o "
+    "'disruptor' (retador / líder del cambio que podría redefinir el eslabón). "
+    "Estimas el TAM (mercado total direccionable) en MILES DE MILLONES DE USD proyectado a 2027 "
+    "(base TTM): un TAM global de la tendencia y un TAM por cada eslabón de la cadena de valor. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
@@ -174,11 +214,15 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         "{\n"
         '  "title": "título corto de la tesis",\n'
         '  "summary": "2-3 frases sobre por qué es una megatendencia relevante para invertir",\n'
-        '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí"}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "eslabón donde encaja", "why": "1-2 frases sobre por qué es líder/relevante"}]\n'
+        '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
+        '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|disruptor", "why": "1-2 frases sobre por qué es líder o disruptor de ese eslabón"}]\n'
         "}\n"
-        "Incluye entre 4 y 8 empresas líderes reales y cotizadas, ordenadas por relevancia. "
-        "Cubre distintos eslabones de la cadena (no solo el más obvio)."
+        "REGLAS:\n"
+        "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
+        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 'disruptor'.\n"
+        "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
+        "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
     inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-trend-{datetime.now(timezone.utc).timestamp()}",
                          INVESTIGATOR_TREND_SYS, inv_user)
@@ -196,10 +240,14 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         tk = (c.get("ticker") or "").upper().strip()
         s = score_by_ticker.get(tk) or (syn_list[idx] if idx < len(syn_list) else {})
         scores = {d: _clamp_score((s.get("scores") or {}).get(d)) for d in SCORE_DIMENSIONS}
+        cat = (c.get("category") or "leader").strip().lower()
+        if cat not in ("leader", "disruptor"):
+            cat = "leader"
         merged.append({
             "name": c.get("name"),
             "ticker": tk,
             "value_chain_role": c.get("value_chain_role"),
+            "category": cat,
             "why": c.get("why"),
             "scores": scores,
             "overall_score": _clamp_score(s.get("overall_score")),
@@ -213,9 +261,10 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         "query": trend,
         "title": inv.get("title") or trend,
         "summary": inv.get("summary"),
+        "tam": _normalize_tam(inv.get("tam")),
         "probability": _clamp10(syn.get("thesis_probability")),
         "probability_rationale": syn.get("thesis_probability_rationale"),
-        "value_chain": inv.get("value_chain") or [],
+        "value_chain": _normalize_value_chain(inv.get("value_chain")),
         "companies": merged,
         "contra": None,
         "sources": sources,
