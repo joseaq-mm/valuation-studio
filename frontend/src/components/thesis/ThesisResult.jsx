@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
 import { ScoreBar, ScoreBadge } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
 import CompanyThesisLinker from "./CompanyThesisLinker";
+import { thesisTamScores } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -130,7 +131,40 @@ function SourcesList({ sources }) {
     );
 }
 
-function CompanyCard({ c }) {
+function fmtTamScore(v) {
+    if (v == null || isNaN(v)) return null;
+    return v >= 10 ? `${Math.round(v)}×` : `${v.toFixed(1)}×`;
+}
+
+function TamScoreBadge({ data, loading, ticker }) {
+    if (loading && !data) {
+        return (
+            <div className="flex flex-col items-center gap-0.5" data-testid={`tam-score-loading-${ticker}`}>
+                <Loader2 size={16} className="animate-spin text-[#9CA3AF]" />
+                <span className="overline text-[#9CA3AF] leading-tight">TAM Score</span>
+            </div>
+        );
+    }
+    const txt = data ? fmtTamScore(data.tam_score) : null;
+    if (!txt) return null;
+    const v = data.tam_score;
+    const color = v >= 1 ? "#1E7D45" : "#B8860B";
+    const note =
+        "TAM Score = (Score global / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
+        `TAM del eslabón: $${data.stage_tam_busd} B · Ingresos 2027e: $${data.projected_revenue_busd} B (USD).\n\n` +
+        ">1× = el mercado direccionable (ponderado por calidad) supera el tamaño proyectado de la empresa → amplio recorrido. " +
+        "<1× = la empresa ya es grande respecto al TAM del eslabón.";
+    return (
+        <HoverTip text={note} maxWidth={320}>
+            <div className="cursor-help flex flex-col items-center gap-0.5" data-testid={`tam-score-${ticker}`}>
+                <div className="font-mono font-bold leading-none text-base" style={{ color }}>{txt}</div>
+                <span className="overline text-[#4A4A4A] leading-tight">TAM Score</span>
+            </div>
+        </HoverTip>
+    );
+}
+
+function CompanyCard({ c, tamData, tamLoading }) {
     const isDisruptor = c.category === "disruptor";
     return (
         <div className="border border-black bg-white p-5" data-testid={`thesis-company-${c.ticker}`}>
@@ -145,7 +179,10 @@ function CompanyCard({ c }) {
                     <div className="font-serif text-xl font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
-                <ScoreBadge value={c.overall_score} label="Score global" testid={`overall-${c.ticker}`} />
+                <div className="flex items-start gap-4 shrink-0">
+                    <TamScoreBadge data={tamData} loading={tamLoading} ticker={c.ticker} />
+                    <ScoreBadge value={c.overall_score} label="Score global" testid={`overall-${c.ticker}`} />
+                </div>
             </div>
 
             {c.ticker && (
@@ -180,7 +217,7 @@ function CompanyCard({ c }) {
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
-function StageRow({ group }) {
+function StageRow({ group, tamScores, tamLoading }) {
     const { stage, leaders, disruptors } = group;
     return (
         <div className="mb-8" data-testid={`stage-row-${_norm(stage.stage).slice(0, 16)}`}>
@@ -196,7 +233,7 @@ function StageRow({ group }) {
                     <div className="overline text-[#052049] mb-2">Líderes establecidos</div>
                     <div className="space-y-4">
                         {leaders.length
-                            ? leaders.map((c, i) => <CompanyCard key={i} c={c} />)
+                            ? leaders.map((c, i) => <CompanyCard key={i} c={c} tamData={tamScores ? tamScores[c.ticker] : undefined} tamLoading={tamLoading} />)
                             : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin líder identificado en este eslabón.</div>}
                     </div>
                 </div>
@@ -204,7 +241,7 @@ function StageRow({ group }) {
                     <div className="overline text-[#B32A22] mb-2">Disruptores / líderes del cambio</div>
                     <div className="space-y-4">
                         {disruptors.length
-                            ? disruptors.map((c, i) => <CompanyCard key={i} c={c} />)
+                            ? disruptors.map((c, i) => <CompanyCard key={i} c={c} tamData={tamScores ? tamScores[c.ticker] : undefined} tamLoading={tamLoading} />)
                             : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin disruptor identificado en este eslabón.</div>}
                     </div>
                 </div>
@@ -213,7 +250,7 @@ function StageRow({ group }) {
     );
 }
 
-function CompaniesByStage({ valueChain, companies }) {
+function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
     const stages = valueChain || [];
     const used = new Set();
     const groups = stages.map((s) => {
@@ -233,7 +270,7 @@ function CompaniesByStage({ valueChain, companies }) {
             disruptors: leftover.filter((c) => c.category === "disruptor"),
         });
     }
-    return <>{groups.map((g, i) => <StageRow key={i} group={g} />)}</>;
+    return <>{groups.map((g, i) => <StageRow key={i} group={g} tamScores={tamScores} tamLoading={tamLoading} />)}</>;
 }
 
 function TrendCard({ t }) {
@@ -263,8 +300,35 @@ function TrendCard({ t }) {
 }
 
 export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false }) {
+    const [tamScores, setTamScores] = useState(null);
+    const [tamLoading, setTamLoading] = useState(false);
+
+    const isTrend = thesis?.type === "trend";
+
+    useEffect(() => {
+        if (!thesis || thesis.type !== "trend") { setTamScores(null); return; }
+        const stages = thesis.value_chain || [];
+        const tamByRole = {};
+        stages.forEach((s) => { tamByRole[_norm(s.stage)] = s.tam_busd; });
+        const items = (thesis.companies || [])
+            .filter((c) => c.ticker)
+            .map((c) => ({
+                ticker: c.ticker,
+                overall_score: c.overall_score,
+                stage_tam_busd: tamByRole[_norm(c.value_chain_role)] ?? null,
+            }));
+        if (!items.length) { setTamScores(null); return; }
+        let alive = true;
+        setTamLoading(true);
+        setTamScores(null);
+        thesisTamScores(items)
+            .then((res) => { if (alive) setTamScores(res?.scores || {}); })
+            .catch(() => { if (alive) setTamScores({}); })
+            .finally(() => { if (alive) setTamLoading(false); });
+        return () => { alive = false; };
+    }, [thesis]);
+
     if (!thesis) return null;
-    const isTrend = thesis.type === "trend";
 
     return (
         <div data-testid="thesis-result">
@@ -314,7 +378,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. disruptores</div>
                         <div className="overline text-[#9CA3AF] hidden sm:block">TAM 2027e por eslabón</div>
                     </div>
-                    <CompaniesByStage valueChain={thesis.value_chain} companies={thesis.companies} />
+                    <CompaniesByStage valueChain={thesis.value_chain} companies={thesis.companies} tamScores={tamScores} tamLoading={tamLoading} />
                 </>
             ) : (
                 <>

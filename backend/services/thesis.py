@@ -167,6 +167,25 @@ def _clamp10(v):
     return max(0, min(10, round(v)))
 
 
+def compute_tam_score(overall_score, stage_tam_busd, revenue_busd):
+    """TAM Score = (overall_score/100 × stage_TAM) / projected_revenue.
+
+    All magnitudes must share units (here: USD billions for TAM and revenue).
+    Returns a 2-decimal float, or None when any input is missing or revenue ≤ 0.
+    Reads as a multiple: >1 = addressable market (quality-weighted) exceeds the
+    company's projected size (runway); <1 = company already large vs. that stage.
+    """
+    if overall_score is None or stage_tam_busd is None or revenue_busd is None:
+        return None
+    try:
+        rev = float(revenue_busd)
+        if rev <= 0:
+            return None
+        return round((float(overall_score) / 100.0 * float(stage_tam_busd)) / rev, 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _busd(v):
     """Coerce a TAM value to a non-negative number of USD billions (or None)."""
     if isinstance(v, str):

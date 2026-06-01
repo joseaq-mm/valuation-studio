@@ -1,5 +1,5 @@
 """Regression tests for the Thesis Engine pure helpers (no LLM / network)."""
-from services.thesis import _extract_json, _clamp_score, _sources_block
+from services.thesis import _extract_json, _clamp_score, _sources_block, compute_tam_score
 
 
 def test_extract_json_plain():
@@ -37,3 +37,26 @@ def test_sources_block_empty():
 def test_sources_block_formats():
     s = _sources_block([{"title": "T", "url": "http://x", "snippet": "snip"}])
     assert "[1]" in s and "http://x" in s
+
+
+def test_compute_tam_score_basic():
+    # (90/100 * 500) / 821.51 = 0.5478 -> 0.55
+    assert compute_tam_score(90, 500, 821.51) == 0.55
+    # (80/100 * 796) / 147.18 = 4.326 -> 4.33
+    assert compute_tam_score(80, 796, 147.18) == 4.33
+
+
+def test_compute_tam_score_missing_inputs():
+    assert compute_tam_score(None, 500, 100) is None
+    assert compute_tam_score(90, None, 100) is None
+    assert compute_tam_score(90, 500, None) is None
+
+
+def test_compute_tam_score_non_positive_revenue():
+    assert compute_tam_score(90, 500, 0) is None
+    assert compute_tam_score(90, 500, -10) is None
+
+
+def test_compute_tam_score_bad_types():
+    assert compute_tam_score("x", 500, 100) is None
+    assert compute_tam_score(90, "y", 100) is None

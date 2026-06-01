@@ -17,8 +17,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
-    match_company_to_theses, evaluate_company_for_trend,
+    match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
 )
+from services.valuation import fetch_fundamentals_sync
+import fx as fx_service
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,16 @@ class RadarSubscribeRequest(BaseModel):
     enabled: bool
 
 
+class TamScoreItem(BaseModel):
+    ticker: str
+    overall_score: Optional[float] = None
+    stage_tam_busd: Optional[float] = None
+
+
+class TamScoresRequest(BaseModel):
+    items: List[TamScoreItem]
+
+
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
     router = APIRouter(prefix="/thesis")
 
@@ -136,6 +148,63 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     }},
                     upsert=True,
                 )
+
+    async def _projected_revenue_usd_busd(ticker: str):
+        """Projected 2027 revenue (revenue_2y, same base as POC/POV) converted to
+        USD billions. Reuses the 6h fundamentals cache; fetches yfinance on miss.
+        Returns (revenue_in_usd_billions | None, currency)."""
+        tk = (ticker or "").upper().strip()
+        if not tk:
+            return None, "USD"
+        cached = await db.fundamentals.find_one({"ticker": tk}, {"_id": 0})
+        data = (cached or {}).get("data")
+        if not data:
+            try:
+                data = await asyncio.to_thread(fetch_fundamentals_sync, tk)
+                await db.fundamentals.update_one(
+                    {"ticker": tk},
+                    {"$set": {"ticker": tk, "data": data,
+                              "updated_at": datetime.now(timezone.utc).isoformat()}},
+                    upsert=True,
+                )
+            except Exception as e:
+                logger.warning(f"tam-score revenue fetch failed ({tk}): {e}")
+                return None, "USD"
+        currency = data.get("currency") or "USD"
+        rev2y = (data.get("auto_projections") or {}).get("revenue_2y")
+        if rev2y is None:
+            return None, currency
+        usd = await fx_service.convert(float(rev2y), currency, "USD")
+        if usd is None or usd <= 0:
+            return None, currency
+        return usd / 1e9, currency
+
+    async def _run_tamscore_job(job_id: str, items: List[Dict[str, Any]]):
+        try:
+            scores: Dict[str, Any] = {}
+            for it in items:
+                tk = (it.get("ticker") or "").upper().strip()
+                if not tk:
+                    continue
+                overall = it.get("overall_score")
+                stage_tam = it.get("stage_tam_busd")
+                rev_busd, currency = await _projected_revenue_usd_busd(tk)
+                tam_score = compute_tam_score(overall, stage_tam, rev_busd)
+                scores[tk] = {
+                    "tam_score": tam_score,
+                    "projected_revenue_busd": round(rev_busd, 2) if rev_busd else None,
+                    "currency": currency,
+                    "stage_tam_busd": stage_tam,
+                }
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": {"scores": scores},
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception as e:
+            logger.error(f"tam-score job failed: {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el TAM Score: {e}"}})
 
     async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str]):
         try:
@@ -265,6 +334,25 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         _spawn(_run_discover_job(job_id))
+        return {"job_id": job_id}
+
+    @router.post("/tam-scores")
+    async def tam_scores(req: TamScoresRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        """Stateless TAM-Score computation (works anonymously). For each company
+        returns: (overall_score/100 × stage_TAM_busd) / projected_revenue_2027_USD_billions.
+        Runs as a background job because it may hit yfinance for several tickers."""
+        items = [it.model_dump() for it in (req.items or []) if (it.ticker or "").strip()]
+        if not items:
+            raise HTTPException(status_code=400, detail="items requerido")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"] if user else None,
+            "kind": "tam_scores",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_tamscore_job(job_id, items))
         return {"job_id": job_id}
 
     @router.get("/job/{job_id}")
