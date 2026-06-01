@@ -1,0 +1,134 @@
+<analysis>**original_problem_statement**: The user wants a web application to replace their current Excel workflow for fundamental stock valuation. The app must ingest financial data (revenue, FCF, margins, etc.) from Yahoo Finance, calculate specific custom ratios (Ratio Compra, Ratio Venta) based on proprietary formulas, and explicitly determine if a company is cheap or expensive. Recent requirements evolved to refine the projection formulas (introducing a bottom-up FCF calculation model), ensuring absolute consistency in large number formatting (M/B/T), improving Watchlist/Portfolio UX with master toggles, and providing complete transparency into the math behind the automated projections.
+
+**User's preferred language**: Spanish (INSTRUCT next agent to respond in Spanish only)
+
+**what currently exists?** 
+A highly sophisticated, feature-rich full-stack web app (React + FastAPI + MongoDB). It features multi-currency support, a nightly background screener (via  and ), Google Auth, Watchlist, Portfolio tracking (with P/L), and an advanced Company dashboard. The dashboard includes dynamic projection editing, a dual-axis sensitivity matrix, an anomaly detection system, and historical charting. The backend incorporates highly resilient valuation logic, dynamically choosing between a newly implemented Bottom-up (OCF - CapEx) model or Historical CAGR for projecting Free Cash Flow, complete with guards against stale Yahoo Finance data.
+
+**Last working item**:
+- Last item agent was working: Changing the default X-axis metric in the Sensitivity Matrix to CAGR FCF 4y (from Operating Margin).
+- Status: COMPLETED
+- Agent Testing Done: Y
+- Which testing method agent to use? NA (Frontend minor UI change, validated via screenshot)
+- User Testing Done: N
+
+**All Pending/In progress Issue list**: 
+None. All reported bugs and structural issues have been resolved.
+
+**In progress Task List**:
+None.
+
+**Upcoming and Future Tasks**:
+Upcoming Tasks:
+- P0: Verify Nightly Screener emails (Backend logic is fully deployed to trigger  and  independently, but requires the scheduled cron job to run and the user to verify receipt).
+- P1: Verify Google Auth Flow and Cloud Sync (Requires user to test actual login flow with their Google account).
+
+Future Tasks:
+- P2: Mobile responsiveness (PWA) + Stripe subscription implementation (User explicitly requested to defer this until the desktop app is perfect).
+- P3: UI/UX Component modularization (Refactoring  which has grown to ~1600 lines, and potentially refactoring  valuation logic into a dedicated service module).
+
+**Completed work in this session**:
+- Fixed Watchlist load failure by raising  limit to 100 and batching frontend requests.
+- Implemented global uniform formatting (M/B/T) for all magnitude numbers (MCap, Revenue, FCF, etc.) across Home, Watchlist, Portfolio, and Company pages.
+- Added MCap column and SEG (Seguimiento) chips with tooltips to the Portfolio page.
+- Created  component for the headers of Watchlist and Portfolio to toggle all alerts at once (on/off/indeterminate states).
+- Refactored Alert UX: Created a full-width  and removed rich tooltips from individual bells.
+- Cleaned up Layout header into two uniform rows.
+- Updated  to return  and . Redesigned  to use a single price axis plotting POC, POV, and Closing Price.
+- Refactored backend Screener logic to treat Buy and Sell alerts as independent transitions.
+- Implemented  component in the Compare page and added POC/POV rows.
+- Implemented structural fix for stale Yahoo Finance TTM FCF data (if TTM < 15% of the last annual, it falls back to annual).
+- Built a massive backend Bottom-up FCF projection model ( using analyst ), falling back to historical CAGR if analyst data is suspicious or NI is negative. 
+- Added granular transparency to the UI: Toggles for , , and  FCF bases, rich breakdown tooltips, and explicit frontend warnings when Yahoo TTM is discarded.
+- Updated default X-axis on Sensitivity Matrix to CAGR FCF 4y.
+
+**Earlier issues found/mentioned but not fixed**:
+- Issue 1: 
+  - Description: User reported a visual aesthetic line over the NMS / USD / SECTOR tags in the Company header that did not cover the full text width. 
+  - Debug checklist: Check  lines ~726. The agent attempted a fix but couldn't visually reproduce the issue on screenshots. It may be an OS/Browser specific rendering artifact.
+  - Why to solve this issue and what will be achieved with this? Polishes the UI aesthetic.
+  - Should Test frontend/backend/both after fix: frontend
+  - Is recurring issue? N
+
+**Known issue recurrence from previous fork**:
+- Issue recurrence in previous fork: N/A
+- Recurrence count: 0
+- Status: RESOLVED
+
+**Code Architecture**:
+
+
+**Key Technical Concepts**:
+Frontend: React, Tailwind CSS, Recharts, Shadcn UI.
+Backend: FastAPI, PyMongo, yfinance, APScheduler.
+Core Architecture: The app acts as a highly opinionated financial projection engine. Client-side math () perfectly mirrors the backend (). The backend dynamically chooses the best projection method (Bottom-up vs Historical CAGR) and passes a  payload to the frontend, ensuring absolute transparency.
+
+**key DB schema**:
+- : 
+- : Tracks  (Buy) and  (Sell) independently to detect crosses.
+
+**changes in tech stack**:
+None.
+
+**All files of reference**:
+- : Massively updated with  and .
+- : Updated to dispatch independent Buy vs Sell notifications.
+- : Updated to render FCF methodology badges, BU/TTM/ANUAL toggles, and warnings.
+- : New component created in this session.
+- : New component created in this session.
+
+**Areas that need refactoring**: 
+-  is ~1600 lines and handles too much logic (charts, inputs, tables, toggles).
+-  handles API routing AND complex fundamental math. Math should ideally move to a  module.
+
+**key api endpoints**:
+- : Returns massive payload including , , and .
+- : Returns historical points now containing  and .
+- : Limit increased to 100 tickers.
+
+**Critical Info for New Agent**:
+- **FCF Projection Logic:** The backend tries to use a Bottom-up approach () based on Analyst Earnings Estimates. If estimates are missing, anomalous, or the company loses money (NI < 0), it falls back to Historical CAGR.
+- **Yahoo Stale Data Guard:**  frequently returns a TTM Free Cash Flow () that lags behind the last filed annual report. If , the backend forcefully discards the TTM and uses the Annual figure as the projection base. The UI explicitly alerts the user when this happens.
+- **FCF Toggles (BU / TTM / ANUAL):** The user can override the projection base via pills on the UI. This sets client-side overrides that behave identically to typing a manual number.
+- **Language:** ALWAYS communicate with the user in Spanish.
+
+**documents and test reports created in this job**:
+-  (from earlier)
+-  (from earlier)
+- 
+
+**Last 10 User Messages and any pending HUMAN messages**:
+1. User asked about FCF calculation dropping for Tesla. (Agent explained CAGR mechanism).
+2. User asked about Analyst data. (Agent proposed Bottom-up FCF model).
+3. User asked what NI is. (Agent explained Net Income).
+4. User told agent to implement Bottom-up FCF changes.
+5. User asked why Cloudflare FCF jumps up. (Agent explained it falls back to CAGR with TTM as base, added tooltips).
+6. User asked for explanation of CAGR math on Cloudflare. (Agent explained).
+7. User agreed to add TTM vs ANUAL UI toggle.
+8. User asked to apply BU/TTM/ANUAL UI to all companies uniformly.
+9. User noticed NVDA defaults to Annual. (Agent explained anti-stale protection).
+10. User requested default Sensitivity matrix X-axis to change to cagr fcf 4y. (Completed).
+
+*No pending human messages.*
+
+**Project Health Check**:
+Healthy. No broken or mocked endpoints.
+
+**3rd Party Integrations**:
+- Yahoo Finance () — Financial Data
+- Open Exchange Rates () — FX Rates
+- Resend (Emails) — Requires User API Key ( configured in backend )
+- Google Auth (OAuth) — Standard Auth
+- OpenAI GPT () via Emergent LLM Key — Text translation
+
+**Testing status**:
+- Testing agent used after significant changes: NO (UI/Math changes thoroughly verified via  and ).
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: None this session.
+- Known regressions: None.
+
+**Credentials to test flow**:
+- Resend API Key: 
+
+**What agent forgot to execute**:
+The agent successfully fulfilled all user requests, including the complex valuation math redesign and transparency toggles. No requested features were overlooked.</analysis>
