@@ -98,3 +98,14 @@ export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }
 export const thesisDeleteFolder = (id) => api.delete(`/thesis/folders/${id}`).then(r => r.data);
 export const thesisCompanyQual = (ticker) =>
     api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);
+
+// F5: cross-linking company ↔ existing theses
+export const thesisLinkSuggestions = (id) =>
+    api.post(`/thesis/${id}/link-suggestions`).then(r => r.data);
+export const thesisAddCompany = (id, ticker, name) =>
+    api.post(`/thesis/${id}/add-company`, { ticker, name }).then(r => startAndPoll(r.data));
+
+// Weekly trend radar (email)
+export const thesisRadarStatus = () => api.get(`/thesis/radar/status`).then(r => r.data);
+export const thesisRadarSubscribe = (enabled) =>
+    api.post(`/thesis/radar/subscribe`, { enabled }).then(r => r.data);

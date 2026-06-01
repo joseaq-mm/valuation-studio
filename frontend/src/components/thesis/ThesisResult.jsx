@@ -4,6 +4,7 @@ import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAle
 import { ScoreBar, ScoreBadge } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
+import CompanyThesisLinker from "./CompanyThesisLinker";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -321,6 +322,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     <div className="grid md:grid-cols-2 gap-4">
                         {(thesis.trends || []).map((t, i) => <TrendCard key={i} t={t} />)}
                     </div>
+                    {thesis.id && <CompanyThesisLinker thesisId={thesis.id} company={thesis.company} />}
                 </>
             )}
 

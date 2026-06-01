@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight } from "lucide-react";
+import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Bell } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisList, thesisFolders, thesisCreateFolder,
-    thesisDeleteFolder, thesisAssignFolder, thesisDelete,
+    thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus, thesisRadarSubscribe,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 
@@ -35,17 +35,31 @@ export default function Thesis() {
     const [saved, setSaved] = useState([]);
     const [newFolder, setNewFolder] = useState("");
     const [activeFolder, setActiveFolder] = useState("all");
+    const [radarEnabled, setRadarEnabled] = useState(false);
 
     const reload = useCallback(async () => {
         if (!user) { setFolders([]); setSaved([]); return; }
         try {
-            const [f, l] = await Promise.all([thesisFolders(), thesisList()]);
+            const [f, l, r] = await Promise.all([thesisFolders(), thesisList(), thesisRadarStatus()]);
             setFolders(f.folders || []);
             setSaved(l.items || []);
+            setRadarEnabled(!!r.enabled);
         } catch { /* ignore */ }
     }, [user]);
 
     useEffect(() => { reload(); }, [reload]);
+
+    const toggleRadar = async () => {
+        const next = !radarEnabled;
+        setRadarEnabled(next);
+        try {
+            await thesisRadarSubscribe(next);
+            toast.success(next ? "Radar semanal activado" : "Radar semanal desactivado");
+        } catch {
+            setRadarEnabled(!next);
+            toast.error("No se pudo actualizar el radar");
+        }
+    };
 
     const generate = async (overrideType, overrideSubject) => {
         const t = overrideType || mode;
@@ -367,6 +381,25 @@ export default function Thesis() {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+
+                            {/* Weekly trend radar */}
+                            <div className="mt-5 pt-4 border-t border-black/10" data-testid="radar-toggle-wrap">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="overline text-black flex items-center gap-1"><Bell size={12} /> Radar semanal</div>
+                                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tendencia emergente con fuerte momentum.</p>
+                                    </div>
+                                    <button
+                                        onClick={toggleRadar}
+                                        role="switch"
+                                        aria-checked={radarEnabled}
+                                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${radarEnabled ? "bg-[#1E7D45]" : "bg-black/20"}`}
+                                        data-testid="radar-toggle"
+                                    >
+                                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${radarEnabled ? "translate-x-5" : ""}`} />
+                                    </button>
+                                </div>
                             </div>
                         </>
                     )}

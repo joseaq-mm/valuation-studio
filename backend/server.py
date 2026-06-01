@@ -15,6 +15,7 @@ import pandas as pd
 from auth import make_router as make_auth_router
 import fx as fx_service
 from screener import run_screener
+from radar import run_radar
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -159,6 +160,12 @@ async def admin_run_screener():
             return cached.get("data") if cached else None
 
     return {"ok": True, **(await run_screener(db, _fetch, compute_custom_ratios))}
+
+
+@api_router.post("/admin/run-radar")
+async def admin_run_radar():
+    """Manual trigger for the weekly trend radar — useful for QA."""
+    return {"ok": True, **(await run_radar(db))}
 
 
 @api_router.post("/company/{ticker}/calculate")
@@ -445,14 +452,22 @@ async def _scheduled_screener_run():
         logger.error(f"scheduled screener crashed: {e}")
 
 
+async def _scheduled_radar_run():
+    try:
+        await run_radar(db)
+    except Exception as e:
+        logger.error(f"scheduled radar crashed: {e}")
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
+        _scheduler.add_job(_scheduled_radar_run, CronTrigger(day_of_week="mon", hour=7, minute=0))
         _scheduler.start()
-        logger.info("Screener scheduler started (06:00 UTC daily).")
+        logger.info("Schedulers started (screener 06:00 UTC daily, radar Mon 07:00 UTC).")
 
 
 @app.on_event("shutdown")

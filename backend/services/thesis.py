@@ -586,3 +586,82 @@ async def run_company_contra(company: str, summary: str) -> dict:
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ---------------------- F5: Cross-linking company ↔ existing theses ----------------------
+
+MATCHER_SYS = (
+    "Eres un analista que relaciona las tendencias de una empresa con las TESIS de tendencia que "
+    "el usuario ya tiene guardadas. Dos tendencias 'coinciden' si tratan el MISMO tema estructural "
+    "aunque el nombre difiera. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+)
+
+
+async def match_company_to_theses(company: str, company_trends: list, existing: list) -> dict:
+    """existing: [{'id', 'title'}]. company_trends: [str]. Returns {to_add, to_create}."""
+    valid_ids = {e["id"] for e in existing}
+    existing_list = "\n".join(f"- id={e['id']} :: {e['title']}" for e in existing) or "(ninguna)"
+    trends_list = "\n".join(f"- {t}" for t in company_trends) or "(ninguna)"
+    user = (
+        f"EMPRESA: {company}\n\n"
+        f"TENDENCIAS EN LAS QUE ENCAJA LA EMPRESA:\n{trends_list}\n\n"
+        f"TESIS DE TENDENCIA YA EXISTENTES DEL USUARIO:\n{existing_list}\n\n"
+        "Para cada tendencia de la empresa, decide si corresponde a una tesis existente (mismo tema) o no.\n"
+        "Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "to_add": [{"thesis_id": "id EXACTO de la lista", "thesis_title": "título", "trend_name": "tendencia de la empresa", "reason": "1 frase"}],\n'
+        '  "to_create": [{"trend_name": "tendencia sin tesis asociada", "why": "1 frase: por qué merece su propia tesis"}]\n'
+        "}\n"
+        "Usa SOLO los id que aparecen en la lista para 'to_add'. Si no hay tesis existentes, todo va en 'to_create'. "
+        "No repitas la misma tendencia en ambas listas."
+    )
+    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-match-{datetime.now(timezone.utc).timestamp()}",
+                     MATCHER_SYS, user)
+    data = _extract_json(raw)
+    to_add = [a for a in (data.get("to_add") or []) if a.get("thesis_id") in valid_ids]
+    to_create = [c for c in (data.get("to_create") or []) if (c.get("trend_name") or "").strip()]
+    return {"to_add": to_add, "to_create": to_create}
+
+
+EVALUATOR_SYS = (
+    "Eres un analista de equity research senior. Evalúas una empresa cotizada DENTRO de una "
+    "tendencia concreta y su cadena de valor: su rol, si es líder o disruptor, y sus scores "
+    "cualitativos (0-100, mayor = mejor). Sé exigente. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+)
+
+
+async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain: list,
+                                     company_name: str, company_ticker: str) -> dict:
+    stages = "; ".join(s.get("stage") for s in (value_chain or []) if s.get("stage")) or "(sin definir)"
+    user = (
+        f"TENDENCIA: {trend_title}\nCONTEXTO: {summary}\nESLABONES DE LA CADENA DE VALOR: {stages}\n\n"
+        f"EMPRESA A EVALUAR: {company_name} ({company_ticker})\n\n"
+        "Evalúa la empresa dentro de esta tendencia. Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "name": "Nombre", "ticker": "TICKER",\n'
+        '  "value_chain_role": "uno de los eslabones (o el más cercano)",\n'
+        '  "category": "leader|disruptor",\n'
+        '  "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
+        '  "overall_score": 0-100,\n'
+        '  "thesis": "2-3 frases sobre su encaje en la tendencia",\n'
+        '  "key_risks": "1-2 riesgos clave"\n'
+        "}"
+    )
+    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
+                     EVALUATOR_SYS, user)
+    d = _extract_json(raw)
+    cat = (d.get("category") or "leader").strip().lower()
+    if cat not in ("leader", "disruptor"):
+        cat = "leader"
+    return {
+        "name": d.get("name") or company_name,
+        "ticker": (d.get("ticker") or company_ticker).upper().strip(),
+        "value_chain_role": d.get("value_chain_role"),
+        "category": cat,
+        "scores": {dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS},
+        "overall_score": _clamp_score(d.get("overall_score")),
+        "thesis": d.get("thesis"),
+        "key_risks": d.get("key_risks"),
+        "added_manually": True,
+    }

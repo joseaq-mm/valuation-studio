@@ -17,6 +17,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
+    match_company_to_theses, evaluate_company_for_trend,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,19 @@ def _discover_sync() -> dict:
     return asyncio.run(run_discover())
 
 
+def _match_sync(company: str, company_trends: list, existing: list) -> dict:
+    return asyncio.run(match_company_to_theses(company, company_trends, existing))
+
+
+def _eval_company_sync(trend_doc: dict, ticker: str, name: str) -> dict:
+    return asyncio.run(evaluate_company_for_trend(
+        trend_doc.get("title") or trend_doc.get("query") or "",
+        trend_doc.get("summary") or "",
+        trend_doc.get("value_chain") or [],
+        name, ticker,
+    ))
+
+
 class GenerateRequest(BaseModel):
     type: str  # "trend" | "company"
     subject: str
@@ -66,6 +80,15 @@ class FolderRequest(BaseModel):
 
 class AssignFolderRequest(BaseModel):
     folder_id: Optional[str] = None
+
+
+class AddCompanyRequest(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+
+
+class RadarSubscribeRequest(BaseModel):
+    enabled: bool
 
 
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
@@ -174,6 +197,40 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             logger.error(f"discover failed: {e}")
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error detectando tendencias: {e}"}})
+
+    async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str):
+        try:
+            doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id, "type": "trend"}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
+                return
+            entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
+            tk = (entry.get("ticker") or "").upper().strip()
+            companies = doc.get("companies") or []
+            companies = [c for c in companies if (c.get("ticker") or "").upper() != tk]  # de-dupe
+            companies.append(entry)
+            await db.theses.update_one({"id": thesis_id, "user_id": user_id}, {"$set": {"companies": companies}})
+            # Index by ticker for the qualitative bridge.
+            await db.qual_snapshots.update_one(
+                {"user_id": user_id, "ticker": tk},
+                {"$set": {
+                    "user_id": user_id, "ticker": tk, "name": entry.get("name"),
+                    "trend": doc.get("title"), "value_chain_role": entry.get("value_chain_role"),
+                    "scores": entry.get("scores"), "overall_score": entry.get("overall_score"),
+                    "thesis": entry.get("thesis"), "key_risks": entry.get("key_risks"),
+                    "thesis_id": thesis_id, "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+                upsert=True,
+            )
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": {"thesis_id": thesis_id, "thesis_title": doc.get("title"), "company": entry},
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception as e:
+            logger.error(f"add-company failed ({thesis_id}/{ticker}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error añadiendo la empresa: {e}"}})
 
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
@@ -290,6 +347,54 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
         return {"ok": True, "folder_id": req.folder_id}
+
+    @router.post("/{thesis_id}/link-suggestions")
+    async def link_suggestions(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        company = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
+        company_trends = [t.get("name") for t in (doc.get("trends") or []) if t.get("name")]
+        if not company_trends:
+            return {"to_add": [], "to_create": []}
+        existing = await db.theses.find(
+            {"user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1, "title": 1}
+        ).to_list(length=300)
+        try:
+            result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
+        except Exception as e:
+            logger.error(f"link-suggestions failed ({thesis_id}): {e}")
+            raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
+        return result
+
+    @router.post("/{thesis_id}/add-company")
+    async def add_company(thesis_id: str, req: AddCompanyRequest, user: Dict[str, Any] = Depends(auth_required)):
+        ticker = (req.ticker or "").upper().strip()
+        if not ticker:
+            raise HTTPException(status_code=400, detail="ticker requerido")
+        exists = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1})
+        if not exists:
+            raise HTTPException(status_code=404, detail="Tesis de tendencia no encontrada")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "add_company",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_addcompany_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker))
+        return {"job_id": job_id}
+
+    @router.get("/radar/status")
+    async def radar_status(user: Dict[str, Any] = Depends(auth_required)):
+        u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "radar": 1})
+        return {"enabled": bool(((u or {}).get("radar") or {}).get("enabled"))}
+
+    @router.post("/radar/subscribe")
+    async def radar_subscribe(req: RadarSubscribeRequest, user: Dict[str, Any] = Depends(auth_required)):
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"radar": {"enabled": bool(req.enabled), "updated_at": datetime.now(timezone.utc).isoformat()}}},
+        )
+        return {"enabled": bool(req.enabled)}
 
     @router.post("/{thesis_id}/contra")
     async def generate_contra(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
