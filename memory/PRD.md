@@ -52,6 +52,13 @@
 - **MongoDB**: nunca devolver `_id`, usar proyección `{"_id": 0}` en todas las queries.
 
 ## Backlog priorizado
+- **🔨 EN CURSO (Feb 2026) — Thesis Engine v2 (decisiones cerradas con el usuario, construir con E2+Opus):**
+  - **✅ F1 — Bug de carpetas (hecho en E1):** la creación de carpetas YA funcionaba; faltaba poder mover tesis del historial a carpetas. Añadido un `<select>` de carpeta por cada tesis en "Mis tesis" (`assignThesisFolder` en `Thesis.jsx`) + texto de ayuda. Verificado con cookie en Playwright.
+  - **F2 — Probabilidad + contratesis:** círculo de probabilidad 0-10 (0 rojo → 10 verde, certeza) calculado por la IA según evidencia de fuentes, con **justificación al hover**. Va arriba junto al título. **Contratesis bajo demanda** (botón opcional "añadir contratesis" para ahorrar créditos): aviso en rojo, menos presencia visual, entre título y cadena de valor; tiene su PROPIO círculo de probabilidad, su cadena de valor y empresas más perjudicadas (antítesis). En búsqueda de empresa: arriba la tesis/contratesis ganadora (mayor probabilidad) y debajo la contraria.
+  - **F3 — TAM + 2 columnas:** TAM global de la tendencia proyectado a **2027 (TTM), en miles de millones de USD** + un **TAM por cada capa** de la cadena de valor. Empresas en **2 columnas: líderes (izq.) y disruptores/líderes del cambio (der.)**, con **≥1 de cada categoría por capa** de la cadena de valor.
+  - **F4 — Tesis automática:** botón en la página principal que escanea fuentes vía **búsqueda web en vivo gratis** (noticias/analistas/foros/papers; sin claves de X/Reddit/ArXiv por ahora) para detectar tendencias emergentes y generar tesis sin partir de un input.
+  - **F5 — Vinculación cruzada empresa↔tesis:** al buscar una empresa, si encaja fuerte en tendencias que YA tienen tesis generada, preguntar si añadir la empresa a esas tesis; si encaja en tendencias SIN tesis, preguntar si elaborar tesis de esa tendencia.
+  - Notas técnicas: cambios de esquema en `theses`/`qual_snapshots` (probabilidad, contratesis, TAM, categoría líder/disruptor, capa). Las generaciones tardan ~40-90s (tesis) y casi el doble con contratesis. Mantener estética FT salmón.
 - **✅ COMPLETADO (Feb 2026)** — **Thesis Engine MVP (módulo cualitativo con IA)**:
   - Arquitectura IA dual vía Emergent LLM Key: GPT-5.2 (Investigador) + Claude Sonnet 4.5 (Sintetizador).
   - **Búsqueda web en vivo**: el proxy de Emergent NO soporta web-search nativa de OpenAI (`web_search_options`/`web_search_preview` rechazados; solo tools `function`/`custom`). Solución: el backend hace la búsqueda en tiempo real con **DuckDuckGo (`ddgs`)** y pasa los resultados frescos a GPT-5.2, que estructura cadena de valor + empresas con TICKER canónico citando fuentes; Claude asigna scores cualitativos.

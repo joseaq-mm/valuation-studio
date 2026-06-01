@@ -82,6 +82,15 @@ export default function Thesis() {
         } catch { toast.error("No se pudo guardar"); }
     };
 
+    // Move any saved thesis (from the history list) into/out of a folder.
+    const assignThesisFolder = async (id, folderId) => {
+        try {
+            await thesisAssignFolder(id, folderId || null);
+            toast.success(folderId ? "Movida a la carpeta" : "Quitada de la carpeta");
+            reload();
+        } catch { toast.error("No se pudo mover la tesis"); }
+    };
+
     const removeFolder = async (id) => {
         try { await thesisDeleteFolder(id); reload(); if (activeFolder === id) setActiveFolder("all"); }
         catch { toast.error("No se pudo eliminar"); }
@@ -204,6 +213,7 @@ export default function Thesis() {
                     ) : (
                         <>
                             <div className="overline text-black mb-2">Carpetas</div>
+                            <div className="text-[11px] text-[#4A4A4A] mb-2 -mt-1">Crea carpetas y mueve cada tesis a una desde su selector.</div>
                             <div className="flex flex-wrap gap-1.5 mb-3">
                                 <button onClick={() => setActiveFolder("all")}
                                         className={`text-xs px-2 py-1 border ${activeFolder === "all" ? "bg-black text-[#FDF1E6] border-black" : "border-black/30 hover:bg-[#F5E4D4]"}`}>
@@ -242,6 +252,18 @@ export default function Thesis() {
                                             <button onClick={() => removeThesis(t.id)} className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0" title="Eliminar">
                                                 <Trash2 size={13} />
                                             </button>
+                                        </div>
+                                        <div className="flex items-center gap-1 mt-1.5">
+                                            <Folder size={11} className="text-[#4A4A4A] shrink-0" />
+                                            <select
+                                                value={t.folder_id || ""}
+                                                onChange={(e) => assignThesisFolder(t.id, e.target.value)}
+                                                className="flex-1 border border-black/20 bg-white px-1 py-0.5 text-[11px] outline-none cursor-pointer"
+                                                data-testid={`saved-folder-select-${t.id}`}
+                                            >
+                                                <option value="">— Sin carpeta —</option>
+                                                {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                            </select>
                                         </div>
                                     </div>
                                 ))}
