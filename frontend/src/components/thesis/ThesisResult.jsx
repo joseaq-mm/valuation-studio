@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
-import { ScoreBar, ScoreBadge } from "./ScoreBar";
+import { ScoreBar, ScoreBadge, ValueBox, fmtTamScore, tamColor } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
 import CompanyThesisLinker from "./CompanyThesisLinker";
@@ -131,37 +131,27 @@ function SourcesList({ sources }) {
     );
 }
 
-function fmtTamScore(v) {
-    if (v == null || isNaN(v)) return null;
-    return v >= 10 ? `${Math.round(v)}×` : `${v.toFixed(1)}×`;
-}
-
 function TamScoreBadge({ data, loading, ticker }) {
-    if (loading && !data) {
-        return (
-            <div className="flex flex-col items-center gap-0.5" data-testid={`tam-score-loading-${ticker}`}>
-                <Loader2 size={16} className="animate-spin text-[#9CA3AF]" />
-                <span className="overline text-[#9CA3AF] leading-tight">TAM Score</span>
-            </div>
-        );
-    }
-    const txt = data ? fmtTamScore(data.tam_score) : null;
-    if (!txt) return null;
-    const v = data.tam_score;
-    const color = v >= 1 ? "#1E7D45" : "#B8860B";
+    const isLoading = loading && !data;
+    const v = data ? data.tam_score : null;
+    const txt = isLoading ? null : fmtTamScore(v);
+    // Nothing to show (computed but null) and not loading → render nothing.
+    if (!isLoading && txt == null) return null;
+    const color = isLoading ? "#9CA3AF" : tamColor(v);
     const note =
-        "TAM Score = (Score global / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
-        `TAM del eslabón: $${data.stage_tam_busd} B · Ingresos 2027e: $${data.projected_revenue_busd} B (USD).\n\n` +
+        "TAM Score = (Score global tendencia / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
+        (data ? `TAM del eslabón: $${data.stage_tam_busd} B · Ingresos 2027e: $${data.projected_revenue_busd} B (USD).\n\n` : "") +
         ">1× = el mercado direccionable (ponderado por calidad) supera el tamaño proyectado de la empresa → amplio recorrido. " +
         "<1× = la empresa ya es grande respecto al TAM del eslabón.";
-    return (
-        <HoverTip text={note} maxWidth={320}>
-            <div className="cursor-help flex flex-col items-center gap-0.5" data-testid={`tam-score-${ticker}`}>
-                <div className="font-mono font-bold leading-none text-base" style={{ color }}>{txt}</div>
-                <span className="overline text-[#4A4A4A] leading-tight">TAM Score</span>
-            </div>
-        </HoverTip>
+    const box = (
+        <div className="flex items-center gap-2" data-testid={isLoading ? `tam-score-loading-${ticker}` : `tam-score-${ticker}`}>
+            {isLoading
+                ? <div className="w-11 h-10 border-2 flex items-center justify-center shrink-0" style={{ borderColor: "#9CA3AF" }}><Loader2 size={14} className="animate-spin text-[#9CA3AF]" /></div>
+                : <ValueBox text={txt} color={color} />}
+            <span className="overline text-[#4A4A4A] leading-tight">TAM Score</span>
+        </div>
     );
+    return isLoading ? box : <HoverTip text={note} maxWidth={320}><div className="cursor-help">{box}</div></HoverTip>;
 }
 
 function CompanyCard({ c, tamData, tamLoading }) {
@@ -179,9 +169,9 @@ function CompanyCard({ c, tamData, tamLoading }) {
                     <div className="font-serif text-xl font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
-                <div className="flex items-start gap-4 shrink-0">
+                <div className="flex flex-col items-start gap-2 shrink-0">
+                    <ScoreBadge value={c.overall_score} label="Score global tendencia" testid={`overall-${c.ticker}`} />
                     <TamScoreBadge data={tamData} loading={tamLoading} ticker={c.ticker} />
-                    <ScoreBadge value={c.overall_score} label="Score global" testid={`overall-${c.ticker}`} />
                 </div>
             </div>
 

@@ -417,6 +417,69 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=404, detail="Sin análisis cualitativo para este ticker")
         return snap
 
+    @router.get("/company/{ticker}/profile")
+    async def company_profile(ticker: str, user: Dict[str, Any] = Depends(auth_required)):
+        """All saved TREND theses where this ticker appears, each with its
+        'score global tendencia' (overall_score) and TAM Score, plus aggregates:
+        average overall_score (overall quality) and sum of TAM Scores (potential)."""
+        tk = ticker.upper().strip()
+        cur = db.theses.find(
+            {"user_id": user["user_id"], "type": "trend", "companies.ticker": tk},
+            {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1},
+        )
+        theses = await cur.to_list(length=500)
+        rev_busd, currency = await _projected_revenue_usd_busd(tk)
+
+        rows = []
+        for t in theses:
+            comp = next((c for c in (t.get("companies") or []) if (c.get("ticker") or "").upper() == tk), None)
+            if not comp:
+                continue
+            overall = comp.get("overall_score")
+            role = comp.get("value_chain_role")
+            nrole = (role or "").strip().lower()
+            stage_tam = None
+            for s in (t.get("value_chain") or []):
+                if (s.get("stage") or "").strip().lower() == nrole:
+                    stage_tam = s.get("tam_busd")
+                    break
+            rows.append({
+                "thesis_id": t.get("id"),
+                "thesis_title": t.get("title"),
+                "overall_score": overall,
+                "value_chain_role": role,
+                "tam_score": compute_tam_score(overall, stage_tam, rev_busd),
+            })
+        rows.sort(key=lambda r: (r["overall_score"] is None, -(r["overall_score"] or 0)))
+
+        overalls = [r["overall_score"] for r in rows if r["overall_score"] is not None]
+        tams = [r["tam_score"] for r in rows if r["tam_score"] is not None]
+        avg_overall = round(sum(overalls) / len(overalls), 1) if overalls else None
+        sum_tam = round(sum(tams), 2) if tams else None
+
+        rev_doc = await db.theses.find_one(
+            {"user_id": user["user_id"], "type": "company", "company.ticker": tk},
+            {"_id": 0, "id": 1, "title": 1, "overall_relevance": 1},
+            sort=[("created_at", -1)],
+        )
+        reverse = None
+        if rev_doc:
+            reverse = {
+                "thesis_id": rev_doc.get("id"),
+                "thesis_title": rev_doc.get("title"),
+                "overall_relevance": rev_doc.get("overall_relevance"),
+            }
+
+        return {
+            "ticker": tk,
+            "projected_revenue_busd": round(rev_busd, 2) if rev_busd else None,
+            "currency": currency,
+            "trend_rows": rows,
+            "avg_overall_score": avg_overall,
+            "sum_tam_score": sum_tam,
+            "reverse": reverse,
+        }
+
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0})

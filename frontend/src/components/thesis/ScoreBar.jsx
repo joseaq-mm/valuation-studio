@@ -1,11 +1,32 @@
 import React from "react";
 
-const scoreColor = (v) => {
+export const scoreColor = (v) => {
     if (v == null) return "#9CA3AF";
     if (v >= 75) return "#1E7D45";
     if (v >= 50) return "#B8860B";
     return "#B32A22";
 };
+
+export const tamColor = (v) => (v == null ? "#9CA3AF" : v >= 1 ? "#1E7D45" : "#B8860B");
+
+export const fmtTamScore = (v) => {
+    if (v == null || isNaN(v)) return null;
+    return v >= 10 ? `${Math.round(v)}×` : `${v.toFixed(1)}×`;
+};
+
+/** Square boxed value, matching the ScoreBadge box look. */
+export function ValueBox({ text, color, testid, title }) {
+    return (
+        <div
+            className="w-11 h-10 border-2 flex items-center justify-center font-mono text-xs font-bold shrink-0"
+            style={{ borderColor: color, color }}
+            data-testid={testid}
+            title={title}
+        >
+            {text == null ? "—" : text}
+        </div>
+    );
+}
 
 const DIM_LABELS = {
     competitive_position: "Posición competitiva",

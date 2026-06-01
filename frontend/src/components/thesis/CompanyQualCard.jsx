@@ -1,29 +1,31 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, ArrowRight, AlertTriangle, TrendingUp } from "lucide-react";
+import { Sparkles, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisCompanyQual } from "@/lib/api";
-import { ScoreBar, ScoreBadge } from "./ScoreBar";
+import { thesisCompanyProfile } from "@/lib/api";
+import { ValueBox, scoreColor, tamColor, fmtTamScore } from "./ScoreBar";
 
-const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
+import HoverTip from "@/components/HoverTip";
 
 /**
  * Bridges the qualitative Thesis Engine with the quantitative company dashboard.
- * Shows the saved qualitative snapshot for this ticker (if the logged-in user
- * has generated one), or a CTA to generate it.
+ * Lists every saved TREND thesis where this ticker appears — one line each, with
+ * the trend (bold, linked to the full thesis), its "Score global tendencia" and
+ * its TAM Score. Footer: average of all overall scores (overall quality) and the
+ * sum of all TAM Scores (total potential).
  */
 export default function CompanyQualCard({ ticker }) {
     const { user } = useAuth();
-    const [snap, setSnap] = useState(null);
+    const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         let alive = true;
-        if (!user || !ticker) { setLoading(false); setSnap(null); return; }
+        if (!user || !ticker) { setLoading(false); setProfile(null); return; }
         setLoading(true);
-        thesisCompanyQual(ticker)
-            .then((d) => { if (alive) setSnap(d); })
-            .catch(() => { if (alive) setSnap(null); })
+        thesisCompanyProfile(ticker)
+            .then((d) => { if (alive) setProfile(d); })
+            .catch(() => { if (alive) setProfile(null); })
             .finally(() => { if (alive) setLoading(false); });
         return () => { alive = false; };
     }, [user, ticker]);
@@ -45,8 +47,11 @@ export default function CompanyQualCard({ ticker }) {
         );
     }
 
-    // Logged in, no snapshot → CTA to generate
-    if (!snap) {
+    const rows = profile?.trend_rows || [];
+    const reverse = profile?.reverse;
+
+    // Logged in but the company is not part of any saved thesis → CTA to generate.
+    if (!rows.length && !reverse) {
         return (
             <div className="border border-dashed border-black/40 bg-white p-4 mb-6 flex items-center justify-between gap-4 flex-wrap" data-testid="company-qual-empty">
                 <div className="flex items-center gap-2 text-sm text-[#4A4A4A]">
@@ -60,57 +65,75 @@ export default function CompanyQualCard({ ticker }) {
         );
     }
 
-    const isReverse = Array.isArray(snap.company_trends);
+    const COLS = "grid-cols-[1fr_5rem_4.5rem]";
 
     return (
         <div className="border border-black bg-white p-5 mb-6" data-testid="company-qual-card">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                    <div className="overline text-[#B32A22]">Tesis cualitativa · IA</div>
-                    {!isReverse && snap.trend && (
-                        <div className="text-sm mt-1">Encaja en la tendencia <strong>{snap.trend}</strong>{snap.value_chain_role ? ` — ${snap.value_chain_role}` : ""}</div>
-                    )}
-                    {isReverse && <div className="text-sm mt-1">Relevancia temática global de {ticker}</div>}
-                </div>
-                <ScoreBadge value={isReverse ? snap.overall_relevance : snap.overall_score} label={isReverse ? "Relevancia" : "Score global"} testid="company-qual-score" />
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <div className="overline text-[#B32A22]">Tesis cualitativa · tendencias guardadas</div>
+                <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
+                    <Sparkles size={12} /> Buscar más tendencias
+                </Link>
             </div>
 
-            {!isReverse && snap.scores && (
-                <div className="grid grid-cols-2 gap-x-5 gap-y-2 mt-4 max-w-xl">
-                    {DIMS.map((d) => <ScoreBar key={d} dimension={d} value={snap.scores[d]} />)}
-                </div>
-            )}
+            {rows.length > 0 && (
+                <>
+                    {/* Column headers */}
+                    <div className={`grid ${COLS} gap-x-4 items-end pb-1.5 border-b border-black`}>
+                        <div className="overline text-[#4A4A4A]">Tendencia</div>
+                        <div className="overline text-[#4A4A4A] text-center leading-tight">Score global tendencia</div>
+                        <div className="overline text-[#4A4A4A] text-center leading-tight">TAM Score</div>
+                    </div>
 
-            {!isReverse && snap.thesis && (
-                <div className="mt-4 border-l-2 border-[#052049] pl-3 max-w-3xl">
-                    <p className="text-sm leading-relaxed">{snap.thesis}</p>
-                </div>
-            )}
-            {!isReverse && snap.key_risks && (
-                <div className="mt-3 flex gap-2 text-xs text-[#B32A22] max-w-3xl">
-                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                    <span>{snap.key_risks}</span>
-                </div>
-            )}
-
-            {isReverse && (
-                <div className="mt-4 space-y-1.5 max-w-2xl">
-                    {snap.company_trends.slice(0, 5).map((t, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm">
-                            <TrendingUp size={13} className="text-[#052049] shrink-0" />
-                            <span className="flex-1">{t.name}</span>
-                            <span className="font-mono text-xs font-semibold" style={{ color: (t.relevance_score ?? 0) >= 75 ? "#1E7D45" : (t.relevance_score ?? 0) >= 50 ? "#B8860B" : "#B32A22" }}>
-                                {t.relevance_score ?? "—"}
-                            </span>
+                    {/* One line per thesis */}
+                    {rows.map((r) => (
+                        <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2.5 border-b border-black/10`} data-testid={`qual-row-${r.thesis_id}`}>
+                            <div className="min-w-0">
+                                <Link to={`/thesis/${r.thesis_id}`} className="font-bold text-sm leading-tight hover:underline inline-flex items-center gap-1" data-testid={`qual-row-link-${r.thesis_id}`}>
+                                    <span className="truncate">{r.thesis_title}</span>
+                                    <ArrowRight size={12} className="shrink-0" />
+                                </Link>
+                                {r.value_chain_role && <div className="overline text-[#9CA3AF] mt-0.5 truncate">{r.value_chain_role}</div>}
+                            </div>
+                            <div className="flex justify-center">
+                                <ValueBox text={r.overall_score ?? "—"} color={scoreColor(r.overall_score)} testid={`qual-overall-${r.thesis_id}`} />
+                            </div>
+                            <div className="flex justify-center">
+                                <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-tam-${r.thesis_id}`} />
+                            </div>
                         </div>
                     ))}
-                </div>
+
+                    {/* Aggregates */}
+                    <div className={`grid ${COLS} gap-x-4 items-center pt-3`} data-testid="qual-aggregates">
+                        <div className="text-xs text-[#4A4A4A] leading-snug">
+                            <div><strong>Media</strong> · calidad general</div>
+                            <div><strong>Suma</strong> · potencial total</div>
+                        </div>
+                        <div className="flex justify-center">
+                            <HoverTip text="Media de todos los 'Score global tendencia': una idea de la calidad general de la empresa a través de las tendencias en las que encaja." maxWidth={300}>
+                                <div className="cursor-help"><ValueBox text={profile.avg_overall_score ?? "—"} color={scoreColor(profile.avg_overall_score)} testid="qual-avg-overall" /></div>
+                            </HoverTip>
+                        </div>
+                        <div className="flex justify-center">
+                            <HoverTip text="Suma de todos los TAM Scores: una idea del potencial total acumulado de la empresa por su exposición a varias tendencias." maxWidth={300}>
+                                <div className="cursor-help"><ValueBox text={fmtTamScore(profile.sum_tam_score) ?? "—"} color={tamColor(profile.sum_tam_score)} testid="qual-sum-tam" /></div>
+                            </HoverTip>
+                        </div>
+                    </div>
+                </>
             )}
 
-            {snap.thesis_id && (
-                <Link to={`/thesis/${snap.thesis_id}`} className="inline-flex items-center gap-1 mt-4 text-xs text-[#052049] hover:underline" data-testid="company-qual-link">
-                    Ver tesis completa <ArrowRight size={12} />
-                </Link>
+            {/* Reverse (company → trends) thesis link, if one exists */}
+            {reverse && (
+                <div className={`flex items-center justify-between gap-2 ${rows.length ? "mt-4 pt-3 border-t border-black/10" : ""}`}>
+                    <span className="text-xs text-[#4A4A4A]">
+                        Análisis temático de <strong>{ticker}</strong>{reverse.overall_relevance != null ? ` · relevancia ${reverse.overall_relevance}` : ""}
+                    </span>
+                    <Link to={`/thesis/${reverse.thesis_id}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-reverse-link">
+                        Ver tesis completa <ArrowRight size={12} />
+                    </Link>
+                </div>
             )}
         </div>
     );

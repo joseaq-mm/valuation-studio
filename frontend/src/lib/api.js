@@ -100,6 +100,8 @@ export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }
 export const thesisDeleteFolder = (id) => api.delete(`/thesis/folders/${id}`).then(r => r.data);
 export const thesisCompanyQual = (ticker) =>
     api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);
+export const thesisCompanyProfile = (ticker) =>
+    api.get(`/thesis/company/${encodeURIComponent(ticker)}/profile`).then(r => r.data);
 
 // F5: cross-linking company ↔ existing theses
 export const thesisLinkSuggestions = (id) =>
