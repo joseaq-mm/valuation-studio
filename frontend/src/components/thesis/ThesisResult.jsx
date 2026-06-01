@@ -263,11 +263,11 @@ function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
     return <>{groups.map((g, i) => <StageRow key={i} group={g} tamScores={tamScores} tamLoading={tamLoading} />)}</>;
 }
 
-function TrendCard({ t, match, company }) {
+function TrendCard({ t, match, company, idx = 0 }) {
     const [adding, setAdding] = useState(false);
     const [added, setAdded] = useState(false);
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
-    const slug = _norm(t.name).slice(0, 16);
+    const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
     const trendQuery = encodeURIComponent(t.name || "");
 
     const addToExisting = async () => {
@@ -469,7 +469,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                         {(thesis.trends || []).map((t, i) => (
-                            <TrendCard key={i} t={t} match={matchByTrend[_norm(t.name)]} company={thesis.company} />
+                            <TrendCard key={i} idx={i} t={t} match={matchByTrend[_norm(t.name)]} company={thesis.company} />
                         ))}
                     </div>
                 </>

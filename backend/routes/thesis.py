@@ -502,7 +502,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"ok": True, "folder_id": req.folder_id}
 
     @router.post("/{thesis_id}/link-suggestions")
-    async def link_suggestions(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
+    async def link_suggestions(thesis_id: str, refresh: bool = False, user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
@@ -513,14 +513,31 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         existing = await db.theses.find(
             {"user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1, "title": 1}
         ).to_list(length=300)
+        # Cache keyed on the set of existing trend theses → recompute only when it
+        # changes (avoids repeating the LLM matcher cost on every page load/refresh).
+        sig = sorted([e.get("id") for e in existing if e.get("id")])
+        cached = doc.get("link_matches")
+        if not refresh and cached and cached.get("sig") == sig:
+            return {"to_add": cached.get("to_add", []), "to_create": cached.get("to_create", [])}
+
         if not existing:
-            # No saved trend theses → nothing to match against (skip the LLM call).
-            return {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
-        try:
-            result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
-        except Exception as e:
-            logger.error(f"link-suggestions failed ({thesis_id}): {e}")
-            raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
+            result = {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
+        else:
+            try:
+                result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
+            except Exception as e:
+                logger.error(f"link-suggestions failed ({thesis_id}): {e}")
+                raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
+
+        await db.theses.update_one(
+            {"id": thesis_id, "user_id": user["user_id"]},
+            {"$set": {"link_matches": {
+                "sig": sig,
+                "to_add": result.get("to_add", []),
+                "to_create": result.get("to_create", []),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }}},
+        )
         return result
 
     @router.post("/{thesis_id}/add-company")
