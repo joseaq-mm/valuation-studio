@@ -14,7 +14,9 @@ function ContraSection({ contra, isTrend, canGenerate, onGenerate, generating })
             <div className="border border-[#B32A22]/40 bg-[#FBEAE8] px-4 py-3 mb-6 flex items-center justify-between gap-3 flex-wrap" data-testid="contra-cta-wrap">
                 <div className="flex items-center gap-2 text-sm text-[#7a1d17]">
                     <ShieldAlert size={16} className="shrink-0" />
-                    <span>¿Y si la tesis falla? Genera la <strong>contratesis</strong> (escenario bajista, empresas perjudicadas y su probabilidad).</span>
+                    <span>{isTrend
+                        ? <>Toda tendencia crea ganadores y <strong>perdedores</strong>. Genera la contratesis: sectores y empresas perjudicados <em>porque</em> esta tendencia avanza.</>
+                        : <>Genera la <strong>contratesis</strong>: qué cambios estructurales, al ocurrir, dejarían a esta empresa en el lado perdedor.</>}</span>
                 </div>
                 <button
                     onClick={onGenerate}
@@ -33,7 +35,7 @@ function ContraSection({ contra, isTrend, canGenerate, onGenerate, generating })
         <div className="border border-[#B32A22]/50 bg-[#FBEAE8] px-4 py-3 mb-6" data-testid="contra-section">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
-                    <div className="overline text-[#B32A22] flex items-center gap-1"><ShieldAlert size={12} /> Contratesis · escenario bajista</div>
+                    <div className="overline text-[#B32A22] flex items-center gap-1"><ShieldAlert size={12} /> {isTrend ? "Contratesis · perdedores de la tendencia" : "Contratesis · riesgo de disrupción"}</div>
                     {contra.summary && <p className="text-sm text-[#7a1d17] mt-1 leading-relaxed max-w-3xl">{contra.summary}</p>}
                 </div>
                 <ProbabilityCircle value={contra.probability} rationale={contra.probability_rationale} label="Prob. contratesis" size="sm" testid="contra-probability" />

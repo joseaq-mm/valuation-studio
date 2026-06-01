@@ -356,32 +356,42 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
 # ---------------------- Contra-thesis (antítesis, bajo demanda) ----------------------
 
 CONTRA_INVESTIGATOR_TREND_SYS = (
-    "Eres un analista bajista (bear) riguroso. Construyes la CONTRATESIS de una megatendencia: "
-    "el escenario o contra-tendencia que la invalidaría y QUÉ empresas cotizadas saldrían más "
-    "perjudicadas si esa contratesis se cumple. Usas resultados REALES de búsqueda web reciente, "
-    "NO inventas. Identifica empresas cotizadas con su TICKER canónico (formato Yahoo Finance). "
+    "Eres un analista de equity research que identifica a los PERDEDORES de una megatendencia. "
+    "Premisa CLAVE: la tesis alcista SÍ se materializa. Toda tendencia que crea ganadores también "
+    "crea perdedores como CONSECUENCIA DERIVADA de que ocurra: sectores y empresas cotizadas que "
+    "se ven perjudicados por disrupción, comoditización, sustitución, desintermediación o presión "
+    "de márgenes PRECISAMENTE PORQUE la tendencia avanza. NO es el escenario en que la tesis falla: "
+    "tesis y contratesis son COMPATIBLES y ambas pueden tener probabilidad alta. Usas resultados "
+    "REALES de búsqueda web reciente, NO inventas. Identifica empresas cotizadas con su TICKER "
+    "canónico (formato Yahoo Finance). "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
 CONTRA_INVESTIGATOR_COMPANY_SYS = (
-    "Eres un analista bajista (bear) riguroso. Construyes la CONTRATESIS de una empresa cotizada: "
-    "las tendencias o escenarios que le harían PERDER valor (la tesis perdedora). Usas resultados "
-    "REALES de búsqueda web reciente, NO inventas. "
+    "Eres un analista de equity research que identifica el RIESGO DE DISRUPCIÓN de una empresa "
+    "cotizada. Premisa CLAVE: identifica qué megatendencias o cambios estructurales, AL "
+    "MATERIALIZARSE, dejarían a esta empresa en el LADO PERDEDOR (le harían perder valor por "
+    "disrupción, sustitución, comoditización o desintermediación). No es que el mercado caiga: "
+    "es que el cambio ocurre y la empresa lo sufre. Usas resultados REALES de búsqueda web "
+    "reciente, NO inventas. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
 CONTRA_SYNTHESIZER_SYS = (
-    "Eres un gestor de riesgos. Recibes una contratesis (escenario bajista) y estimas la "
-    "PROBABILIDAD (entero 0 a 10, 0 = muy improbable, 10 = casi seguro) de que se materialice, "
-    "calibrada según la evidencia, con una justificación breve. "
+    "Eres un estratega de inversión. Recibes una CONTRATESIS: una consecuencia negativa DERIVADA "
+    "de que una megatendencia se materialice (los perdedores del cambio). Estimas la PROBABILIDAD "
+    "(entero 0 a 10, 0 = muy improbable, 10 = casi seguro) de que esa consecuencia negativa "
+    "OCURRA. Importante: puede ser ALTA y es COMPATIBLE con que la tesis alcista también tenga "
+    "probabilidad alta (no son excluyentes). Calíbrala con la evidencia y justifícala brevemente. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
 async def _contra_probability(summary: str) -> dict:
     user = (
-        f"CONTRATESIS (escenario bajista):\n{summary}\n\n"
-        "Devuelve un JSON con esta forma EXACTA:\n"
+        f"CONTRATESIS (consecuencia negativa derivada de que la tendencia ocurra):\n{summary}\n\n"
+        "Estima la probabilidad de que esa consecuencia negativa se materialice (puede ser alta "
+        "y compatible con la tesis alcista). Devuelve un JSON con esta forma EXACTA:\n"
         '{ "probability": 0-10, "probability_rationale": "1-2 frases" }'
     )
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-contra-syn-{datetime.now(timezone.utc).timestamp()}",
@@ -390,17 +400,21 @@ async def _contra_probability(summary: str) -> dict:
 
 
 async def run_trend_contra(title: str, summary: str) -> dict:
-    sources = await run_in_threadpool_safe(f"{title} bear case riesgos amenazas disrupción contra", "trend")
+    sources = gather_sources(
+        f"{title} perdedores disrupción comoditización sustitución sectores perjudicados", "trend")
     inv_user = (
-        f"TESIS ORIGINAL (alcista): {title}\nCONTEXTO: {summary}\n\n"
+        f"TESIS ORIGINAL (alcista, que SÍ se materializa): {title}\nCONTEXTO: {summary}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{_sources_block(sources)}\n\n"
-        "Construye la CONTRATESIS. Devuelve un JSON con esta forma EXACTA:\n"
+        "Construye la CONTRATESIS: dado que esta tendencia AVANZA, ¿qué efecto negativo derivado "
+        "provoca y QUIÉN pierde? (sectores/empresas perjudicados por disrupción, comoditización, "
+        "sustitución o presión de márgenes precisamente porque la tendencia ocurre). "
+        "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
-        '  "summary": "2-3 frases: qué escenario o contra-tendencia invalidaría la tesis original y por qué",\n'
-        '  "value_chain": [{"stage": "eslabón afectado", "description": "cómo se ve perjudicado"}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "harm_reason": "1-2 frases sobre por qué saldría perjudicada"}]\n'
+        '  "summary": "2-3 frases: qué consecuencia negativa derivada provoca que la tendencia se cumpla, y por qué",\n'
+        '  "value_chain": [{"stage": "sector/eslabón perjudicado", "description": "cómo y por qué pierde al avanzar la tendencia"}],\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "harm_reason": "1-2 frases sobre por qué esta empresa cotizada sale perjudicada"}]\n'
         "}\n"
-        "Incluye entre 3 y 6 empresas cotizadas reales que saldrían más perjudicadas, con su TICKER canónico."
+        "Incluye entre 3 y 6 empresas cotizadas reales perjudicadas, con su TICKER canónico."
     )
     inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-trend-{datetime.now(timezone.utc).timestamp()}",
                          CONTRA_INVESTIGATOR_TREND_SYS, inv_user)
@@ -427,16 +441,19 @@ async def run_trend_contra(title: str, summary: str) -> dict:
 
 
 async def run_company_contra(company: str, summary: str) -> dict:
-    sources = await run_in_threadpool_safe(f"{company} bear case riesgos amenazas pérdida de valor", "company")
+    sources = gather_sources(
+        f"{company} riesgo disrupción sustitución comoditización pérdida cuota amenaza estructural", "company")
     inv_user = (
         f"EMPRESA: {company}\nCONTEXTO: {summary}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{_sources_block(sources)}\n\n"
-        "Construye la CONTRATESIS (tesis perdedora). Devuelve un JSON con esta forma EXACTA:\n"
+        "Construye la CONTRATESIS: ¿qué megatendencias o cambios estructurales, AL MATERIALIZARSE, "
+        "dejarían a esta empresa en el lado PERDEDOR (disrupción/sustitución/comoditización)? "
+        "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
-        '  "summary": "2-3 frases: qué escenario haría perder valor a la empresa",\n'
-        '  "losing_trends": [{"name": "tendencia/escenario perjudicial", "harm_reason": "1-2 frases sobre el daño"}]\n'
+        '  "summary": "2-3 frases: qué cambio estructural, al ocurrir, haría perder valor a la empresa",\n'
+        '  "losing_trends": [{"name": "tendencia/cambio que la perjudica al avanzar", "harm_reason": "1-2 frases sobre el daño derivado"}]\n'
         "}\n"
-        "Incluye entre 2 y 5 tendencias/escenarios perjudiciales."
+        "Incluye entre 2 y 5 tendencias/cambios perjudiciales."
     )
     inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-co-{datetime.now(timezone.utc).timestamp()}",
                          CONTRA_INVESTIGATOR_COMPANY_SYS, inv_user)

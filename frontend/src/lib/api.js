@@ -53,14 +53,39 @@ export const notifyPut = (prefs) => api.put(`/auth/notify`, prefs).then(r => r.d
 export const fxRates = () => api.get(`/fx/rates`).then(r => r.data);
 
 // ---------------- Thesis Engine (qualitative AI) ----------------
-// Generation runs a live web search + GPT-5.2 + Claude pipeline → ~40-90s,
-// so it needs a much longer timeout than the default api instance.
-const thesisApi = axios.create({ baseURL: API, timeout: 180000, withCredentials: true });
+// Generation runs a live web search + GPT-5.2 + Claude pipeline (~1-2 min).
+// To survive the ~60s ingress timeout, the backend runs it as a background job:
+// POST returns a job_id immediately and we poll until it is done.
+export const thesisJob = (jobId) => api.get(`/thesis/job/${jobId}`).then(r => r.data);
+
+async function pollThesisJob(jobId, { intervalMs = 3000, timeoutMs = 300000 } = {}) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, intervalMs));
+        let job;
+        try { job = await thesisJob(jobId); } catch { continue; } // transient — keep polling
+        if (job.status === "done") return job.result;
+        if (job.status === "error") {
+            const e = new Error(job.error || "error");
+            e.response = { data: { detail: job.error || "Error generando la tesis" } };
+            throw e;
+        }
+    }
+    const e = new Error("timeout");
+    e.response = { data: { detail: "La generación tardó demasiado. Inténtalo de nuevo." } };
+    throw e;
+}
+
+function startAndPoll(data) {
+    if (data && data.job_id) return pollThesisJob(data.job_id);
+    if (data && data.result) return data.result; // e.g. contra already existed
+    return data;
+}
 
 export const thesisGenerate = (type, subject) =>
-    thesisApi.post(`/thesis/generate`, { type, subject }).then(r => r.data);
+    api.post(`/thesis/generate`, { type, subject }).then(r => startAndPoll(r.data));
 export const thesisGenerateContra = (id) =>
-    thesisApi.post(`/thesis/${id}/contra`).then(r => r.data);
+    api.post(`/thesis/${id}/contra`).then(r => startAndPoll(r.data));
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);
 export const thesisGet = (id) => api.get(`/thesis/${id}`).then(r => r.data);
 export const thesisDelete = (id) => api.delete(`/thesis/${id}`).then(r => r.data);

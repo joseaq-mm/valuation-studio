@@ -5,12 +5,12 @@ folders, listing and the per-company qualitative view require Google login,
 reusing the existing auth dependencies from auth.py.
 """
 import uuid
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -20,6 +20,35 @@ from services.thesis import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Keep strong references to background tasks so they are not garbage-collected.
+_BG_TASKS: set = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
+
+def _generate_sync(kind: str, subject: str) -> dict:
+    """Run the full (blocking) generation pipeline in a worker thread.
+
+    emergentintegrations' LLM calls are synchronous and would otherwise block the
+    main event loop for ~1 min, freezing job-status polling. We run the whole
+    async pipeline inside its own event loop in a thread (via asyncio.to_thread).
+    """
+    sources = gather_sources(subject, kind)
+    if kind == "trend":
+        return asyncio.run(run_trend_thesis(subject, sources))
+    return asyncio.run(run_company_thesis(subject, sources))
+
+
+def _contra_sync(doc: dict) -> dict:
+    if doc.get("type") == "company":
+        name = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
+        return asyncio.run(run_company_contra(name, doc.get("summary") or ""))
+    return asyncio.run(run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or ""))
 
 
 class GenerateRequest(BaseModel):
@@ -80,6 +109,54 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     upsert=True,
                 )
 
+    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str]):
+        try:
+            thesis = await asyncio.to_thread(_generate_sync, kind, subject)
+            if user_id:
+                tid = f"thesis_{uuid.uuid4().hex[:12]}"
+                doc = {
+                    "id": tid,
+                    "user_id": user_id,
+                    "folder_id": None,
+                    "saved": False,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    **thesis,
+                }
+                await db.theses.insert_one(doc)
+                await _persist_qual_snapshots(user_id, tid, thesis)
+                thesis["id"] = tid
+                thesis["saved"] = False
+            else:
+                thesis["id"] = None
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except ValueError as e:
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": str(e)}})
+        except Exception as e:
+            logger.error(f"thesis generation failed ({kind}:{subject}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la tesis: {e}"}})
+
+    async def _run_contra_job(job_id: str, thesis_id: str, user_id: str):
+        try:
+            doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis no encontrada"}})
+                return
+            contra = await asyncio.to_thread(_contra_sync, doc)
+            await db.theses.update_one({"id": thesis_id, "user_id": user_id}, {"$set": {"contra": contra}})
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": contra, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception as e:
+            logger.error(f"contra generation failed ({thesis_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la contratesis: {e}"}})
+
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         kind = req.type.strip().lower()
@@ -89,37 +166,26 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if not subject:
             raise HTTPException(status_code=400, detail="subject requerido")
 
-        try:
-            sources = await run_in_threadpool(gather_sources, subject, kind)
-            if kind == "trend":
-                thesis = await run_trend_thesis(subject, sources)
-            else:
-                thesis = await run_company_thesis(subject, sources)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except Exception as e:
-            logger.error(f"thesis generation failed ({kind}:{subject}): {e}")
-            raise HTTPException(status_code=502, detail=f"Error generando la tesis: {e}")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"] if user else None,
+            "kind": "generate",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None))
+        return {"job_id": job_id}
 
-        # Persist only for logged-in users so it can be saved to folders later.
-        if user:
-            tid = f"thesis_{uuid.uuid4().hex[:12]}"
-            doc = {
-                "id": tid,
-                "user_id": user["user_id"],
-                "folder_id": None,
-                "saved": False,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                **thesis,
-            }
-            await db.theses.insert_one(doc)
-            await _persist_qual_snapshots(user["user_id"], tid, thesis)
-            thesis["id"] = tid
-            thesis["saved"] = False
-        else:
-            thesis["id"] = None
-
-        return thesis
+    @router.get("/job/{job_id}")
+    async def job_status(job_id: str, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        job = await db.thesis_jobs.find_one({"id": job_id}, {"_id": 0})
+        if not job:
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+        owner = job.get("user_id")
+        if owner and (not user or user["user_id"] != owner):
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+        return {"status": job.get("status"), "result": job.get("result"), "error": job.get("error")}
 
     @router.get("/list")
     async def list_theses(user: Dict[str, Any] = Depends(auth_required)):
@@ -200,21 +266,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if not doc:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
         if doc.get("contra"):
-            return doc["contra"]
-        try:
-            if doc.get("type") == "company":
-                name = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
-                contra = await run_company_contra(name, doc.get("summary") or "")
-            else:
-                contra = await run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or "")
-        except Exception as e:
-            logger.error(f"contra generation failed ({thesis_id}): {e}")
-            raise HTTPException(status_code=502, detail=f"Error generando la contratesis: {e}")
-        await db.theses.update_one(
-            {"id": thesis_id, "user_id": user["user_id"]},
-            {"$set": {"contra": contra}},
-        )
-        return contra
+            # Already generated — return it directly (no job needed).
+            return {"result": doc["contra"]}
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"],
+            "kind": "contra",
+            "thesis_id": thesis_id,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_contra_job(job_id, thesis_id, user["user_id"]))
+        return {"job_id": job_id}
 
     @router.delete("/{thesis_id}")
     async def delete_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
