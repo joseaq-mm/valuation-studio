@@ -65,7 +65,7 @@ await page.context.add_cookies([{
     "secure": True,
     "sameSite": "None"
 }])
-await page.goto("https://portfolio-tracker-463.preview.emergentagent.com/watchlist")
+await page.goto("https://trend-mapper-2.preview.emergentagent.com/watchlist")
 ```
 
 ## Checklist
