@@ -72,6 +72,11 @@
   - Modal de confirmación al sobrescribir snapshot existente.
   - Modal de aviso al navegar con cambios sin guardar (interceptor manual de clicks en links, sin `useBlocker` porque la app no usa data router) + `beforeunload` para cierre de pestaña/refresh.
   - Watchlist y compare aplican overrides client-side vía `customRatios.js` (réplica JS de la fórmula del backend) → ratios reflejan tu análisis manual.
+- **✅ COMPLETADO (Feb 2026)** — **Refactor modular ligero (backend)**:
+  - Extraída toda la lógica de valuación pura de `server.py` a un módulo nuevo `backend/services/valuation.py` (helpers financieros + `fetch_fundamentals_sync` + `compute_custom_ratios`). `server.py` pasó de **1234 → 460 líneas**; `valuation.py` = 800 líneas.
+  - `server.py` ahora solo contiene: setup FastAPI/Mongo, modelos, rutas API y scheduler. Importa `fetch_fundamentals_sync, compute_custom_ratios, _safe_float, _cagr` desde `services.valuation`.
+  - Comportamiento byte-idéntico verificado (AAPL/MSFT/compare/calculate/ratio-history/run-screener) + 22/22 tests pasan. Test `test_calculate_math` actualizado: la expectativa estaba desactualizada (POC 297 sin capar) → ahora 198, documentando el cap de `x_factor` a 10.
+  - Motivo: preparar terreno modular antes de integrar el módulo cualitativo ("Thesis Engine") y reducir el coste por tarea futura.
 - **✅ COMPLETADO (Feb 2026)** — **Ordenamiento de columnas en Watchlist y Cartera**:
   - Nuevo componente reutilizable `components/SortableTh.jsx` (encabezado clicable con flecha asc/desc + helpers `makeSorter` y `nextSort`).
   - **Watchlist**: ordena por Ticker, Empresa (alfabético), Precio, MCap, Ratio Compra, Ratio Venta (numérico). Strings → asc por defecto; números → desc por defecto. Nulos/errores siempre al fondo.

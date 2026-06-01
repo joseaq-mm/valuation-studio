@@ -88,12 +88,13 @@ def test_calculate_math():
     # Known inputs - simple verification:
     # revenue_2y=1000, shares=100 -> rev_per_share=10
     # gross_margin=0.5 -> margin_factor=1.5
-    # fcf_2y=200, net_debt=50, market_cap=1000 -> (200-50)/1000 *100 = 15
+    # fcf_2y=200, net_debt=50, market_cap=1000 -> x_raw = (200-50)/1000 *100 = 15
+    #   x_raw > 10 -> x_factor is CAPPED at 10.0 (extreme-FCF-yield guard).
     # rev_cagr=0.10 -> 1.10; fcf_cagr=0.20 -> 1.20
-    # POC = 10 * 1.5 * 15 * 1.10 * 1.20 = 297
-    # current_price=100 -> Ratio Compra = (297/100 - 1)*100 = 197
-    # operating_margin=0.25 -> POV = 297 * 1.25 = 371.25
-    # Ratio Venta = (371.25/100 - 1)*100 = 271.25
+    # POC = 10 * 1.5 * 10 * 1.10 * 1.20 = 198
+    # current_price=100 -> Ratio Compra = (198/100 - 1)*100 = 98
+    # operating_margin=0.25 -> y_factor = 1.25 -> POV = 198 * 1.25 = 247.5
+    # Ratio Venta = (247.5/100 - 1)*100 = 147.5
     payload = {
         "revenue_2y": 1000,
         "fcf_2y": 200,
@@ -110,10 +111,10 @@ def test_calculate_math():
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["missing_inputs"] == []
-    assert abs(data["poc"] - 297.0) < 0.01
-    assert abs(data["pov"] - 371.25) < 0.01
-    assert abs(data["ratio_compra_pct"] - 197.0) < 0.01
-    assert abs(data["ratio_venta_pct"] - 271.25) < 0.01
+    assert abs(data["poc"] - 198.0) < 0.01
+    assert abs(data["pov"] - 247.5) < 0.01
+    assert abs(data["ratio_compra_pct"] - 98.0) < 0.01
+    assert abs(data["ratio_venta_pct"] - 147.5) < 0.01
 
 
 # Calculate - missing inputs
