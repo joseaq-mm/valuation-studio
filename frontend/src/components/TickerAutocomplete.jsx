@@ -9,7 +9,7 @@ import { searchTickers } from "@/lib/api";
  *   - onPick ({symbol, name, exchange}): called when a result is selected
  *   - placeholder, testid, disabled
  */
-export default function TickerAutocomplete({ value, onChange, onPick, placeholder, testid, disabled }) {
+export default function TickerAutocomplete({ value, onChange, onPick, onEnter, placeholder, testid, disabled }) {
     const [results, setResults] = useState([]);
     const [open, setOpen] = useState(false);
     const [highlight, setHighlight] = useState(-1);
@@ -45,12 +45,14 @@ export default function TickerAutocomplete({ value, onChange, onPick, placeholde
     };
 
     const onKey = (e) => {
-        if (!open || !results.length) return;
-        if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h + 1, results.length - 1)); }
-        else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
-        else if (e.key === "Enter") {
-            if (highlight >= 0) { e.preventDefault(); pick(results[highlight]); }
-        } else if (e.key === "Escape") setOpen(false);
+        if (open && results.length) {
+            if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h + 1, results.length - 1)); return; }
+            if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); return; }
+            if (e.key === "Enter" && highlight >= 0) { e.preventDefault(); pick(results[highlight]); return; }
+            if (e.key === "Escape") { setOpen(false); return; }
+        }
+        // No suggestion is being selected → let the parent handle Enter (e.g. submit).
+        if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); }
     };
 
     return (

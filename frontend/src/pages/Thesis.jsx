@@ -8,6 +8,7 @@ import {
     thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus, thesisRadarSubscribe,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
+import TickerAutocomplete from "@/components/TickerAutocomplete";
 
 const EXAMPLES_TREND = ["Inteligencia artificial y centros de datos", "Transición energética y baterías", "GLP-1 y obesidad", "Defensa europea"];
 const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
@@ -193,15 +194,29 @@ export default function Thesis() {
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                                value={subject}
-                                onChange={(e) => setSubject(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && !loading && generate()}
-                                placeholder={mode === "trend" ? "Ej.: Inteligencia artificial y centros de datos" : "Ej.: NVDA, ASML, Inditex…"}
-                                className="flex-1 px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
-                                data-testid="thesis-input"
-                                disabled={loading}
-                            />
+                            {mode === "company" ? (
+                                <div className="flex-1">
+                                    <TickerAutocomplete
+                                        value={subject}
+                                        onChange={setSubject}
+                                        onPick={(r) => setSubject(r.symbol)}
+                                        onEnter={() => !loading && generate()}
+                                        placeholder="Ej.: NVDA, ASML, Inditex…"
+                                        testid="thesis-input"
+                                        disabled={loading}
+                                    />
+                                </div>
+                            ) : (
+                                <input
+                                    value={subject}
+                                    onChange={(e) => setSubject(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && !loading && generate()}
+                                    placeholder="Ej.: Inteligencia artificial y centros de datos"
+                                    className="flex-1 px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
+                                    data-testid="thesis-input"
+                                    disabled={loading}
+                                />
+                            )}
                             <button onClick={() => generate()} disabled={loading} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
                                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                                 {loading ? "Generando…" : "Generar tesis"}
