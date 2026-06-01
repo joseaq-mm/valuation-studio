@@ -146,7 +146,7 @@ function TamScoreBadge({ data, loading, ticker }) {
     const box = (
         <div className="flex items-center gap-2" data-testid={isLoading ? `tam-score-loading-${ticker}` : `tam-score-${ticker}`}>
             {isLoading
-                ? <div className="w-11 h-10 border-2 flex items-center justify-center shrink-0" style={{ borderColor: "#9CA3AF" }}><Loader2 size={14} className="animate-spin text-[#9CA3AF]" /></div>
+                ? <div className="w-11 h-10 border-2 flex items-center justify-center shrink-0" style={{ borderColor: "#6B7280" }}><Loader2 size={14} className="animate-spin text-[#6B7280]" /></div>
                 : <ValueBox text={txt} color={color} />}
             <span className="overline text-[#4A4A4A] leading-tight">TAM Score</span>
         </div>
@@ -316,7 +316,8 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             .catch(() => { if (alive) setTamScores({}); })
             .finally(() => { if (alive) setTamLoading(false); });
         return () => { alive = false; };
-    }, [thesis]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [thesis?.id, thesis?.generated_at, thesis?.type]);
 
     if (!thesis) return null;
 
