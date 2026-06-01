@@ -272,7 +272,12 @@ function TrendCard({ t }) {
                     <TrendingUp size={18} className="text-[#052049] shrink-0" />
                     {t.name}
                 </div>
-                <ScoreBadge value={t.relevance_score} label="Relevancia" />
+                <HoverTip
+                    text={"Relevancia (0–100): cuánto pesa esta tendencia en la tesis de inversión de la empresa — qué tan central es este tema para su caso alcista.\n\nNo mide la calidad de la empresa, sino el encaje/peso del tema. Es relativa entre las tendencias en las que encaja: ≥75 (verde) = motor central del negocio; <50 (rojo) = encaje marginal o secundario."}
+                    maxWidth={320}
+                >
+                    <div className="cursor-help"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
+                </HoverTip>
             </div>
             {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
             {t.value_chain_role && (
@@ -341,7 +346,12 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                     <div className="flex items-start gap-5 shrink-0">
                         {!isTrend && (
-                            <ScoreBadge value={thesis.overall_relevance} label="Relevancia temática global" />
+                            <HoverTip
+                                text={"Relevancia temática global (0–100): cuán expuesta e impulsada está la empresa por el CONJUNTO de megatendencias en las que encaja.\n\nResume, en un solo número, el peso agregado de los temas estructurales en su tesis alcista."}
+                                maxWidth={320}
+                            >
+                                <div className="cursor-help"><ScoreBadge value={thesis.overall_relevance} label="Relevancia temática global" /></div>
+                            </HoverTip>
                         )}
                         {isTrend && thesis.tam?.global_busd != null && (
                             <TamBadge busd={thesis.tam.global_busd} label={`TAM ${thesis.tam?.year || 2027}e`} note={thesis.tam?.note} big />
