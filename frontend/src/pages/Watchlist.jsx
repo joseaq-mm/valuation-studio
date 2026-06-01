@@ -13,8 +13,19 @@ import AlertToggle from "@/components/AlertToggle";
 import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
+import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+
+const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv"]);
+const WL_ACCESSORS = {
+    ticker: (row) => row.data?.ticker,
+    name: (row) => row.data?.name,
+    price: (row) => row.data?.current_price,
+    mcap: (row) => row.data?.market_cap,
+    rc: (row) => row.data?.custom_ratios?.ratio_compra_pct,
+    rv: (row) => row.data?.custom_ratios?.ratio_venta_pct,
+};
 
 /**
  * For each watchlist entry, fetch fresh Yahoo data and apply the user's saved
