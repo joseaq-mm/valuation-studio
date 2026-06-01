@@ -111,6 +111,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         "trend": thesis.get("title"),
                         "value_chain_role": c.get("value_chain_role"),
                         "scores": c.get("scores"),
+                        "trend_exposure": c.get("trend_exposure"),
                         "overall_score": c.get("overall_score"),
                         "thesis": c.get("thesis"),
                         "key_risks": c.get("key_risks"),
@@ -216,7 +217,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 {"$set": {
                     "user_id": user_id, "ticker": tk, "name": entry.get("name"),
                     "trend": doc.get("title"), "value_chain_role": entry.get("value_chain_role"),
-                    "scores": entry.get("scores"), "overall_score": entry.get("overall_score"),
+                    "scores": entry.get("scores"), "trend_exposure": entry.get("trend_exposure"),
+                    "overall_score": entry.get("overall_score"),
                     "thesis": entry.get("thesis"), "key_risks": entry.get("key_risks"),
                     "thesis_id": thesis_id, "updated_at": datetime.now(timezone.utc).isoformat(),
                 }},

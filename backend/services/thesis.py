@@ -264,6 +264,7 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
             "category": cat,
             "why": c.get("why"),
             "scores": scores,
+            "trend_exposure": _clamp_score(s.get("trend_exposure")),
             "overall_score": _clamp_score(s.get("overall_score")),
             "thesis": s.get("thesis"),
             "key_risks": s.get("key_risks"),
@@ -288,12 +289,18 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
 
 SYNTHESIZER_TREND_SYS = (
     "Eres un gestor de carteras value con criterio cualitativo riguroso. Recibes una "
-    "tendencia y una lista de empresas con su rol en la cadena de valor. Asignas puntuaciones "
-    "cualitativas de 0 a 100 (mayor = mejor) en cuatro dimensiones y un score global, además "
-    "de una tesis breve y los riesgos clave. También estimas la PROBABILIDAD (entero 0 a 10, "
-    "0 = muy improbable, 10 = certeza casi absoluta) de que la tesis se materialice, calibrada "
-    "según la evidencia, con una justificación breve. Sé exigente: reserva >85 para líderes "
-    "claros y reserva probabilidades >=8 solo para tendencias con evidencia muy sólida. "
+    "tendencia y una lista de empresas con su rol en la cadena de valor. Para cada empresa "
+    "asignas: cuatro puntuaciones cualitativas de 0 a 100 (mayor = mejor), una EXPOSICIÓN a la "
+    "tendencia de 0 a 100 (qué porcentaje aproximado del VALOR/negocio de la empresa depende de "
+    "esta tendencia: 100 = pure-play totalmente expuesto, 5-15 = la tendencia es un nicho menor "
+    "dentro de un negocio mucho mayor), y un SCORE GLOBAL de 0 a 100 que mide qué tan buena es la "
+    "empresa COMO VEHÍCULO PARA ESTA TESIS. El score global DEBE ponderar la exposición: una "
+    "empresa excelente pero con baja exposición a la tendencia (la tendencia le mueve poco la "
+    "aguja) debe tener un score global MENOR que otra igual de buena pero muy expuesta. También "
+    "estimas la PROBABILIDAD (entero 0 a 10, 0 = muy improbable, 10 = certeza casi absoluta) de "
+    "que la tesis se materialice, calibrada según la evidencia, con una justificación breve. "
+    "Sé exigente: reserva >85 para líderes claros y muy expuestos, y probabilidades >=8 solo para "
+    "tendencias con evidencia muy sólida. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
@@ -312,11 +319,13 @@ async def _synthesize_companies(trend: str, summary: str, companies: list) -> di
         '  "companies": [{\n'
         '    "ticker": "TICKER",\n'
         '    "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
+        '    "trend_exposure": 0-100,\n'
         '    "overall_score": 0-100,\n'
         '    "thesis": "2-3 frases: por qué (o por qué no) es una buena forma de jugar esta tendencia",\n'
         '    "key_risks": "1-2 riesgos cualitativos clave"\n'
         "  }]\n"
         "}\n"
+        "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global). "
         "Incluye TODAS las empresas de la lista, usando exactamente su mismo TICKER."
     )
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-syn-trend-{datetime.now(timezone.utc).timestamp()}",
@@ -625,8 +634,10 @@ async def match_company_to_theses(company: str, company_trends: list, existing: 
 
 EVALUATOR_SYS = (
     "Eres un analista de equity research senior. Evalúas una empresa cotizada DENTRO de una "
-    "tendencia concreta y su cadena de valor: su rol, si es líder o disruptor, y sus scores "
-    "cualitativos (0-100, mayor = mejor). Sé exigente. "
+    "tendencia concreta y su cadena de valor: su rol, si es líder o disruptor, sus scores "
+    "cualitativos (0-100, mayor = mejor), y su EXPOSICIÓN a la tendencia (0-100: qué % del valor "
+    "de la empresa depende de esta tendencia). El score global debe ponderar la exposición "
+    "(a menor exposición, menor score global). Sé exigente. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
@@ -643,10 +654,12 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         '  "value_chain_role": "uno de los eslabones (o el más cercano)",\n'
         '  "category": "leader|disruptor",\n'
         '  "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
+        '  "trend_exposure": 0-100,\n'
         '  "overall_score": 0-100,\n'
         '  "thesis": "2-3 frases sobre su encaje en la tendencia",\n'
         '  "key_risks": "1-2 riesgos clave"\n'
-        "}"
+        "}\n"
+        "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global)."
     )
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
                      EVALUATOR_SYS, user)
@@ -660,6 +673,7 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         "value_chain_role": d.get("value_chain_role"),
         "category": cat,
         "scores": {dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS},
+        "trend_exposure": _clamp_score(d.get("trend_exposure")),
         "overall_score": _clamp_score(d.get("overall_score")),
         "thesis": d.get("thesis"),
         "key_risks": d.get("key_risks"),
