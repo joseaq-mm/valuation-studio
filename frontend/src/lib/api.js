@@ -84,6 +84,8 @@ function startAndPoll(data) {
 
 export const thesisGenerate = (type, subject) =>
     api.post(`/thesis/generate`, { type, subject }).then(r => startAndPoll(r.data));
+export const thesisDiscover = () =>
+    api.post(`/thesis/discover`).then(r => startAndPoll(r.data));
 export const thesisGenerateContra = (id) =>
     api.post(`/thesis/${id}/contra`).then(r => startAndPoll(r.data));
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);

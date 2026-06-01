@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder } from "lucide-react";
+import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisGenerateContra, thesisList, thesisFolders, thesisCreateFolder,
+    thesisGenerate, thesisDiscover, thesisGenerateContra, thesisList, thesisFolders, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
@@ -20,6 +20,8 @@ export default function Thesis() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     const [generatingContra, setGeneratingContra] = useState(false);
+    const [discovering, setDiscovering] = useState(false);
+    const [candidates, setCandidates] = useState(null);
 
     // Prefill from a ?company=TICKER / ?trend=... deep link (e.g. from the company dashboard).
     useEffect(() => {
@@ -45,13 +47,14 @@ export default function Thesis() {
 
     useEffect(() => { reload(); }, [reload]);
 
-    const generate = async () => {
-        const s = subject.trim();
+    const generate = async (overrideType, overrideSubject) => {
+        const t = overrideType || mode;
+        const s = (overrideSubject ?? subject).trim();
         if (!s) { toast.error("Escribe una tendencia o empresa"); return; }
         setLoading(true);
         setResult(null);
         try {
-            const data = await thesisGenerate(mode, s);
+            const data = await thesisGenerate(t, s);
             setResult(data);
             reload();
         } catch (e) {
@@ -60,6 +63,26 @@ export default function Thesis() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const discover = async () => {
+        setDiscovering(true);
+        setCandidates(null);
+        try {
+            const data = await thesisDiscover();
+            setCandidates(data.candidates || []);
+            if (!(data.candidates || []).length) toast.info("No se detectaron tendencias claras ahora mismo.");
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudieron detectar tendencias emergentes.");
+        } finally {
+            setDiscovering(false);
+        }
+    };
+
+    const developCandidate = (name) => {
+        setMode("trend");
+        setSubject(name);
+        generate("trend", name);
     };
 
     const generateContra = async () => {
@@ -165,7 +188,7 @@ export default function Thesis() {
                                 data-testid="thesis-input"
                                 disabled={loading}
                             />
-                            <button onClick={generate} disabled={loading} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
+                            <button onClick={() => generate()} disabled={loading} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
                                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                                 {loading ? "Generando…" : "Generar tesis"}
                             </button>
@@ -181,13 +204,66 @@ export default function Thesis() {
                             ))}
                         </div>
 
-                        {loading && (
+                        {/* Auto-discovery */}
+                        <div className="mt-4 pt-4 border-t border-black/10 flex items-center justify-between gap-3 flex-wrap">
+                            <span className="text-xs text-[#4A4A4A] flex items-center gap-2">
+                                <Radar size={14} className="text-[#052049]" />
+                                ¿Sin ideas? Deja que la IA escanee la web y proponga tendencias emergentes.
+                            </span>
+                            <button
+                                onClick={discover}
+                                disabled={discovering || loading}
+                                className="text-xs uppercase tracking-[0.12em] font-semibold border border-[#052049] text-[#052049] px-3 py-1.5 hover:bg-[#052049] hover:text-[#FDF1E6] transition-colors flex items-center gap-2 disabled:opacity-60"
+                                data-testid="thesis-discover-btn"
+                            >
+                                {discovering ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
+                                {discovering ? "Escaneando…" : "Tesis automática"}
+                            </button>
+                        </div>
+
+                        {(loading || discovering) && (
                             <div className="mt-4 text-xs text-[#4A4A4A] flex items-center gap-2" data-testid="thesis-loading">
                                 <Loader2 size={13} className="animate-spin" />
-                                Buscando en la web e investigando con IA… esto puede tardar ~1 minuto.
+                                {discovering
+                                    ? "Escaneando fuentes en busca de tendencias emergentes… ~40s."
+                                    : "Buscando en la web e investigando con IA… esto puede tardar ~1-2 minutos."}
                             </div>
                         )}
                     </div>
+
+                    {/* Discovered candidate trends */}
+                    {candidates && candidates.length > 0 && (
+                        <div className="border border-black bg-[#F5E4D4] p-4 mb-6" data-testid="thesis-candidates">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Radar size={16} className="text-[#052049]" />
+                                <span className="overline text-black">Tendencias emergentes detectadas</span>
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                                {candidates.map((c, i) => (
+                                    <div key={i} className="border border-black bg-white p-3 flex flex-col" data-testid={`candidate-${i}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="font-serif text-base font-medium leading-tight">{c.name}</div>
+                                                {c.sector && <div className="overline text-[#4A4A4A] mt-0.5">{c.sector}</div>}
+                                            </div>
+                                            <span className="flex items-center gap-1 text-xs font-mono font-bold shrink-0" style={{ color: (c.heat ?? 0) >= 7 ? "#B32A22" : "#B8860B" }} title="Momentum / atención actual">
+                                                <Flame size={13} /> {c.heat ?? "—"}
+                                            </span>
+                                        </div>
+                                        {c.why_now && <p className="text-xs text-[#4A4A4A] mt-2 leading-snug flex-1">{c.why_now}</p>}
+                                        <button
+                                            onClick={() => developCandidate(c.name)}
+                                            disabled={loading}
+                                            className="mt-3 text-xs uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2 py-1.5 hover:bg-[#052049] transition-colors flex items-center justify-center gap-1 disabled:opacity-60"
+                                            data-testid={`candidate-develop-${i}`}
+                                        >
+                                            <Sparkles size={12} /> Desarrollar tesis <ArrowRight size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Save bar */}
                     {result && user && (

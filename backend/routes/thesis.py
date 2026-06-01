@@ -16,7 +16,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
-    run_trend_contra, run_company_contra,
+    run_trend_contra, run_company_contra, run_discover,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,10 @@ def _contra_sync(doc: dict) -> dict:
         name = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
         return asyncio.run(run_company_contra(name, doc.get("summary") or ""))
     return asyncio.run(run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or ""))
+
+
+def _discover_sync() -> dict:
+    return asyncio.run(run_discover())
 
 
 class GenerateRequest(BaseModel):
@@ -157,6 +161,20 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la contratesis: {e}"}})
 
+    async def _run_discover_job(job_id: str):
+        try:
+            result = await asyncio.to_thread(_discover_sync)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": result, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except ValueError as e:
+            await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": str(e)}})
+        except Exception as e:
+            logger.error(f"discover failed: {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error detectando tendencias: {e}"}})
+
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         kind = req.type.strip().lower()
@@ -175,6 +193,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None))
+        return {"job_id": job_id}
+
+    @router.post("/discover")
+    async def discover(user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"] if user else None,
+            "kind": "discover",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_discover_job(job_id))
         return {"job_id": job_id}
 
     @router.get("/job/{job_id}")

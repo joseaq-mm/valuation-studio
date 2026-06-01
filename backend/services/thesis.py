@@ -38,33 +38,13 @@ SCORE_DIMENSIONS = [
 
 # ---------------------- Live web search (real-time) ----------------------
 
-def gather_sources(subject: str, kind: str, max_results: int = 5) -> list:
-    """Run several live DuckDuckGo queries and return de-duplicated results.
-
-    kind: "trend" | "company". Returns [{title, url, snippet}].
-    Synchronous (network bound) — the caller runs it in a threadpool.
-    """
+def _run_searches(queries: list, max_results: int = 5, cap: int = 18) -> list:
+    """Run a set of live DuckDuckGo queries, de-duplicated by URL."""
     try:
         from ddgs import DDGS
     except Exception as e:  # pragma: no cover
         logger.error(f"ddgs import failed: {e}")
         return []
-
-    subject = (subject or "").strip()
-    year = datetime.now(timezone.utc).year
-    if kind == "company":
-        queries = [
-            f"{subject} growth drivers macro trends tailwinds {year}",
-            f"{subject} business segments industry value chain",
-            f"{subject} stock investment thesis outlook {year}",
-        ]
-    else:
-        queries = [
-            f"{subject} value chain leading public companies stocks {year}",
-            f"{subject} market trend outlook forecast {year}",
-            f"{subject} key players suppliers beneficiaries investing",
-        ]
-
     seen, out = set(), []
     try:
         with DDGS() as ddgs:
@@ -84,7 +64,41 @@ def gather_sources(subject: str, kind: str, max_results: int = 5) -> list:
                     logger.warning(f"ddgs query failed '{q}': {e}")
     except Exception as e:
         logger.warning(f"ddgs session failed: {e}")
-    return out[:18]
+    return out[:cap]
+
+
+def gather_sources(subject: str, kind: str, max_results: int = 5) -> list:
+    """Live web search for a trend or company. Returns [{title, url, snippet}].
+    Synchronous (network bound) — the caller runs it in a thread."""
+    subject = (subject or "").strip()
+    year = datetime.now(timezone.utc).year
+    if kind == "company":
+        queries = [
+            f"{subject} growth drivers macro trends tailwinds {year}",
+            f"{subject} business segments industry value chain",
+            f"{subject} stock investment thesis outlook {year}",
+        ]
+    else:
+        queries = [
+            f"{subject} value chain leading public companies stocks {year}",
+            f"{subject} market trend outlook forecast {year}",
+            f"{subject} key players suppliers beneficiaries investing",
+        ]
+    return _run_searches(queries, max_results)
+
+
+def gather_discovery_sources(max_results: int = 5) -> list:
+    """Broad live web search to surface emerging investment megatrends."""
+    now = datetime.now(timezone.utc)
+    year = now.year
+    queries = [
+        f"emerging investment megatrends {year} analysts outlook",
+        f"breakthrough technologies {year} disruption stocks thematic",
+        f"tendencias emergentes de inversión {year}",
+        f"hot thematic investing themes {year} new opportunities",
+        f"future trends {year} research commercialization investment",
+    ]
+    return _run_searches(queries, max_results)
 
 
 async def run_in_threadpool_safe(subject: str, kind: str) -> list:
@@ -308,6 +322,60 @@ async def _synthesize_companies(trend: str, summary: str, companies: list) -> di
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-syn-trend-{datetime.now(timezone.utc).timestamp()}",
                      SYNTHESIZER_TREND_SYS, user)
     return _extract_json(raw)
+
+
+# ---------------------- Auto-discovery: emerging trends ----------------------
+
+DISCOVERER_SYS = (
+    "Eres un analista macro que detecta MEGATENDENCIAS EMERGENTES de inversión a partir de "
+    "señales recientes (noticias, informes de analistas, papers, foros). Propones tendencias "
+    "estructurales e INVERTIBLES (no modas pasajeras), claramente distintas entre sí. Para cada "
+    "una das un 'heat' de 0 a 10 (cuánto momentum/atención tiene AHORA mismo). Usas los "
+    "resultados REALES de búsqueda, NO inventas. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+
+async def run_discover() -> dict:
+    sources = gather_discovery_sources()
+    now = datetime.now(timezone.utc).strftime("%Y-%m")
+    user = (
+        f"FECHA ACTUAL: {now}\n\n"
+        f"SEÑALES RECIENTES DE LA WEB:\n{_sources_block(sources)}\n\n"
+        "Identifica entre 4 y 5 megatendencias emergentes de inversión, distintas entre sí, "
+        "que merezcan una tesis a fondo. Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "candidates": [{\n'
+        '    "name": "nombre claro y específico de la tendencia (servirá para generar la tesis)",\n'
+        '    "sector": "sector o ámbito",\n'
+        '    "why_now": "1-2 frases: por qué está emergiendo justo ahora",\n'
+        '    "heat": 0-10\n'
+        "  }]\n"
+        "}\n"
+        "Ordena de mayor a menor 'heat'. Evita tendencias genéricas ya muy maduras."
+    )
+    raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-discover-{datetime.now(timezone.utc).timestamp()}",
+                     DISCOVERER_SYS, user)
+    data = _extract_json(raw)
+    candidates = []
+    for c in (data.get("candidates") or []):
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        candidates.append({
+            "name": name,
+            "sector": c.get("sector"),
+            "why_now": c.get("why_now"),
+            "heat": _clamp10(c.get("heat")),
+        })
+    if not candidates:
+        raise ValueError("No se pudieron detectar tendencias emergentes ahora mismo. Inténtalo de nuevo.")
+    candidates.sort(key=lambda x: (x["heat"] is None, -(x["heat"] or 0)))
+    return {
+        "candidates": candidates,
+        "sources": sources,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ---------------------- Flow B: Company → trends ----------------------
