@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only E2E testing of the 'Empresa → Tendencias' duplicate-warning feature in ThesisResult.jsx. All 5 specified tests PASSED (load, duplicate-warning rendering, generate-thesis button on cyber trend, add-company click flow, unauthenticated /thesis page load).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx is ~480 lines and starts to mix many concerns (CompanyCard, TrendCard, StageRow, ContraSection, SourcesList, TamScoreBadge). Consider splitting into separate files for future maintainability, even though it is not strictly >700 lines today.",
+    "trend-add data-testid is built from the first 16 chars of the trend name slug (`_norm(t.name).slice(0,16)`). Two distinct trends sharing the same 16-char prefix would collide and produce duplicate keys + testids. Low risk but worth noting.",
+    "thesisLinkSuggestions does 1 LLM call on every load of a company thesis; consider caching server-side keyed on (company_thesis_id, trend signature) to avoid repeating cost on refresh."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% (5/5)"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 on REACT_APP_BACKEND_URL host (user_id=test_profile_user_123). Seeded via seed_profile_test.py + seed_company_thesis_test.py.",
+  "seed_data_creation": "No new seed data created. Verified that pre-seeded thesis_test_company_msft (MSFT) and thesis_test_aidc are present and the duplicate matcher correctly returns to_add for 'Inteligencia artificial y centros de datos' and to_create for 'Ciberseguridad empresarial'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test 4 mutates state: it calls POST /api/thesis/thesis_test_aidc/add-company which adds MSFT to that trend thesis. Re-running test 4 will be idempotent in the UI (the button still transitions to 'Añadida'), but the underlying thesis_test_aidc now contains MSFT in addition to NVDA. Re-seed with seed_profile_test.py if a clean state is needed before re-testing.",
+  "test_evidence": {
+    "test1_load": "thesis-result rendered + header 'Empresa → Tendencias' visible.",
+    "test2_dup_warning": "trend-dup-warning-'inteligencia art' present; dup-link href = /thesis/thesis_test_aidc; add button text = 'Añadir MSFT a esa tesis'; generate-anyway link present.",
+    "test3_generate_btn": "trend-generate-'ciberseguridad e' href = /thesis?trend=Ciberseguridad%20empresarial&auto=1; text 'Generar tesis'; no dup-warning block.",
+    "test4_add_to_existing": "Button transitioned to 'Añadida' (green, disabled) ~13s after click; success toast 'MSFT añadida a IA y centros de datos' shown.",
+    "test5_unauth_thesis": "/thesis loaded without cookies, data-testid='thesis-page' present, no error elements."
+  }
+}

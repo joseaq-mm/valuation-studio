@@ -513,6 +513,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         existing = await db.theses.find(
             {"user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1, "title": 1}
         ).to_list(length=300)
+        if not existing:
+            # No saved trend theses → nothing to match against (skip the LLM call).
+            return {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
         try:
             result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
         except Exception as e:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Bell } from "lucide-react";
@@ -25,11 +25,21 @@ export default function Thesis() {
     const [candidates, setCandidates] = useState(null);
 
     // Prefill from a ?company=TICKER / ?trend=... deep link (e.g. from the company dashboard).
+    // With ?auto=1 we also auto-start the generation (used by per-trend "Generar tesis").
+    const lastAutoRef = useRef(null);
     useEffect(() => {
         const co = searchParams.get("company");
         const tr = searchParams.get("trend");
+        const auto = searchParams.get("auto");
         if (co) { setMode("company"); setSubject(co); }
-        else if (tr) { setMode("trend"); setSubject(tr); }
+        else if (tr) {
+            setMode("trend"); setSubject(tr);
+            if (auto === "1" && lastAutoRef.current !== tr) {
+                lastAutoRef.current = tr;
+                generate("trend", tr);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
     const [folders, setFolders] = useState([]);

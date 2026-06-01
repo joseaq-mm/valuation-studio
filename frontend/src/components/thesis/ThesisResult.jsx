@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
+import { toast } from "sonner";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
-import CompanyThesisLinker from "./CompanyThesisLinker";
-import { thesisTamScores } from "@/lib/api";
+import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -263,10 +263,29 @@ function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
     return <>{groups.map((g, i) => <StageRow key={i} group={g} tamScores={tamScores} tamLoading={tamLoading} />)}</>;
 }
 
-function TrendCard({ t }) {
+function TrendCard({ t, match, company }) {
+    const [adding, setAdding] = useState(false);
+    const [added, setAdded] = useState(false);
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
+    const slug = _norm(t.name).slice(0, 16);
+    const trendQuery = encodeURIComponent(t.name || "");
+
+    const addToExisting = async () => {
+        if (!match?.thesis_id || !company?.ticker) return;
+        setAdding(true);
+        try {
+            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
+            setAdded(true);
+            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
+        } finally {
+            setAdding(false);
+        }
+    };
+
     return (
-        <div className="border border-black bg-white p-5" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
+        <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
             <div className="flex items-start justify-between gap-4">
                 <div className="font-serif text-lg font-medium leading-tight flex items-center gap-2">
                     <TrendingUp size={18} className="text-[#052049] shrink-0" />
@@ -290,6 +309,44 @@ function TrendCard({ t }) {
                     <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
                 </div>
             )}
+
+            {/* Action footer: generate, or duplicate warning + add-to-existing */}
+            <div className="mt-auto pt-4 border-t border-black/10">
+                {match ? (
+                    <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-2.5" data-testid={`trend-dup-warning-${slug}`}>
+                        <div className="flex items-start gap-2 text-xs text-[#7a5a10]">
+                            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
+                            <span>
+                                Ya tienes una tesis desarrollada que encaja:{" "}
+                                <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
+                                Añade la empresa a esa tesis en lugar de duplicarla — duplicar inflaría el valor atribuido a {company?.ticker || "la empresa"}.
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+                            <button
+                                onClick={addToExisting}
+                                disabled={adding || added}
+                                className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
+                                data-testid={`trend-add-${slug}`}
+                            >
+                                {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
+                                {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
+                            </button>
+                            <Link to={`/thesis?trend=${trendQuery}&auto=1`} className="text-xs text-[#4A4A4A] hover:text-black hover:underline" data-testid={`trend-generate-anyway-${slug}`}>
+                                Generar de todas formas
+                            </Link>
+                        </div>
+                    </div>
+                ) : (
+                    <Link
+                        to={`/thesis?trend=${trendQuery}&auto=1`}
+                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
+                        data-testid={`trend-generate-${slug}`}
+                    >
+                        <Sparkles size={13} /> Generar tesis <ArrowRight size={12} />
+                    </Link>
+                )}
+            </div>
         </div>
     );
 }
@@ -297,6 +354,8 @@ function TrendCard({ t }) {
 export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false }) {
     const [tamScores, setTamScores] = useState(null);
     const [tamLoading, setTamLoading] = useState(false);
+    const [linkData, setLinkData] = useState(null);
+    const [linkLoading, setLinkLoading] = useState(false);
 
     const isTrend = thesis?.type === "trend";
 
@@ -323,6 +382,23 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [thesis?.id, thesis?.generated_at, thesis?.type]);
+
+    // Company mode: check which of the company's trends already have a matching
+    // saved trend-thesis, to warn against duplicating (and offer add-to-existing).
+    useEffect(() => {
+        if (!thesis || thesis.type !== "company" || !thesis.id) { setLinkData(null); return; }
+        let alive = true;
+        setLinkLoading(true);
+        thesisLinkSuggestions(thesis.id)
+            .then((d) => { if (alive) setLinkData(d); })
+            .catch(() => { if (alive) setLinkData(null); })
+            .finally(() => { if (alive) setLinkLoading(false); });
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [thesis?.id, thesis?.type]);
+
+    const matchByTrend = {};
+    (linkData?.to_add || []).forEach((a) => { if (a.trend_name) matchByTrend[_norm(a.trend_name)] = a; });
 
     if (!thesis) return null;
 
@@ -383,11 +459,19 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </>
             ) : (
                 <>
-                    <div className="overline text-[#4A4A4A] mb-2">Tendencias donde encaja</div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                        {(thesis.trends || []).map((t, i) => <TrendCard key={i} t={t} />)}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="overline text-[#4A4A4A]">Tendencias donde encaja</div>
+                        {linkLoading && (
+                            <span className="text-[11px] text-[#4A4A4A] flex items-center gap-1" data-testid="trends-dup-checking">
+                                <Loader2 size={11} className="animate-spin" /> Comprobando duplicados…
+                            </span>
+                        )}
                     </div>
-                    {thesis.id && <CompanyThesisLinker thesisId={thesis.id} company={thesis.company} />}
+                    <div className="grid md:grid-cols-2 gap-4">
+                        {(thesis.trends || []).map((t, i) => (
+                            <TrendCard key={i} t={t} match={matchByTrend[_norm(t.name)]} company={thesis.company} />
+                        ))}
+                    </div>
                 </>
             )}
 
