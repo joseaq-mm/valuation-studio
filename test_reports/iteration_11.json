@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only verification of /thesis Punto 4 (undo/redo global + treemap-driven delete folder modal). 24/24 checkpoints passed live against the preview URL with cookie auth. Header shows the `undo-redo-bar` with `undo-btn`/`redo-btn` next to 'Tesis de inversion', both disabled on load. Megatendencias bar (`megatrends-bar`) has NO `megatrend-chip-*` elements (chips removed), only the explanation copy + `new-folder-input` + `create-folder-btn`. Create QA Test -> undo enabled, undo removes folder + enables redo, redo restores. Treemap cell for the new folder exposed `explore-delete-folder-<id>`; clicking opens `delete-folder-modal` with `delete-folder-ungroup`/`delete-folder-cascade`/`delete-folder-cancel`. Cancel button correctly closes the modal (no bug — modal disappears from DOM). On the seeded folder `folder_3a8599c11e` the ungroup path removes the folder from the treemap, and the subsequent undo restores it (state left untouched). The QA Test cleanup used cascade and removed the temp folder. Drilldown from `explore-cell-folder-folder_3a8599c11e` still works and `explore-breadcrumb` renders + navigates back. Terminology: `explore-view-trends` label is 'Tesis' (not 'Tendencias'); `mode-trend` = 'Tesis -> Empresas', `mode-company` = 'Empresa -> Tesis'. Sidebar `sidebar-company-NVDA` no longer shows scores next to the name; `company-trends-toggle-NVDA` opens `company-trends-menu-NVDA` with the two trend rows.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/thesis", "issues": ["Trash icon inside an `explore-cell-folder-*` is only visible on hover (opacity-0 group-hover:opacity-100). On touch devices without hover it may be unreachable. Consider opacity-60 by default or always visible when cell w>44 & h>28 (the current size gate)."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Thesis.jsx is now 545 lines and mixes hero + megatrend bar + generator + dedup + delete modal + dashboard. Extract `MegatrendsBar` and the `DeleteFolderModal` into their own files (similar to ThesisSidebar/ThesisExplore). Each undo branch in `runAction` is already a switch — fine, but the modal JSX is dead-weight in this file.",
+    "`runAction` ignores the result of redoing `create_folder` via `thesisRestore({ folders: [action.folder] })`: if the user creates folder A, undoes it (which calls DELETE), then redoes, we POST `restore` with only `{ id, name, created_at }`. Confirm `/api/thesis/restore` accepts that shape — observed UI was fine but server-side validation should reject extra/missing fields gracefully.",
+    "`runAction` for `assign_folder` does not push/pop the undo stack on direction='redo' correctly because both undo and redo call the same `thesisAssignFolder` with prev/next values. OK functionally, but a redo after editing two assignments in a row could be confusing — consider freezing the redo stack on any non-undo mutation (this is already done in pushAction).",
+    "When `cascade` is used on a folder, the resulting `delete_folder_cascade` action stores `deleted_theses` from the server. Verify the server actually returns the full thesis docs (not just ids) so the undo `thesisRestore({ theses })` can recreate them — otherwise redoing cascade would silently lose body content.",
+    "The trash button in ThesisExplore is rendered with `opacity-0 group-hover:opacity-100`; for keyboard a11y consider `focus-visible:opacity-100` so Tab navigation reveals it.",
+    "`delete-folder-modal` is dismissable by clicking the backdrop (good) but Escape is not bound — minor a11y gap.",
+    "Megatendencias copy says 'elimínala desde su cuadro en la vista Megatendencias' — the cue is good but a `(?)` tooltip pointing at the treemap on first visit would close the loop."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (24/24)"},
+  "test_credentials": "cookie session_token=test_profile_token_fixed_123 on ai-valuation-desk.preview.emergentagent.com (user_id=test_profile_user_123).",
+  "seed_data_creation": "None. Used pre-seeded thesis_test_aidc, thesis_test_robot, thesis_test_company_nvda and folder_3a8599c11e ('IA & Cómputo'). Temporary 'QA Test' folder was created and cleaned up via cascade. Final state: folder_3a8599c11e with 2 theses present, no extra folders.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Selectors verified live: undo-redo-bar, undo-btn, redo-btn, megatrends-bar (no megatrend-chip-*), new-folder-input, create-folder-btn, thesis-explore, explore-views, explore-view-{megatrends|trends|companies_score|companies_tam}, explore-treemap, explore-breadcrumb, explore-cell-{folder|trend|company}-<id>, explore-delete-folder-<id> (hover-only opacity), delete-folder-modal, delete-folder-ungroup, delete-folder-cascade, delete-folder-cancel, mode-trend, mode-company, thesis-input, thesis-generate-btn, sidebar-company-NVDA, company-trends-toggle-NVDA, company-trends-menu-NVDA. The trash button requires hovering the parent cell first (page.hover then click force=True) — do not click before hover or the click registers on the cell (drilldown) instead. Do NOT click 'thesis-discover-btn' or 'dedup-rewrite-btn' (LLM cost). Prefer ungroup+undo for round-trip checks on seeded data.",
+  "rca of the issue": "N/A — no bugs found. Punto 4 (undo/redo + treemap delete modal + sidebar score removal + terminology) implementation matches spec end-to-end."
+}

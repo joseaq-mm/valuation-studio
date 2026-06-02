@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, FolderPlus, Trash2, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight } from "lucide-react";
+import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Undo2, Redo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus,
     thesisRadarSubscribe, thesisDashboard, thesisRefreshStatus, thesisRefreshSubscribe,
+    thesisRestore, thesisGet,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
@@ -32,6 +33,9 @@ export default function Thesis() {
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
+    const [undoStack, setUndoStack] = useState([]);
+    const [redoStack, setRedoStack] = useState([]);
+    const [folderToDelete, setFolderToDelete] = useState(null);
 
     const folders = dash?.folders || [];
 
@@ -158,13 +162,63 @@ export default function Thesis() {
         }
     };
 
+    // ---- Undo / redo (page-wide history of mutating actions) ----
+    const pushAction = (action) => {
+        setUndoStack((s) => [...s, action]);
+        setRedoStack([]);
+    };
+
+    const runAction = async (action, direction) => {
+        const t = action.type;
+        if (t === "create_folder") {
+            if (direction === "undo") await thesisDeleteFolder(action.folder.id, "ungroup");
+            else await thesisRestore({ folders: [action.folder] });
+        } else if (t === "delete_folder_cascade") {
+            if (direction === "undo") await thesisRestore({ folders: [action.folder], theses: action.theses });
+            else await thesisDeleteFolder(action.folder.id, "cascade");
+        } else if (t === "delete_folder_ungroup") {
+            if (direction === "undo") await thesisRestore({ folders: [action.folder], reassign: action.detached_ids.map((id) => ({ id, folder_id: action.folder.id })) });
+            else await thesisDeleteFolder(action.folder.id, "ungroup");
+        } else if (t === "delete_thesis") {
+            if (direction === "undo") await thesisRestore({ theses: [action.doc] });
+            else await thesisDelete(action.doc.id);
+        } else if (t === "assign_folder") {
+            await thesisAssignFolder(action.id, (direction === "undo" ? action.prev : action.next) || null);
+        }
+    };
+
+    const undo = async () => {
+        if (!undoStack.length) return;
+        const action = undoStack[undoStack.length - 1];
+        try {
+            await runAction(action, "undo");
+            setUndoStack((s) => s.slice(0, -1));
+            setRedoStack((s) => [...s, action]);
+            toast.success("Acción deshecha");
+            reload();
+        } catch { toast.error("No se pudo deshacer"); }
+    };
+
+    const redo = async () => {
+        if (!redoStack.length) return;
+        const action = redoStack[redoStack.length - 1];
+        try {
+            await runAction(action, "redo");
+            setRedoStack((s) => s.slice(0, -1));
+            setUndoStack((s) => [...s, action]);
+            toast.success("Acción rehecha");
+            reload();
+        } catch { toast.error("No se pudo rehacer"); }
+    };
+
     const createFolder = async () => {
         const n = newFolder.trim();
         if (!n) return;
         try {
-            await thesisCreateFolder(n);
+            const f = await thesisCreateFolder(n);
             setNewFolder("");
             toast.success("Megatendencia creada");
+            pushAction({ type: "create_folder", folder: { id: f.id, name: f.name, created_at: f.created_at } });
             reload();
         } catch { toast.error("No se pudo crear la megatendencia"); }
     };
@@ -180,21 +234,38 @@ export default function Thesis() {
     };
 
     const assignThesisFolder = async (id, folderId) => {
+        const prev = (dash?.trends || []).find((t) => t.id === id)?.folder_id || null;
         try {
             await thesisAssignFolder(id, folderId || null);
             toast.success(folderId ? "Movida a la megatendencia" : "Quitada de la megatendencia");
+            pushAction({ type: "assign_folder", id, prev, next: folderId || null });
             reload();
         } catch { toast.error("No se pudo mover la tesis"); }
     };
 
-    const removeFolder = async (id) => {
-        try { await thesisDeleteFolder(id); reload(); }
-        catch { toast.error("No se pudo eliminar"); }
+    const deleteFolder = async (folder, fmode) => {
+        setFolderToDelete(null);
+        try {
+            const res = await thesisDeleteFolder(folder.id, fmode);
+            if (fmode === "cascade") {
+                pushAction({ type: "delete_folder_cascade", folder: res.folder, theses: res.deleted_theses || [] });
+                toast.success("Megatendencia y sus tesis eliminadas");
+            } else {
+                pushAction({ type: "delete_folder_ungroup", folder: res.folder, detached_ids: res.detached_ids || [] });
+                toast.success("Megatendencia eliminada · tesis desagrupadas");
+            }
+            reload();
+        } catch { toast.error("No se pudo eliminar la megatendencia"); }
     };
 
     const removeThesis = async (id) => {
-        try { await thesisDelete(id); reload(); toast.success("Tesis eliminada"); }
-        catch { toast.error("No se pudo eliminar"); }
+        try {
+            const doc = await thesisGet(id);
+            await thesisDelete(id);
+            toast.success("Tesis eliminada");
+            pushAction({ type: "delete_thesis", doc });
+            reload();
+        } catch { toast.error("No se pudo eliminar"); }
     };
 
     const examples = mode === "trend" ? EXAMPLES_TREND : EXAMPLES_COMPANY;
@@ -205,32 +276,34 @@ export default function Thesis() {
                 {/* Main column */}
                 <div className="order-2 lg:order-1 min-w-0">
                     {/* Hero */}
-                    <div className="mb-5">
-                        <div className="overline text-[#B32A22] mb-1">Thesis Engine · Análisis cualitativo con IA</div>
-                        <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">Tesis de inversión</h1>
-                        <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">
-                            Mapea megatendencias a su cadena de valor y a las empresas líderes con un score cualitativo —
-                            o parte de una empresa y descubre en qué tesis encaja.
-                        </p>
+                    <div className="mb-5 flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                            <div className="overline text-[#B32A22] mb-1">Thesis Engine · Análisis cualitativo con IA</div>
+                            <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">Tesis de inversión</h1>
+                            <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">
+                                Mapea megatendencias a su cadena de valor y a las empresas líderes con un score cualitativo —
+                                o parte de una empresa y descubre en qué tesis encaja.
+                            </p>
+                        </div>
+                        {user && (
+                            <div className="flex items-center gap-1 shrink-0 mt-1" data-testid="undo-redo-bar">
+                                <button onClick={undo} disabled={!undoStack.length} title="Deshacer" data-testid="undo-btn"
+                                        className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <Undo2 size={16} />
+                                </button>
+                                <button onClick={redo} disabled={!redoStack.length} title="Rehacer" data-testid="redo-btn"
+                                        className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <Redo2 size={16} />
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Megatendencias management */}
                     {user && (
                         <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
                             <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
-                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Asigna cada tesis desde su selector en la lista de la derecha.</p>
-                            <div className="flex flex-wrap gap-1.5 mb-3">
-                                {folders.length === 0 && <span className="text-[11px] text-[#9CA3AF]">Aún no hay megatendencias.</span>}
-                                {folders.map((f) => (
-                                    <span key={f.id} className="text-xs px-2 py-1 border border-black/30 flex items-center gap-1.5" data-testid={`megatrend-chip-${f.id}`}>
-                                        <Folder size={11} /> {f.name}
-                                        <span className="text-[10px] text-[#4A4A4A]">({f.trend_count})</span>
-                                        <button onClick={() => removeFolder(f.id)} className="opacity-60 hover:opacity-100" title="Eliminar megatendencia">
-                                            <Trash2 size={11} />
-                                        </button>
-                                    </span>
-                                ))}
-                            </div>
+                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatendencias</strong>.</p>
                             <div className="flex gap-1 max-w-sm">
                                 <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
                                        onKeyDown={(e) => e.key === "Enter" && createFolder()}
@@ -413,7 +486,7 @@ export default function Thesis() {
                             generatingContra={generatingContra}
                         />
                     ) : (user && dash && !loading && (
-                        <ThesisExplore dash={dash} />
+                        <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} />
                     ))}
                 </div>
 
@@ -439,6 +512,33 @@ export default function Thesis() {
                     )}
                 </div>
             </div>
+
+            {/* Delete megatendencia confirm modal */}
+            {folderToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="delete-folder-modal" onClick={() => setFolderToDelete(null)}>
+                    <div className="bg-white border border-black max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
+                        <div className="font-serif text-xl font-medium mb-1">Eliminar «{folderToDelete.name}»</div>
+                        <p className="text-sm text-[#4A4A4A] mb-4">
+                            Esta megatendencia agrupa <strong>{folderToDelete.trend_count || 0} tesis</strong>. ¿Qué quieres hacer con ellas?
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            <button onClick={() => deleteFolder(folderToDelete, "ungroup")} data-testid="delete-folder-ungroup"
+                                    className="text-left text-sm border border-black px-3 py-2 hover:bg-[#F5E4D4] transition-colors">
+                                <span className="font-semibold">Solo desagrupar</span> — mantener las tesis en mi lista (sin megatendencia)
+                            </button>
+                            <button onClick={() => deleteFolder(folderToDelete, "cascade")} data-testid="delete-folder-cascade"
+                                    className="text-left text-sm border border-[#B32A22] text-[#B32A22] px-3 py-2 hover:bg-[#B32A22] hover:text-white transition-colors">
+                                <span className="font-semibold">Borrar también las tesis</span> — eliminar la megatendencia y su contenido
+                            </button>
+                            <button onClick={() => setFolderToDelete(null)} data-testid="delete-folder-cancel"
+                                    className="text-xs text-[#4A4A4A] hover:underline mt-1 self-start">
+                                Cancelar
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-[#4A4A4A] mt-3">Podrás revertirlo con el botón <strong>Deshacer</strong> de arriba.</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

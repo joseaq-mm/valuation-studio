@@ -97,7 +97,9 @@ export const thesisAssignFolder = (id, folder_id) =>
     api.put(`/thesis/${id}/folder`, { folder_id }).then(r => r.data);
 export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
 export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
-export const thesisDeleteFolder = (id) => api.delete(`/thesis/folders/${id}`).then(r => r.data);
+export const thesisDeleteFolder = (id, mode = "ungroup") =>
+    api.delete(`/thesis/folders/${id}`, { params: { mode } }).then(r => r.data);
+export const thesisRestore = (payload) => api.post(`/thesis/restore`, payload).then(r => r.data);
 export const thesisDashboard = () => api.get(`/thesis/dashboard`).then(r => r.data);
 export const thesisCompanyQual = (ticker) =>
     api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);

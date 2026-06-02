@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, TrendingUp, Building2, BarChart3, ChevronRight, MousePointerClick } from "lucide-react";
+import { Layers, TrendingUp, Building2, BarChart3, ChevronRight, MousePointerClick, Trash2 } from "lucide-react";
 import { squarify, relColor } from "@/lib/treemap";
 
 const VIEWS = [
@@ -31,9 +31,9 @@ function buildItems(view, path, dash) {
     if (view === "megatrends") {
         if (path.length === 0) {
             return folders.map((f) => ({
-                type: "folder", id: f.id, name: f.name,
+                type: "folder", id: f.id, name: f.name, trend_count: f.trend_count,
                 value: f.tam_busd > 0 ? f.tam_busd : Math.max(f.trend_count, 1),
-                metric: f.tam_busd, sub: `${f.trend_count} tend.`, badge: fmtTam(f.tam_busd),
+                metric: f.tam_busd, sub: `${f.trend_count} tesis`, badge: fmtTam(f.tam_busd),
             }));
         }
         if (path.length === 1) return trendItems(trends.filter((t) => t.folder_id === path[0].id));
@@ -56,7 +56,7 @@ function buildItems(view, path, dash) {
     }));
 }
 
-export default function ThesisExplore({ dash }) {
+export default function ThesisExplore({ dash, onDeleteFolder }) {
     const navigate = useNavigate();
     const [view, setView] = useState("megatrends");
     const [path, setPath] = useState([]);
@@ -140,17 +140,20 @@ export default function ThesisExplore({ dash }) {
                     const med = it.w > 38 && it.h > 20;
                     const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
                     return (
-                        <button
+                        <div
                             key={it.id || it.ticker || idx}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => onCell(it)}
+                            onKeyDown={(e) => { if (e.key === "Enter") onCell(it); }}
                             title={`${it.name}${it.badge != null ? ` · ${it.badge}` : ""}`}
-                            className="absolute text-left overflow-hidden border border-[#FDF1E6] hover:brightness-110 hover:z-10 transition-all"
+                            className="absolute text-left overflow-hidden border border-[#FDF1E6] hover:brightness-110 hover:z-10 transition-all cursor-pointer"
                             style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
                             data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
                         >
                             <div className="p-1.5 h-full flex flex-col justify-between text-[#FDF1E6]" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}>
                                 {med && (
-                                    <div className={`font-semibold leading-tight ${big ? "text-sm" : "text-[11px]"} line-clamp-3`}>
+                                    <div className={`font-semibold leading-tight ${big ? "text-sm" : "text-[11px]"} line-clamp-3 pr-4`}>
                                         {it.name}
                                     </div>
                                 )}
@@ -161,7 +164,17 @@ export default function ThesisExplore({ dash }) {
                                     </div>
                                 )}
                             </div>
-                        </button>
+                            {it.type === "folder" && onDeleteFolder && it.w > 44 && it.h > 28 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onDeleteFolder(it); }}
+                                    title="Eliminar megatendencia"
+                                    className="absolute top-1 right-1 p-1 bg-black/25 hover:bg-black/55 text-[#FDF1E6] transition-colors"
+                                    data-testid={`explore-delete-folder-${it.id}`}
+                                >
+                                    <Trash2 size={11} />
+                                </button>
+                            )}
+                        </div>
                     );
                 })}
             </div>

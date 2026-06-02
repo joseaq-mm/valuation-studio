@@ -86,6 +86,12 @@ class AssignFolderRequest(BaseModel):
     folder_id: Optional[str] = None
 
 
+class RestoreRequest(BaseModel):
+    folders: Optional[List[Dict[str, Any]]] = None
+    theses: Optional[List[Dict[str, Any]]] = None
+    reassign: Optional[List[Dict[str, Any]]] = None  # [{id, folder_id}]
+
+
 class AddCompanyRequest(BaseModel):
     ticker: str
     name: Optional[str] = None
@@ -455,13 +461,47 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"id": fid, "name": name, "created_at": doc["created_at"]}
 
     @router.delete("/folders/{folder_id}")
-    async def delete_folder(folder_id: str, user: Dict[str, Any] = Depends(auth_required)):
-        await db.thesis_folders.delete_one({"id": folder_id, "user_id": user["user_id"]})
-        # Detach theses from the deleted folder (keep the theses themselves).
+    async def delete_folder(folder_id: str, mode: str = "ungroup", user: Dict[str, Any] = Depends(auth_required)):
+        """mode='ungroup' (default): detach theses (keep them). mode='cascade':
+        also delete the contained theses. Returns the removed data so the client
+        can offer Undo."""
+        uid = user["user_id"]
+        folder = await db.thesis_folders.find_one({"id": folder_id, "user_id": uid}, {"_id": 0})
+        if not folder:
+            raise HTTPException(status_code=404, detail="Megatendencia no encontrada")
+        await db.thesis_folders.delete_one({"id": folder_id, "user_id": uid})
+        if mode == "cascade":
+            deleted = await db.theses.find(
+                {"user_id": uid, "folder_id": folder_id}, {"_id": 0}
+            ).to_list(length=500)
+            await db.theses.delete_many({"user_id": uid, "folder_id": folder_id})
+            return {"ok": True, "mode": "cascade", "folder": folder, "deleted_theses": deleted}
+        affected = await db.theses.find(
+            {"user_id": uid, "folder_id": folder_id}, {"_id": 0, "id": 1}
+        ).to_list(length=500)
         await db.theses.update_many(
-            {"user_id": user["user_id"], "folder_id": folder_id},
-            {"$set": {"folder_id": None}},
+            {"user_id": uid, "folder_id": folder_id}, {"$set": {"folder_id": None}},
         )
+        return {"ok": True, "mode": "ungroup", "folder": folder,
+                "detached_ids": [a["id"] for a in affected]}
+
+    @router.post("/restore")
+    async def restore(req: RestoreRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Generic restore used by Undo/Redo: re-insert folders/theses (by id) and
+        reassign folder_id. Idempotent (upsert)."""
+        uid = user["user_id"]
+        for f in (req.folders or []):
+            f = {k: v for k, v in f.items() if k != "_id"}
+            f["user_id"] = uid
+            await db.thesis_folders.update_one({"id": f["id"], "user_id": uid}, {"$set": f}, upsert=True)
+        for t in (req.theses or []):
+            t = {k: v for k, v in t.items() if k != "_id"}
+            t["user_id"] = uid
+            await db.theses.update_one({"id": t["id"], "user_id": uid}, {"$set": t}, upsert=True)
+        for r in (req.reassign or []):
+            if r.get("id"):
+                await db.theses.update_one(
+                    {"id": r["id"], "user_id": uid}, {"$set": {"folder_id": r.get("folder_id")}})
         return {"ok": True}
 
     @router.get("/company/{ticker}")
