@@ -109,7 +109,7 @@ export default function Thesis() {
     const generate = async (overrideType, overrideSubject, matchedThesisId = null, opts = {}) => {
         const t = overrideType || mode;
         const s = (overrideSubject ?? subject).trim();
-        if (!s) { toast.error("Escribe una tendencia o empresa"); return; }
+        if (!s) { toast.error("Escribe una tesis o empresa"); return; }
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
@@ -135,9 +135,9 @@ export default function Thesis() {
         try {
             const data = await thesisDiscover();
             setCandidates(data.candidates || []);
-            if (!(data.candidates || []).length) toast.info("No se detectaron tendencias claras ahora mismo.");
+            if (!(data.candidates || []).length) toast.info("No se detectaron tesis claras ahora mismo.");
         } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudieron detectar tendencias emergentes.");
+            toast.error(e?.response?.data?.detail || "No se pudieron detectar tesis emergentes.");
         } finally {
             setDiscovering(false);
         }
@@ -210,7 +210,7 @@ export default function Thesis() {
                         <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">Tesis de inversión</h1>
                         <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">
                             Mapea megatendencias a su cadena de valor y a las empresas líderes con un score cualitativo —
-                            o parte de una empresa y descubre en qué tendencias encaja.
+                            o parte de una empresa y descubre en qué tesis encaja.
                         </p>
                     </div>
 
@@ -218,7 +218,7 @@ export default function Thesis() {
                     {user && (
                         <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
                             <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
-                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tendencias en megatendencias. Asigna cada tesis desde su selector en la lista de la derecha.</p>
+                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Asigna cada tesis desde su selector en la lista de la derecha.</p>
                             <div className="flex flex-wrap gap-1.5 mb-3">
                                 {folders.length === 0 && <span className="text-[11px] text-[#9CA3AF]">Aún no hay megatendencias.</span>}
                                 {folders.map((f) => (
@@ -251,14 +251,14 @@ export default function Thesis() {
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors ${mode === "trend" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-trend"
                                 >
-                                    <TrendingUp size={14} /> Tendencia → Empresas
+                                    <TrendingUp size={14} /> Tesis → Empresas
                                 </button>
                                 <button
                                     onClick={() => { setMode("company"); setResult(null); }}
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors border-l border-black ${mode === "company" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-company"
                                 >
-                                    <Building2 size={14} /> Empresa → Tendencias
+                                    <Building2 size={14} /> Empresa → Tesis
                                 </button>
                             </div>
                             <button
@@ -316,7 +316,7 @@ export default function Thesis() {
                             <div className="mt-4 text-xs text-[#4A4A4A] flex items-center gap-2" data-testid="thesis-loading">
                                 <Loader2 size={13} className="animate-spin" />
                                 {discovering
-                                    ? "Escaneando fuentes en busca de tendencias emergentes… ~40s."
+                                    ? "Escaneando fuentes en busca de tesis emergentes… ~40s."
                                     : "Buscando en la web e investigando con IA… esto puede tardar ~1-2 minutos."}
                             </div>
                         )}
@@ -327,7 +327,7 @@ export default function Thesis() {
                         <div className="border border-black bg-[#F5E4D4] p-4 mb-6" data-testid="thesis-candidates">
                             <div className="flex items-center gap-2 mb-3">
                                 <Radar size={16} className="text-[#052049]" />
-                                <span className="overline text-black">Tendencias emergentes detectadas</span>
+                                <span className="overline text-black">Tesis emergentes detectadas</span>
                             </div>
                             <div className="grid sm:grid-cols-2 gap-3">
                                 {candidates.map((c, i) => (
@@ -382,7 +382,7 @@ export default function Thesis() {
                     {pendingDup && (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
-                                Ya tienes esta {pendingDup.type === "trend" ? "tendencia" : "empresa"} guardada:{" "}
+                                Ya tienes esta {pendingDup.type === "trend" ? "tesis" : "empresa"} guardada:{" "}
                                 <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
                                 El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá</strong> el resultado actual.
                             </div>

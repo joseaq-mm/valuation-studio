@@ -5,7 +5,7 @@ import { squarify, relColor } from "@/lib/treemap";
 
 const VIEWS = [
     { id: "megatrends", label: "Megatendencias", icon: Layers },
-    { id: "trends", label: "Tendencias", icon: TrendingUp },
+    { id: "trends", label: "Tesis", icon: TrendingUp },
     { id: "companies_score", label: "Empresas · score medio", icon: Building2 },
     { id: "companies_tam", label: "Empresas · TAM total", icon: BarChart3 },
 ];

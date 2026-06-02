@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
-import { scoreColor, tamColor } from "./ScoreBar";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
@@ -26,18 +25,18 @@ function CompanyTrendsDropdown({ company, allTrends }) {
         <div className="relative" ref={ref}>
             <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
-                title="Tendencias donde encaja. Verde: ya incluida. Gris: aún no incluida. Clic para abrir la tesis."
+                title="Tesis donde encaja. Verde: ya incluida. Gris: aún no incluida. Clic para abrir la tesis."
                 className="flex items-center gap-1 text-[10px] uppercase tracking-wider border border-black/25 px-1.5 py-0.5 hover:bg-[#F5E4D4] transition-colors"
                 data-testid={`company-trends-toggle-${company.ticker}`}
             >
-                <TrendingUp size={10} /> {inCount} tend. <ChevronDown size={10} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
+                <TrendingUp size={10} /> {inCount} tesis <ChevronDown size={10} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
             </button>
             {open && (
                 <div className="absolute right-0 z-30 mt-1 w-60 max-h-56 overflow-auto border border-black bg-white shadow-lg" data-testid={`company-trends-menu-${company.ticker}`}>
                     <div className="px-2 py-1.5 text-[10px] text-[#4A4A4A] border-b border-black/10 bg-[#FDF1E6]">
                         <span className="text-[#1E7D45] font-semibold">Verde</span> = ya incluida · <span className="text-[#9CA3AF] font-semibold">gris</span> = no incluida
                     </div>
-                    {allTrends.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">No hay tendencias.</div>}
+                    {allTrends.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">No hay tesis.</div>}
                     {allTrends.map((t) => {
                         const isIn = memberIds.has(t.id);
                         return (
@@ -64,7 +63,7 @@ function TrendRow({ t, folders, onAssignFolder, onRemove }) {
         <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4] group" data-testid={`sidebar-trend-${t.id}`}>
             <div className="flex items-center gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-[#B32A22] flex items-center gap-1 shrink-0">
-                    <TrendingUp size={10} /> Tendencia
+                    <TrendingUp size={10} /> Tesis
                 </span>
                 <select
                     value={t.folder_id || ""}
@@ -95,17 +94,9 @@ function CompanyRow({ c, allTrends }) {
                 <span className="text-[10px] uppercase tracking-wider text-[#052049] flex items-center gap-1 shrink-0">
                     <Building2 size={10} /> Empresa
                 </span>
-                <CompanyTrendsDropdown company={c} allTrends={allTrends} />
-                {c.avg_overall_score != null && (
-                    <span className="ml-auto font-mono text-[11px] font-bold shrink-0" style={{ color: scoreColor(c.avg_overall_score) }} title="Score global medio">
-                        {c.avg_overall_score}
-                    </span>
-                )}
-                {c.sum_tam_score != null && (
-                    <span className="font-mono text-[11px] font-bold shrink-0" style={{ color: tamColor(c.sum_tam_score) }} title="TAM Score total">
-                        {c.sum_tam_score.toFixed(2)}
-                    </span>
-                )}
+                <div className="ml-auto shrink-0">
+                    <CompanyTrendsDropdown company={c} allTrends={allTrends} />
+                </div>
             </div>
             <Link to={`/company/${c.ticker}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
                 {c.name || c.ticker} <span className="font-mono text-[11px] text-[#4A4A4A]">{c.ticker}</span>
@@ -183,7 +174,7 @@ export default function ThesisSidebar({
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><Bell size={12} /> Radar semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tendencia emergente con fuerte momentum.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tesis emergente con fuerte momentum.</p>
                     </div>
                     <button
                         onClick={onToggleRadar}
@@ -202,7 +193,7 @@ export default function ThesisSidebar({
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><RefreshCw size={12} /> Refresco semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza precios y TAM de tus tesis cada semana y, si hay una noticia importante, profundiza y te avisa por email.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza precios y TAM de tus tesis cada semana y, si hay una noticia importante, profundiza, refresca las tesis y empresas implicadas y te avisa por email.</p>
                     </div>
                     <button
                         onClick={onToggleRefresh}
