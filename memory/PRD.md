@@ -18,6 +18,15 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Rediseño dashboard de /thesis (Feb 2026, Fase A+B — testing agent 100%, 21/21):**
+  - Layout: sidebar derecho "Mis tesis y empresas (N)" alineado arriba (junto al hero) con buscador desplegable en vivo.
+  - Generador: botón "Tesis automática" movido junto a los tabs Tendencia/Empresa; eliminado el texto "¿Sin ideas?" y el placeholder "Genera tu primera tesis".
+  - "Carpetas" renombrado a **Megatendencias** en toda la UI (icono carpeta conservado). Barra de gestión de megatendencias arriba (crear/eliminar). Cada Tendencia tiene selector inline de megatendencia en el sidebar; cada Empresa un desplegable de tendencias (verde=ya incluida / gris=no) con tooltip.
+  - Backend nuevo: `GET /api/thesis/dashboard` → folders (TAM agregado = suma del TAM de sus tendencias), trends (con TAM + empresas), companies (avg_overall_score + sum_tam_score calculados SOLO desde caché de fundamentals, sin yfinance en vivo).
+  - **ThesisExplore** (`components/thesis/ThesisExplore.jsx` + `lib/treemap.js` squarify propio): 4 vistas de cuadrados proporcionales con drilldown + breadcrumb: Megatendencias→Tendencias→Empresas, Tendencias→Empresas, Empresas·score medio, Empresas·TAM total. Color rojo(bajo)→dorado→verde(alto) relativo al conjunto. Clic en empresa → /company/{ticker}.
+  - **Dedupe (punto 6):** al regenerar una tesis ya guardada, aviso (intercepta ANTES de la llamada LLM) mencionando el refresco automático semanal, con "Reescribir igualmente" (pasa `overwrite_thesis_id` → el backend actualiza el doc en sitio en vez de duplicar), "Abrir la existente" y "Cancelar".
+  - **PENDIENTE (punto 4b):** job semanal real que reactualice las tesis/empresas guardadas (a confirmar diseño/coste con el usuario).
+
 - **Cartera real** (`/portfolio`) con posiciones (ticker, acciones, precio compra, moneda, fecha, nota), P/L vivo, P/L %, KPIs totales (invertido, valor actual, P/L absoluto, P/L %), sync cloud cuando logueado.
 - **Posiciones "sólo seguimiento"** — `shares` y `buy_price` son opcionales al crear la posición. La fila aparece con etiqueta `SEGUIMIENTO` y datos en "—"; editar la fila más tarde rellena los datos y recalcula KPIs.
 - **Alertas por fila** (campana on/off) en cada entrada de watchlist y cartera. La campana sólo es interactiva si estás logueado (toast de "Inicia sesión…" si no). El screener cruza con `alert_enabled` por entry y la preferencia global `notify.enabled`.

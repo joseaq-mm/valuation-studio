@@ -41,7 +41,9 @@ export default function Thesis() {
         if (type === "trend") {
             return (dash.trends || []).find((t) => {
                 const tt = _norm(t.title);
-                return tt && (tt === n || tt.includes(n) || n.includes(tt));
+                if (!tt) return false;
+                if (tt === n) return true;
+                return n.length >= 6 && (tt.includes(n) || n.includes(tt));
             });
         }
         const up = (s || "").trim().toUpperCase();

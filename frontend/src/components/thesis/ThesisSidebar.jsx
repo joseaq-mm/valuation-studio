@@ -168,7 +168,7 @@ export default function ThesisSidebar({
             </div>
 
             <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-0.5" data-testid="sidebar-list">
-                {items.length === 0 && <div className="text-xs text-[#4A4A4A]">Aún no hay tesis ni empresas. Genera tu primera tesis.</div>}
+                {items.length === 0 && <div className="text-xs text-[#4A4A4A]">Aún no hay tesis ni empresas guardadas.</div>}
                 {trends.map((t) => (
                     <TrendRow key={`t-${t.id}`} t={t} folders={folders} onAssignFolder={onAssignFolder} onRemove={onRemoveThesis} />
                 ))}
