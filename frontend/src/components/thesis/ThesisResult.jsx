@@ -269,6 +269,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
     const trendQuery = encodeURIComponent(t.name || "");
+    const companyLabel = company?.name || company?.ticker || "La empresa";
 
     const addToExisting = async () => {
         if (!match?.thesis_id || !company?.ticker) return;
@@ -316,22 +317,32 @@ function TrendCard({ t, match, company, idx = 0 }) {
                     <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-2.5" data-testid={`trend-dup-warning-${slug}`}>
                         <div className="flex items-start gap-2 text-xs text-[#7a5a10]">
                             <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
-                            <span>
-                                Ya tienes una tesis desarrollada que encaja:{" "}
-                                <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
-                                Añade la empresa a esa tesis en lugar de duplicarla — duplicar inflaría el valor atribuido a {company?.ticker || "la empresa"}.
-                            </span>
+                            {match.already_in ? (
+                                <span data-testid={`trend-already-in-${slug}`}>
+                                    {companyLabel} ya está en esta tesis:{" "}
+                                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
+                                    Ten en cuenta que, al generar esta tesis, {companyLabel} ya aparece en ella; no la añadas de nuevo para no inflar su valor.
+                                </span>
+                            ) : (
+                                <span data-testid={`trend-dup-msg-${slug}`}>
+                                    Ya tienes una tesis desarrollada que encaja:{" "}
+                                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
+                                    Añade la empresa a esa tesis en lugar de duplicarla — duplicar inflaría el valor atribuido a {companyLabel}.
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-3 mt-2.5 flex-wrap">
-                            <button
-                                onClick={addToExisting}
-                                disabled={adding || added}
-                                className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
-                                data-testid={`trend-add-${slug}`}
-                            >
-                                {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
-                                {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
-                            </button>
+                            {!match.already_in && (
+                                <button
+                                    onClick={addToExisting}
+                                    disabled={adding || added}
+                                    className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
+                                    data-testid={`trend-add-${slug}`}
+                                >
+                                    {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
+                                    {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
+                                </button>
+                            )}
                             <Link to={`/thesis?trend=${trendQuery}&auto=1`} className="text-xs text-[#4A4A4A] hover:text-black hover:underline" data-testid={`trend-generate-anyway-${slug}`}>
                                 Generar de todas formas
                             </Link>

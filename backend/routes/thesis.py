@@ -518,26 +518,42 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         sig = sorted([e.get("id") for e in existing if e.get("id")])
         cached = doc.get("link_matches")
         if not refresh and cached and cached.get("sig") == sig:
-            return {"to_add": cached.get("to_add", []), "to_create": cached.get("to_create", [])}
-
-        if not existing:
-            result = {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
+            result = {"to_add": list(cached.get("to_add", [])), "to_create": cached.get("to_create", [])}
         else:
-            try:
-                result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
-            except Exception as e:
-                logger.error(f"link-suggestions failed ({thesis_id}): {e}")
-                raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
+            if not existing:
+                result = {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
+            else:
+                try:
+                    result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
+                except Exception as e:
+                    logger.error(f"link-suggestions failed ({thesis_id}): {e}")
+                    raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
+            await db.theses.update_one(
+                {"id": thesis_id, "user_id": user["user_id"]},
+                {"$set": {"link_matches": {
+                    "sig": sig,
+                    "to_add": result.get("to_add", []),
+                    "to_create": result.get("to_create", []),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }}},
+            )
 
-        await db.theses.update_one(
-            {"id": thesis_id, "user_id": user["user_id"]},
-            {"$set": {"link_matches": {
-                "sig": sig,
-                "to_add": result.get("to_add", []),
-                "to_create": result.get("to_create", []),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }}},
-        )
+        # Flag whether the company is ALREADY in each matched thesis (computed fresh —
+        # membership changes when the user adds the company). The UI uses this to show
+        # either the "add to thesis" button or an "already there" notice.
+        to_add = result.get("to_add", [])
+        ticker = ((doc.get("company") or {}).get("ticker") or "").upper().strip()
+        ids = [a.get("thesis_id") for a in to_add if a.get("thesis_id")]
+        membership: Dict[str, bool] = {}
+        if ticker and ids:
+            matched_docs = await db.theses.find(
+                {"id": {"$in": ids}, "user_id": user["user_id"]}, {"_id": 0, "id": 1, "companies": 1}
+            ).to_list(length=300)
+            for td in matched_docs:
+                tickers = {(c.get("ticker") or "").upper() for c in (td.get("companies") or [])}
+                membership[td.get("id")] = ticker in tickers
+        for a in to_add:
+            a["already_in"] = bool(membership.get(a.get("thesis_id"), False))
         return result
 
     @router.post("/{thesis_id}/add-company")

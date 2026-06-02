@@ -36,8 +36,26 @@ async def main():
         "overall_relevance": 88,
         "contra": None, "sources": [],
     }
-    await db.theses.insert_one(doc)
-    print("SEEDED company thesis thesis_test_company_msft for", USER_ID)
+    # NVDA company thesis: its IA trend matches thesis_test_aidc, where NVDA ALREADY
+    # appears → exercises the "ya está en esta tesis" notice (no add button).
+    doc_nvda = {
+        "id": "thesis_test_company_nvda", "user_id": USER_ID, "type": "company",
+        "title": "NVIDIA", "query": "NVDA",
+        "folder_id": None, "saved": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "company": {"name": "NVIDIA", "ticker": "NVDA"},
+        "summary": "NVIDIA lidera el cómputo acelerado para IA.",
+        "trends": [
+            {"name": "Inteligencia artificial y centros de datos",
+             "fit_description": "GPUs y plataforma CUDA para entrenamiento e inferencia.",
+             "value_chain_role": "Computación acelerada", "relevance_score": 98,
+             "rationale": "Motor central del negocio."},
+        ],
+        "overall_relevance": 96,
+        "contra": None, "sources": [],
+    }
+    await db.theses.insert_many([doc, doc_nvda])
+    print("SEEDED company theses: thesis_test_company_msft (MSFT) + thesis_test_company_nvda (NVDA) for", USER_ID)
 
 
 asyncio.run(main())

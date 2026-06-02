@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only E2E testing of the 'Empresa → Tendencias' refined anti-duplicate warning. Both MSFT (not-already-in) and NVDA (already-in) scenarios behave exactly as specified. All assertions in tests A, B and C passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx is ~490 lines and contains many sub-components (TrendCard, CompanyCard, StageRow, ContraSection, SourcesList, TamScoreBadge). Approaching the 700-line threshold; consider splitting before adding more logic.",
+    "Trend slug for data-testid uses _norm(t.name).slice(0,16) plus idx — collision risk is mitigated by the idx suffix, OK.",
+    "thesisLinkSuggestions runs on every company-thesis load; consider server-side caching by (thesis_id, trends signature) to reduce LLM cost."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% (Tests A + B + C all passed)"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 on REACT_APP_BACKEND_URL host. Seeded via seed_profile_test.py + seed_company_thesis_test.py.",
+  "seed_data_creation": "Re-seeded profile + company theses (MSFT, NVDA) before testing to undo the mutation introduced by iteration_5 test 4 (which had added MSFT to thesis_test_aidc).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tests are read-only (no thesis generation, no add-company click). State remains clean. MSFT thesis correctly shows trend-dup-msg + trend-add button ('Añadir MSFT a esa tesis'); NVDA thesis correctly shows trend-already-in ('NVIDIA ya está en esta tesis: IA y centros de datos. ... no la añadas de nuevo para no inflar su valor') with dup-link href=/thesis/thesis_test_aidc and NO trend-add button. trend-generate-anyway link is present in both cases.",
+  "test_evidence": {
+    "test_A_msft": "trend-dup-warning present; trend-dup-msg present ('Ya tienes una tesis desarrollada que encaja: IA y centros de datos...'); trend-already-in ABSENT; trend-add present with text 'Añadir MSFT a esa tesis'; trend-generate-anyway present.",
+    "test_B_nvda": "trend-dup-warning present; trend-already-in present with text 'NVIDIA ya está en esta tesis: IA y centros de datos. Ten en cuenta que, al generar esta tesis, NVIDIA ya aparece en ella; no la añadas de nuevo para no inflar su valor.'; trend-add button ABSENT; trend-dup-link href=/thesis/thesis_test_aidc; trend-generate-anyway present.",
+    "test_C_generate_anyway": "Present in both MSFT and NVDA AI trend cards."
+  }
+}
