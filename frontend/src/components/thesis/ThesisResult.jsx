@@ -325,9 +325,9 @@ function TrendCard({ t, match, company, idx = 0 }) {
             {/* Action footer: generate, or duplicate warning + add-to-existing */}
             <div className="mt-auto pt-4 border-t border-black/10">
                 {match ? (
-                    <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-2.5" data-testid={`trend-dup-warning-${slug}`}>
-                        <div className="flex items-start gap-2 text-xs text-[#7a5a10]">
-                            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
+                    <div className="border border-[#B32A22] bg-[#FBE4E0] p-2.5" data-testid={`trend-dup-warning-${slug}`}>
+                        <div className="flex items-start gap-2 text-xs text-[#8B1A12]">
+                            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B32A22]" />
                             {match.already_in ? (
                                 <span data-testid={`trend-already-in-${slug}`}>
                                     {companyLabel} ya está en esta tesis:{" "}
