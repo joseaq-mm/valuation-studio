@@ -75,6 +75,7 @@ class GenerateRequest(BaseModel):
     type: str  # "trend" | "company"
     subject: str
     matched_thesis_id: Optional[str] = None  # exclude companies already in this thesis (and its siblings)
+    overwrite_thesis_id: Optional[str] = None  # update this saved thesis in place instead of inserting a new one
 
 
 class FolderRequest(BaseModel):
@@ -207,7 +208,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el TAM Score: {e}"}})
 
-    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None):
+    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None, overwrite_thesis_id: Optional[str] = None):
         try:
             thesis = await asyncio.to_thread(_generate_sync, kind, subject)
 
@@ -248,20 +249,37 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     thesis["omitted_for_thesis"] = {"id": mt.get("id"), "title": mt.get("title")}
 
             if user_id:
-                tid = f"thesis_{uuid.uuid4().hex[:12]}"
-                doc = {
-                    "id": tid,
-                    "user_id": user_id,
-                    "folder_id": None,
-                    "saved": False,
-                    "trend_match_id": matched_thesis_id if (kind == "trend" and matched_thesis_id) else None,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    **thesis,
-                }
-                await db.theses.insert_one(doc)
-                await _persist_qual_snapshots(user_id, tid, thesis)
-                thesis["id"] = tid
-                thesis["saved"] = False
+                # Overwrite an existing saved thesis in place (dedup: avoids a second
+                # card for the same trend/company; weekly auto-refresh keeps it fresh).
+                existing = None
+                if overwrite_thesis_id:
+                    existing = await db.theses.find_one(
+                        {"id": overwrite_thesis_id, "user_id": user_id}, {"_id": 0, "id": 1}
+                    )
+                if existing:
+                    tid = existing["id"]
+                    await db.theses.update_one(
+                        {"id": tid, "user_id": user_id},
+                        {"$set": {**thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                    )
+                    await _persist_qual_snapshots(user_id, tid, thesis)
+                    thesis["id"] = tid
+                    thesis["saved"] = True
+                else:
+                    tid = f"thesis_{uuid.uuid4().hex[:12]}"
+                    doc = {
+                        "id": tid,
+                        "user_id": user_id,
+                        "folder_id": None,
+                        "saved": False,
+                        "trend_match_id": matched_thesis_id if (kind == "trend" and matched_thesis_id) else None,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        **thesis,
+                    }
+                    await db.theses.insert_one(doc)
+                    await _persist_qual_snapshots(user_id, tid, thesis)
+                    thesis["id"] = tid
+                    thesis["saved"] = False
             else:
                 thesis["id"] = None
             await db.thesis_jobs.update_one(
@@ -359,7 +377,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id))
+        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id, req.overwrite_thesis_id))
         return {"job_id": job_id}
 
     @router.post("/discover")
@@ -518,6 +536,113 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "sum_tam_score": sum_tam,
             "reverse": reverse,
         }
+
+    @router.get("/dashboard")
+    async def dashboard(user: Dict[str, Any] = Depends(auth_required)):
+        """Aggregated data backbone for the Thesis dashboard (sidebar + treemaps):
+        - folders (megatendencias) with TAM = sum of contained trends' global TAM
+        - trends with TAM + their companies (each with overall_score + TAM Score)
+        - companies (distinct) with avg overall_score, sum TAM Score, trend memberships
+        TAM Score uses ONLY the cached fundamentals (no live yfinance fetch → fast/cheap)."""
+        uid = user["user_id"]
+        trend_docs = await db.theses.find(
+            {"user_id": uid, "type": "trend"},
+            {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "tam": 1,
+             "value_chain": 1, "companies": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=1000)
+        company_docs = await db.theses.find(
+            {"user_id": uid, "type": "company"},
+            {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "company": 1,
+             "overall_relevance": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=1000)
+        folders = await db.thesis_folders.find(
+            {"user_id": uid}, {"_id": 0}
+        ).sort("created_at", -1).to_list(length=200)
+
+        # Bulk projected-revenue map (USD billions) from the fundamentals cache only.
+        tickers = set()
+        for t in trend_docs:
+            for c in (t.get("companies") or []):
+                tk = (c.get("ticker") or "").upper().strip()
+                if tk:
+                    tickers.add(tk)
+        rev_map: Dict[str, float] = {}
+        if tickers:
+            cached = await db.fundamentals.find(
+                {"ticker": {"$in": list(tickers)}}, {"_id": 0, "ticker": 1, "data": 1}
+            ).to_list(length=2000)
+            for cd in cached:
+                data = cd.get("data") or {}
+                rev2y = (data.get("auto_projections") or {}).get("revenue_2y")
+                if rev2y is None:
+                    continue
+                currency = data.get("currency") or "USD"
+                usd = await fx_service.convert(float(rev2y), currency, "USD")
+                if usd and usd > 0:
+                    rev_map[cd.get("ticker")] = usd / 1e9
+
+        trends: List[Dict[str, Any]] = []
+        comp_agg: Dict[str, Dict[str, Any]] = {}
+        for t in trend_docs:
+            stage_tam: Dict[str, Any] = {}
+            for s in (t.get("value_chain") or []):
+                stage_tam[(s.get("stage") or "").strip().lower()] = s.get("tam_busd")
+            clist = []
+            for c in (t.get("companies") or []):
+                tk = (c.get("ticker") or "").upper().strip()
+                overall = c.get("overall_score")
+                role = (c.get("value_chain_role") or "").strip().lower()
+                tam_score = compute_tam_score(overall, stage_tam.get(role), rev_map.get(tk))
+                clist.append({
+                    "ticker": tk or None, "name": c.get("name"), "overall_score": overall,
+                    "value_chain_role": c.get("value_chain_role"),
+                    "tam_score": tam_score, "category": c.get("category"),
+                })
+                if tk:
+                    a = comp_agg.setdefault(tk, {"ticker": tk, "name": c.get("name"),
+                                                 "scores": [], "tams": [], "trends": []})
+                    a["name"] = a["name"] or c.get("name")
+                    if overall is not None:
+                        a["scores"].append(overall)
+                    if tam_score is not None:
+                        a["tams"].append(tam_score)
+                    a["trends"].append({"thesis_id": t.get("id"), "title": t.get("title"),
+                                        "overall_score": overall, "tam_score": tam_score})
+            trends.append({
+                "id": t.get("id"), "title": t.get("title"), "folder_id": t.get("folder_id"),
+                "tam_busd": (t.get("tam") or {}).get("global_busd"),
+                "company_count": len(clist), "companies": clist,
+            })
+
+        companies = []
+        for tk, a in comp_agg.items():
+            avg = round(sum(a["scores"]) / len(a["scores"]), 1) if a["scores"] else None
+            stam = round(sum(a["tams"]), 2) if a["tams"] else None
+            companies.append({
+                "ticker": tk, "name": a["name"], "avg_overall_score": avg,
+                "sum_tam_score": stam, "trends": a["trends"], "trend_count": len(a["trends"]),
+            })
+        companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
+
+        folder_out = []
+        for f in folders:
+            contained = [tr for tr in trends if tr["folder_id"] == f.get("id")]
+            ftam = sum((tr["tam_busd"] or 0) for tr in contained)
+            folder_out.append({
+                "id": f.get("id"), "name": f.get("name"),
+                "tam_busd": round(ftam, 1) if ftam else None,
+                "trend_ids": [tr["id"] for tr in contained],
+                "trend_count": len(contained),
+            })
+
+        company_theses = [{
+            "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
+            "ticker": (d.get("company") or {}).get("ticker"),
+            "overall_relevance": d.get("overall_relevance"),
+        } for d in company_docs]
+
+        return {"folders": folder_out, "trends": trends,
+                "companies": companies, "company_theses": company_theses}
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

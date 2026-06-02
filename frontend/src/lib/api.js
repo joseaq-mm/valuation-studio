@@ -82,8 +82,8 @@ function startAndPoll(data) {
     return data;
 }
 
-export const thesisGenerate = (type, subject, matchedThesisId = null) =>
-    api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId }).then(r => startAndPoll(r.data));
+export const thesisGenerate = (type, subject, matchedThesisId = null, overwriteThesisId = null) =>
+    api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId, overwrite_thesis_id: overwriteThesisId }).then(r => startAndPoll(r.data));
 export const thesisTamScores = (items) =>
     api.post(`/thesis/tam-scores`, { items }).then(r => startAndPoll(r.data));
 export const thesisDiscover = () =>
@@ -98,6 +98,7 @@ export const thesisAssignFolder = (id, folder_id) =>
 export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
 export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
 export const thesisDeleteFolder = (id) => api.delete(`/thesis/folders/${id}`).then(r => r.data);
+export const thesisDashboard = () => api.get(`/thesis/dashboard`).then(r => r.data);
 export const thesisCompanyQual = (ticker) =>
     api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);
 export const thesisCompanyProfile = (ticker) =>

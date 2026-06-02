@@ -1,0 +1,28 @@
+{
+  "summary": "End-to-end frontend verification of the /thesis dashboard redesign (Fase A + B). All 21 functional checkpoints passed. Auth via session_token cookie worked; sidebar 'Mis tesis y empresas (3)' rendered at the top right aligned with the page hero. The megatendencias bar, generator, 'Tesis automática' button (next to the trend/company tabs) and ThesisExplore treemap were all present and functional. Sidebar search ('NVDA') returned 1 live option. CompanyTrendsDropdown for NVDA opened and showed 2 trend options, both styled green (NVDA is included in both seeded trend theses — correct). Trend rows expose `sidebar-trend-folder-<id>` selects with the 2 expected options ('— Megatendencia —' + 'IA & Cómputo'). Megatendencia create+delete round-trip worked (chip count 1→2→1). The ThesisExplore 4 views (megatrends/trends/companies_score/companies_tam) all rendered cells; drilldown from folder_3a8599c11e → 2 trend cells → 1 company cell worked; breadcrumb has 3 segments and root navigation works. `explore-cell-company-NVDA` is present both in companies_score and companies_tam views. Dedup warning was triggered as designed: typing 'IA y centros de datos' + clicking 'thesis-generate-btn' rendered `dedup-warning` WITHOUT showing `thesis-loading` (no LLM call), exposed dedup-rewrite-btn / dedup-open-btn / dedup-cancel-btn / dedup-existing-link, and cancel correctly closed the panel. NO LLM credits were spent (rewrite & discover buttons were never clicked).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/thesis", "issues": ["Minor: empty-state hint inside ThesisSidebar still reads 'Aún no hay tesis ni empresas. Genera tu primera tesis.' (ThesisSidebar.jsx:171) — the user-facing copy guideline said the placeholder 'Genera tu primera tesis' should be removed from the generator area; it was correctly removed from the generator but the same wording survives in the empty-state of the sidebar. Not user-blocking with the current seed (3 items), but worth aligning if the guideline applies globally."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Thesis.jsx is now ~427 lines and mixes 3 concerns (generator+dedup, megatrend bar, dashboard explore container). Consider extracting MegatrendsBar into its own component (similar to ThesisSidebar/ThesisExplore) — the megatrends-bar JSX is ~25 lines and would be reusable.",
+    "ThesisExplore.jsx buildItems() is fine but does an O(N) `trends.find()` per cell in companiesOfTrend(); for large lists, memoise as a Map<trendId, trend>. Not a current bottleneck (we have 2 trends) but easy to harden.",
+    "In findDup() (Thesis.jsx:38–49), the substring fallback `tt.includes(n) || n.includes(tt)` could match overly short subjects (e.g. typing 'IA' would falsely match every IA-related thesis). Consider gating the substring match on `n.length >= 6` to avoid accidental dedupe-on-everything when the user is still typing.",
+    "ThesisSidebar CompanyTrendsDropdown closes on outside mousedown but not on Escape — minor a11y gap.",
+    "ThesisExplore relies on container width via ResizeObserver but renders cells with `position:absolute`; if the user resizes while drilled-in, the layout recomputes correctly (verified by squarify memo on [view,path,dash,w])."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (21/21)"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 on REACT_APP_BACKEND_URL host (user_id=test_profile_user_123).",
+  "seed_data_creation": "None. Used pre-seeded: thesis_test_aidc, thesis_test_robot, thesis_test_company_nvda, megatendencia folder_3a8599c11e ('IA & Cómputo').",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth: add session_token cookie BEFORE first page.goto. The ResizeObserver of ThesisExplore needs a real viewport width — using 1920x1080 worked. Selectors verified live: thesis-sidebar, megatrends-bar, thesis-generator, thesis-discover-btn, sidebar-search, sidebar-search-results, sidebar-search-opt-<key>, company-trends-toggle-<TICKER>, company-trends-menu-<TICKER>, company-trend-opt-<TICKER>-<thesisId>, sidebar-trend-folder-<thesisId>, megatrend-chip-<folderId>, new-folder-input, create-folder-btn, thesis-explore, explore-views, explore-view-{megatrends|trends|companies_score|companies_tam}, explore-treemap, explore-breadcrumb, explore-cell-{folder|trend|company}-<id>, explore-empty, mode-trend, mode-company, thesis-input, thesis-generate-btn, dedup-warning, dedup-rewrite-btn, dedup-open-btn, dedup-cancel-btn, dedup-existing-link. IMPORTANT: never click 'thesis-discover-btn' or 'dedup-rewrite-btn' — both trigger costly LLM jobs. The dedup short-circuit is purely client-side (Thesis.jsx generate() lines 97-101) so the warning can be verified for free.",
+  "rca of the issue": "N/A — no bugs found."
+}
