@@ -593,7 +593,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         company_docs = await db.theses.find(
             {"user_id": uid, "type": "company"},
             {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "company": 1,
-             "overall_relevance": 1, "created_at": 1},
+             "overall_relevance": 1, "trends": 1, "created_at": 1},
         ).sort("created_at", -1).to_list(length=1000)
         folders = await db.thesis_folders.find(
             {"user_id": uid}, {"_id": 0}
@@ -675,11 +675,54 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trend_count": len(contained),
             })
 
-        company_theses = [{
-            "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
-            "ticker": (d.get("company") or {}).get("ticker"),
-            "overall_relevance": d.get("overall_relevance"),
-        } for d in company_docs]
+        # Match each company-thesis fit-trend to an existing trend thesis (if any) and
+        # resolve its state: included (company is in it) / not_included / not_generated.
+        trend_index = [(tr["id"], (tr["title"] or "").strip().lower()) for tr in trends]
+        trend_tickers = {
+            tr["id"]: {(c.get("ticker") or "").upper() for c in tr["companies"] if c.get("ticker")}
+            for tr in trends
+        }
+
+        def _match_trend(name: str):
+            n = (name or "").strip().lower()
+            if not n:
+                return None
+            for tid, title in trend_index:
+                if title == n:
+                    return tid
+            for tid, title in trend_index:
+                if title and (n in title or title in n):
+                    return tid
+            nset = set(n.split())
+            best, best_s = None, 0.0
+            for tid, title in trend_index:
+                tset = set(title.split())
+                if not tset:
+                    continue
+                union = len(nset | tset)
+                s = (len(nset & tset) / union) if union else 0.0
+                if s > best_s:
+                    best, best_s = tid, s
+            return best if best_s >= 0.5 else None
+
+        company_theses = []
+        for d in company_docs:
+            tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            fit = []
+            for ft in (d.get("trends") or []):
+                nm = ft.get("name")
+                mid = _match_trend(nm)
+                if mid:
+                    state = "included" if tk in trend_tickers.get(mid, set()) else "not_included"
+                else:
+                    state = "not_generated"
+                fit.append({"name": nm, "thesis_id": mid, "state": state,
+                            "relevance_score": ft.get("relevance_score")})
+            company_theses.append({
+                "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
+                "ticker": tk or None, "overall_relevance": d.get("overall_relevance"),
+                "fit_trends": fit,
+            })
 
         return {"folders": folder_out, "trends": trends,
                 "companies": companies, "company_theses": company_theses}

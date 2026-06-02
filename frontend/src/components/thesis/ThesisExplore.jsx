@@ -114,15 +114,26 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                     {path.map((p, i) => (
                         <span key={i} className="flex items-center gap-1">
                             <ChevronRight size={12} />
-                            <button onClick={() => setPath(path.slice(0, i + 1))} className="hover:underline">{p.name}</button>
+                            {p.type === "trend" ? (
+                                <button
+                                    onClick={() => navigate(`/thesis/${p.id}`)}
+                                    className="underline text-[#052049] hover:text-[#B32A22] font-medium"
+                                    title="Abrir esta tesis"
+                                    data-testid={`breadcrumb-trend-${p.id}`}
+                                >
+                                    {p.name}
+                                </button>
+                            ) : (
+                                <button onClick={() => setPath(path.slice(0, i + 1))} className="hover:underline">{p.name}</button>
+                            )}
                         </span>
                     ))}
                     {drillable && <span className="flex items-center gap-1 text-[#9CA3AF] ml-1"><MousePointerClick size={12} /> clic para explorar</span>}
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-[#4A4A4A]">
-                    <span>bajo</span>
-                    <span className="inline-block w-24 h-2.5 rounded-sm" style={{ background: "linear-gradient(90deg, rgb(179,42,34), rgb(184,134,11), rgb(30,125,69))" }} />
                     <span>alto</span>
+                    <span className="inline-block w-24 h-2.5 rounded-sm" style={{ background: "linear-gradient(90deg, rgb(30,125,69), rgb(184,134,11), rgb(179,42,34))" }} />
+                    <span>bajo</span>
                 </div>
             </div>
 
@@ -178,8 +189,8 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                     );
                 })}
             </div>
-            <p className="text-[11px] text-[#4A4A4A] mt-2">
-                El tamaño de cada cuadrado es proporcional a {view === "megatrends" || view === "trends" ? "su TAM (potencial de mercado)" : view === "companies_score" ? "su score global medio" : "la suma de sus TAM Scores"}, relativo al resto. El color va de rojo (bajo) a verde (alto).
+            <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
+                El tamaño de cada cuadrado es proporcional a {view === "megatrends" || view === "trends" ? "su TAM (potencial de mercado)" : view === "companies_score" ? "su score global medio" : "la suma de sus TAM Scores"}, relativo al resto. El color va de verde (alto) a rojo (bajo).
             </p>
         </div>
     );

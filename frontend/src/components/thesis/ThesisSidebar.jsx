@@ -1,57 +1,60 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
+import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check, RefreshCw, Plus } from "lucide-react";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
-/** Custom dropdown for a company: lists every trend, green when the company is
- *  already included, grey when not. A hover hint explains the colour code. */
-function CompanyTrendsDropdown({ company, allTrends }) {
+const STATE_COLOR = { included: "#1E7D45", not_included: "#9CA3AF", not_generated: "#C2410C" };
+
+/** Dropdown for an actively-searched company: lists the tesis it fits, coloured
+ *  green (already included), grey (existing but not included) or orange (not yet
+ *  generated). Each row links to that tesis (or to create it). */
+function CompanyTrendsDropdown({ company }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
     const navigate = useNavigate();
-    const memberIds = useMemo(
-        () => new Set((company.trends || []).map((t) => t.thesis_id)),
-        [company.trends]
-    );
+    const fits = company.fit_trends || [];
     useEffect(() => {
         const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
         document.addEventListener("mousedown", onDoc);
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
-    const inCount = memberIds.size;
+    const goTo = (ft) => {
+        setOpen(false);
+        if (ft.thesis_id) navigate(`/thesis/${ft.thesis_id}`);
+        else navigate(`/thesis?trend=${encodeURIComponent(ft.name)}`);
+    };
+
     return (
         <div className="relative" ref={ref}>
             <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
-                title="Tesis donde encaja. Verde: ya incluida. Gris: aún no incluida. Clic para abrir la tesis."
+                title="Tesis donde encaja. Verde: ya incluida · gris: no incluida · naranja: no generada. Clic para ir."
                 className="flex items-center gap-1 text-[10px] uppercase tracking-wider border border-black/25 px-1.5 py-0.5 hover:bg-[#F5E4D4] transition-colors"
                 data-testid={`company-trends-toggle-${company.ticker}`}
             >
-                <TrendingUp size={10} /> {inCount} tesis <ChevronDown size={10} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
+                <TrendingUp size={10} /> {fits.length} tesis <ChevronDown size={10} className={open ? "rotate-180 transition-transform" : "transition-transform"} />
             </button>
             {open && (
-                <div className="absolute right-0 z-30 mt-1 w-60 max-h-56 overflow-auto border border-black bg-white shadow-lg" data-testid={`company-trends-menu-${company.ticker}`}>
-                    <div className="px-2 py-1.5 text-[10px] text-[#4A4A4A] border-b border-black/10 bg-[#FDF1E6]">
-                        <span className="text-[#1E7D45] font-semibold">Verde</span> = ya incluida · <span className="text-[#9CA3AF] font-semibold">gris</span> = no incluida
+                <div className="absolute right-0 z-30 mt-1 w-64 max-h-60 overflow-auto border border-black bg-white shadow-lg" data-testid={`company-trends-menu-${company.ticker}`}>
+                    <div className="px-2 py-1.5 text-[10px] text-[#4A4A4A] border-b border-black/10 bg-[#FDF1E6] leading-snug">
+                        <span style={{ color: STATE_COLOR.included }} className="font-semibold">incluida</span> · <span style={{ color: STATE_COLOR.not_included }} className="font-semibold">no incluida</span> · <span style={{ color: STATE_COLOR.not_generated }} className="font-semibold">no generada</span>
                     </div>
-                    {allTrends.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">No hay tesis.</div>}
-                    {allTrends.map((t) => {
-                        const isIn = memberIds.has(t.id);
-                        return (
-                            <button
-                                key={t.id}
-                                onClick={() => { setOpen(false); navigate(`/thesis/${t.id}`); }}
-                                className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[#F5E4D4] transition-colors"
-                                style={{ color: isIn ? "#1E7D45" : "#9CA3AF" }}
-                                data-testid={`company-trend-opt-${company.ticker}-${t.id}`}
-                            >
-                                {isIn ? <Check size={11} className="shrink-0" /> : <span className="w-[11px] shrink-0" />}
-                                <span className="truncate">{t.title}</span>
-                            </button>
-                        );
-                    })}
+                    {fits.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">Sin tesis identificadas.</div>}
+                    {fits.map((ft, i) => (
+                        <button
+                            key={i}
+                            onClick={() => goTo(ft)}
+                            className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[#F5E4D4] transition-colors"
+                            style={{ color: STATE_COLOR[ft.state] || "#9CA3AF" }}
+                            title={ft.state === "not_generated" ? "Aún no generada — clic para crearla" : ft.state === "included" ? "La empresa ya está incluida — clic para abrir" : "Tesis existente — la empresa aún no está incluida"}
+                            data-testid={`company-trend-opt-${company.ticker}-${i}`}
+                        >
+                            {ft.state === "included" ? <Check size={11} className="shrink-0" /> : ft.state === "not_generated" ? <Plus size={11} className="shrink-0" /> : <span className="w-[11px] shrink-0" />}
+                            <span className="truncate">{ft.name}</span>
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
@@ -87,7 +90,7 @@ function TrendRow({ t, folders, onAssignFolder, onRemove }) {
     );
 }
 
-function CompanyRow({ c, allTrends }) {
+function CompanyRow({ c }) {
     return (
         <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4]" data-testid={`sidebar-company-${c.ticker}`}>
             <div className="flex items-center gap-1.5">
@@ -95,18 +98,18 @@ function CompanyRow({ c, allTrends }) {
                     <Building2 size={10} /> Empresa
                 </span>
                 <div className="ml-auto shrink-0">
-                    <CompanyTrendsDropdown company={c} allTrends={allTrends} />
+                    <CompanyTrendsDropdown company={c} />
                 </div>
             </div>
-            <Link to={`/company/${c.ticker}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
-                {c.name || c.ticker} <span className="font-mono text-[11px] text-[#4A4A4A]">{c.ticker}</span>
+            <Link to={`/thesis/${c.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
+                {c.title || c.ticker} {c.ticker && <span className="font-mono text-[11px] text-[#4A4A4A]">{c.ticker}</span>}
             </Link>
         </div>
     );
 }
 
 export default function ThesisSidebar({
-    trends = [], companies = [], folders = [],
+    trends = [], companyTheses = [], folders = [],
     onAssignFolder, onRemoveThesis,
     radarEnabled, onToggleRadar,
     refreshEnabled, onToggleRefresh,
@@ -115,9 +118,9 @@ export default function ThesisSidebar({
 
     const items = useMemo(() => {
         const ti = trends.map((t) => ({ kind: "trend", key: `t-${t.id}`, search: _norm(t.title), data: t }));
-        const ci = companies.map((c) => ({ kind: "company", key: `c-${c.ticker}`, search: `${_norm(c.name)} ${_norm(c.ticker)}`, data: c }));
+        const ci = companyTheses.map((c) => ({ kind: "company", key: `c-${c.id}`, search: `${_norm(c.title)} ${_norm(c.ticker)}`, data: c }));
         return [...ti, ...ci];
-    }, [trends, companies]);
+    }, [trends, companyTheses]);
 
     const nq = _norm(q);
     const filtered = nq ? items.filter((it) => it.search.includes(nq)) : items;
@@ -144,7 +147,7 @@ export default function ThesisSidebar({
                         {filtered.slice(0, 10).map((it) => (
                             <Link
                                 key={it.key}
-                                to={it.kind === "trend" ? `/thesis/${it.data.id}` : `/company/${it.data.ticker}`}
+                                to={it.kind === "trend" ? `/thesis/${it.data.id}` : `/thesis/${it.data.id}`}
                                 onClick={() => setQ("")}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-[#F5E4D4] transition-colors"
                                 data-testid={`sidebar-search-opt-${it.key}`}
@@ -152,7 +155,7 @@ export default function ThesisSidebar({
                                 {it.kind === "trend"
                                     ? <TrendingUp size={11} className="text-[#B32A22] shrink-0" />
                                     : <Building2 size={11} className="text-[#052049] shrink-0" />}
-                                <span className="truncate">{it.kind === "trend" ? it.data.title : (it.data.name || it.data.ticker)}</span>
+                                <span className="truncate">{it.data.title}</span>
                             </Link>
                         ))}
                     </div>
@@ -164,8 +167,8 @@ export default function ThesisSidebar({
                 {trends.map((t) => (
                     <TrendRow key={`t-${t.id}`} t={t} folders={folders} onAssignFolder={onAssignFolder} onRemove={onRemoveThesis} />
                 ))}
-                {companies.map((c) => (
-                    <CompanyRow key={`c-${c.ticker}`} c={c} allTrends={trends} />
+                {companyTheses.map((c) => (
+                    <CompanyRow key={`c-${c.id}`} c={c} />
                 ))}
             </div>
 

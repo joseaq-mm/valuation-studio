@@ -500,7 +500,7 @@ export default function Thesis() {
                     ) : (
                         <ThesisSidebar
                             trends={dash?.trends || []}
-                            companies={dash?.companies || []}
+                            companyTheses={dash?.company_theses || []}
                             folders={folders}
                             onAssignFolder={assignThesisFolder}
                             onRemoveThesis={removeThesis}
