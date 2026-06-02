@@ -419,8 +419,20 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [thesis?.id, thesis?.type]);
 
-    const matchByTrend = {};
-    (linkData?.to_add || []).forEach((a) => { if (a.trend_name) matchByTrend[_norm(a.trend_name)] = a; });
+    // Robustly resolve a trend card to its matched existing thesis. The backend
+    // already maps trend_name to the exact company-trend string, but we keep a
+    // substring fallback so a tiny LLM rewording never hides the warning.
+    const findMatch = (trendName) => {
+        const adds = linkData?.to_add || [];
+        if (!adds.length) return undefined;
+        const n = _norm(trendName);
+        let m = adds.find((a) => _norm(a.trend_name) === n);
+        if (m) return m;
+        return adds.find((a) => {
+            const an = _norm(a.trend_name);
+            return an && (an.includes(n) || n.includes(an));
+        });
+    };
 
     if (!thesis) return null;
 
@@ -505,7 +517,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                         {(thesis.trends || []).map((t, i) => (
-                            <TrendCard key={i} idx={i} t={t} match={matchByTrend[_norm(t.name)]} company={thesis.company} />
+                            <TrendCard key={i} idx={i} t={t} match={findMatch(t.name)} company={thesis.company} />
                         ))}
                     </div>
                 </>

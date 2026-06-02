@@ -625,6 +625,34 @@ MATCHER_SYS = (
 )
 
 
+def _resolve_trend_name(returned: str, company_trends: list) -> str:
+    """Map a (possibly rephrased) trend name from the LLM back to the EXACT company
+    trend string, so the frontend can match it reliably. Falls back to the original."""
+    rn = (returned or "").strip().lower()
+    if not rn or not company_trends:
+        return returned
+    for ct in company_trends:  # exact
+        if (ct or "").strip().lower() == rn:
+            return ct
+    for ct in company_trends:  # substring either direction
+        c = (ct or "").strip().lower()
+        if c and (rn in c or c in rn):
+            return ct
+    # token (Jaccard) overlap fallback
+    rset = set(rn.split())
+    best, best_score = None, 0.0
+    for ct in company_trends:
+        cset = set((ct or "").strip().lower().split())
+        if not cset:
+            continue
+        inter = len(rset & cset)
+        union = len(rset | cset)
+        score = inter / union if union else 0.0
+        if score > best_score:
+            best, best_score = ct, score
+    return best if best_score >= 0.34 else returned
+
+
 async def match_company_to_theses(company: str, company_trends: list, existing: list) -> dict:
     """existing: [{'id', 'title'}]. company_trends: [str]. Returns {to_add, to_create}."""
     valid_ids = {e["id"] for e in existing}
@@ -637,17 +665,26 @@ async def match_company_to_theses(company: str, company_trends: list, existing: 
         "Para cada tendencia de la empresa, decide si corresponde a una tesis existente (mismo tema) o no.\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
-        '  "to_add": [{"thesis_id": "id EXACTO de la lista", "thesis_title": "título", "trend_name": "tendencia de la empresa", "reason": "1 frase"}],\n'
-        '  "to_create": [{"trend_name": "tendencia sin tesis asociada", "why": "1 frase: por qué merece su propia tesis"}]\n'
+        '  "to_add": [{"thesis_id": "id EXACTO de la lista", "thesis_title": "título", "trend_name": "COPIA LITERAL de la tendencia de la empresa", "reason": "1 frase"}],\n'
+        '  "to_create": [{"trend_name": "COPIA LITERAL de la tendencia sin tesis asociada", "why": "1 frase: por qué merece su propia tesis"}]\n'
         "}\n"
+        "IMPORTANTE: 'trend_name' debe ser una COPIA EXACTA (carácter por carácter) de una de las tendencias listadas arriba. "
         "Usa SOLO los id que aparecen en la lista para 'to_add'. Si no hay tesis existentes, todo va en 'to_create'. "
         "No repitas la misma tendencia en ambas listas."
     )
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-match-{datetime.now(timezone.utc).timestamp()}",
                      MATCHER_SYS, user)
     data = _extract_json(raw)
-    to_add = [a for a in (data.get("to_add") or []) if a.get("thesis_id") in valid_ids]
-    to_create = [c for c in (data.get("to_create") or []) if (c.get("trend_name") or "").strip()]
+    to_add = []
+    for a in (data.get("to_add") or []):
+        if a.get("thesis_id") in valid_ids:
+            a["trend_name"] = _resolve_trend_name(a.get("trend_name"), company_trends)
+            to_add.append(a)
+    to_create = []
+    for c in (data.get("to_create") or []):
+        if (c.get("trend_name") or "").strip():
+            c["trend_name"] = _resolve_trend_name(c.get("trend_name"), company_trends)
+            to_create.append(c)
     return {"to_add": to_add, "to_create": to_create}
 
 

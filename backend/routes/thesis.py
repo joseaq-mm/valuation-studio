@@ -556,7 +556,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         # changes (avoids repeating the LLM matcher cost on every page load/refresh).
         sig = sorted([e.get("id") for e in existing if e.get("id")])
         cached = doc.get("link_matches")
-        if not refresh and cached and cached.get("sig") == sig:
+        if not refresh and cached and cached.get("sig") == sig and cached.get("v") == 2:
             result = {"to_add": list(cached.get("to_add", [])), "to_create": cached.get("to_create", [])}
         else:
             if not existing:
@@ -570,6 +570,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.theses.update_one(
                 {"id": thesis_id, "user_id": user["user_id"]},
                 {"$set": {"link_matches": {
+                    "v": 2,
                     "sig": sig,
                     "to_add": result.get("to_add", []),
                     "to_create": result.get("to_create", []),

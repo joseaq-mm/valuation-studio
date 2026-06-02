@@ -1,5 +1,5 @@
 """Regression tests for the Thesis Engine pure helpers (no LLM / network)."""
-from services.thesis import _extract_json, _clamp_score, _sources_block, compute_tam_score
+from services.thesis import _extract_json, _clamp_score, _sources_block, compute_tam_score, _resolve_trend_name
 
 
 def test_extract_json_plain():
@@ -60,3 +60,32 @@ def test_compute_tam_score_non_positive_revenue():
 def test_compute_tam_score_bad_types():
     assert compute_tam_score("x", 500, 100) is None
     assert compute_tam_score(90, "y", 100) is None
+
+
+TRENDS = ["Inteligencia artificial y centros de datos", "Ciberseguridad empresarial"]
+
+
+def test_resolve_trend_name_exact():
+    assert _resolve_trend_name("Inteligencia artificial y centros de datos", TRENDS) == TRENDS[0]
+
+
+def test_resolve_trend_name_case_insensitive():
+    assert _resolve_trend_name("ciberseguridad EMPRESARIAL", TRENDS) == TRENDS[1]
+
+
+def test_resolve_trend_name_substring():
+    # LLM dropped the leading words but the rest is a substring of the company trend
+    assert _resolve_trend_name("centros de datos", TRENDS) == TRENDS[0]
+
+
+def test_resolve_trend_name_reworded_token_overlap():
+    # "IA y centros de datos" → maps via token overlap (Jaccard >= 0.34)
+    assert _resolve_trend_name("IA y centros de datos", TRENDS) == TRENDS[0]
+
+
+def test_resolve_trend_name_no_match_keeps_original():
+    assert _resolve_trend_name("Energía nuclear", TRENDS) == "Energía nuclear"
+
+
+def test_resolve_trend_name_empty():
+    assert _resolve_trend_name("", TRENDS) == ""
