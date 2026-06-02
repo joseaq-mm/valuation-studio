@@ -34,9 +34,11 @@ export default function Thesis() {
         if (co) { setMode("company"); setSubject(co); }
         else if (tr) {
             setMode("trend"); setSubject(tr);
-            if (auto === "1" && lastAutoRef.current !== tr) {
-                lastAutoRef.current = tr;
-                generate("trend", tr);
+            const matched = searchParams.get("matched");
+            const autoKey = `${tr}|${matched || ""}`;
+            if (auto === "1" && lastAutoRef.current !== autoKey) {
+                lastAutoRef.current = autoKey;
+                generate("trend", tr, matched || null);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,14 +74,14 @@ export default function Thesis() {
         }
     };
 
-    const generate = async (overrideType, overrideSubject) => {
+    const generate = async (overrideType, overrideSubject, matchedThesisId = null) => {
         const t = overrideType || mode;
         const s = (overrideSubject ?? subject).trim();
         if (!s) { toast.error("Escribe una tendencia o empresa"); return; }
         setLoading(true);
         setResult(null);
         try {
-            const data = await thesisGenerate(t, s);
+            const data = await thesisGenerate(t, s, matchedThesisId);
             setResult(data);
             reload();
         } catch (e) {

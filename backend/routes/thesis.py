@@ -74,6 +74,7 @@ def _eval_company_sync(trend_doc: dict, ticker: str, name: str) -> dict:
 class GenerateRequest(BaseModel):
     type: str  # "trend" | "company"
     subject: str
+    matched_thesis_id: Optional[str] = None  # exclude companies already in this thesis (and its siblings)
 
 
 class FolderRequest(BaseModel):
@@ -206,9 +207,41 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el TAM Score: {e}"}})
 
-    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str]):
+    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None):
         try:
             thesis = await asyncio.to_thread(_generate_sync, kind, subject)
+
+            # Anti-duplication: when generating "de todas formas" from a card that
+            # matched an existing thesis, drop companies already present in that thesis
+            # (or its sibling theses generated the same way) so a company is never
+            # double-counted. It stays only in the thesis tied to the FIRST action.
+            omitted: List[Dict[str, Any]] = []
+            if user_id and kind == "trend" and matched_thesis_id and thesis.get("type") == "trend":
+                covered = await db.theses.find(
+                    {"user_id": user_id, "$or": [
+                        {"id": matched_thesis_id},
+                        {"trend_match_id": matched_thesis_id},
+                    ]},
+                    {"_id": 0, "companies": 1},
+                ).to_list(length=300)
+                covered_tickers = set()
+                for cd in covered:
+                    for c in (cd.get("companies") or []):
+                        t = (c.get("ticker") or "").upper().strip()
+                        if t:
+                            covered_tickers.add(t)
+                if covered_tickers:
+                    kept = []
+                    for c in (thesis.get("companies") or []):
+                        t = (c.get("ticker") or "").upper().strip()
+                        if t and t in covered_tickers:
+                            omitted.append({"ticker": t, "name": c.get("name")})
+                        else:
+                            kept.append(c)
+                    thesis["companies"] = kept
+            if omitted:
+                thesis["omitted_companies"] = omitted
+
             if user_id:
                 tid = f"thesis_{uuid.uuid4().hex[:12]}"
                 doc = {
@@ -216,6 +249,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     "user_id": user_id,
                     "folder_id": None,
                     "saved": False,
+                    "trend_match_id": matched_thesis_id if (kind == "trend" and matched_thesis_id) else None,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     **thesis,
                 }
@@ -320,7 +354,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None))
+        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id))
         return {"job_id": job_id}
 
     @router.post("/discover")
@@ -538,20 +572,31 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 }}},
             )
 
-        # Flag whether the company is ALREADY in each matched thesis (computed fresh —
-        # membership changes when the user adds the company). The UI uses this to show
-        # either the "add to thesis" button or an "already there" notice.
+        # Flag whether the company is ALREADY "covered" by each matched thesis — i.e.
+        # present in that thesis OR in any sibling thesis generated "de todas formas"
+        # from it (trend_match_id). Computed fresh (membership changes over time). The
+        # UI uses this to show either the "add to thesis" button or an "already there"
+        # notice, guaranteeing the company lives in only ONE thesis per trend.
         to_add = result.get("to_add", [])
         ticker = ((doc.get("company") or {}).get("ticker") or "").upper().strip()
         ids = [a.get("thesis_id") for a in to_add if a.get("thesis_id")]
         membership: Dict[str, bool] = {}
         if ticker and ids:
-            matched_docs = await db.theses.find(
-                {"id": {"$in": ids}, "user_id": user["user_id"]}, {"_id": 0, "id": 1, "companies": 1}
-            ).to_list(length=300)
-            for td in matched_docs:
+            covered_docs = await db.theses.find(
+                {"user_id": user["user_id"], "$or": [
+                    {"id": {"$in": ids}},
+                    {"trend_match_id": {"$in": ids}},
+                ]},
+                {"_id": 0, "id": 1, "trend_match_id": 1, "companies": 1},
+            ).to_list(length=400)
+            covered: Dict[str, set] = {i: set() for i in ids}
+            for td in covered_docs:
                 tickers = {(c.get("ticker") or "").upper() for c in (td.get("companies") or [])}
-                membership[td.get("id")] = ticker in tickers
+                key = td.get("id") if td.get("id") in covered else td.get("trend_match_id")
+                if key in covered:
+                    covered[key].update(tickers)
+            for i in ids:
+                membership[i] = ticker in covered.get(i, set())
         for a in to_add:
             a["already_in"] = bool(membership.get(a.get("thesis_id"), False))
         return result

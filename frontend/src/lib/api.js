@@ -82,8 +82,8 @@ function startAndPoll(data) {
     return data;
 }
 
-export const thesisGenerate = (type, subject) =>
-    api.post(`/thesis/generate`, { type, subject }).then(r => startAndPoll(r.data));
+export const thesisGenerate = (type, subject, matchedThesisId = null) =>
+    api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId }).then(r => startAndPoll(r.data));
 export const thesisTamScores = (items) =>
     api.post(`/thesis/tam-scores`, { items }).then(r => startAndPoll(r.data));
 export const thesisDiscover = () =>

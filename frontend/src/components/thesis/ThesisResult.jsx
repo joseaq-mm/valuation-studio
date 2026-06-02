@@ -338,7 +338,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
                                 <span data-testid={`trend-dup-msg-${slug}`}>
                                     Ya tienes una tesis desarrollada que encaja:{" "}
                                     <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
-                                    Añade la empresa a esa tesis en lugar de duplicarla — duplicar inflaría el valor atribuido a {companyLabel}.
+                                    Puedes añadir {companyLabel} a esa tesis y/o generar de todas formas; {companyLabel} no se duplicará para no inflar su valor.
                                 </span>
                             )}
                         </div>
@@ -354,7 +354,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
                                     {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
                                 </button>
                             )}
-                            <Link to={`/thesis?trend=${trendQuery}&auto=1`} className="inline-flex items-center gap-1 text-xs font-semibold border border-black px-2.5 py-1.5 hover:bg-black hover:text-[#FDF1E6] transition-colors" data-testid={`trend-generate-anyway-${slug}`}>
+                            <Link to={`/thesis?trend=${trendQuery}&auto=1&matched=${match.thesis_id}`} className="inline-flex items-center gap-1 text-xs font-semibold border border-black px-2.5 py-1.5 hover:bg-black hover:text-[#FDF1E6] transition-colors" data-testid={`trend-generate-anyway-${slug}`}>
                                 Generar de todas formas
                             </Link>
                         </div>
@@ -459,6 +459,16 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </div>
                 {thesis.summary && <p className="text-base mt-4 leading-relaxed text-[#1a1a1a]">{thesis.summary}</p>}
             </div>
+
+            {isTrend && thesis.omitted_companies?.length > 0 && (
+                <div className="border border-[#B8860B]/50 bg-[#FBF3E0] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#7a5a10]" data-testid="omitted-companies-note">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
+                    <span>
+                        {thesis.omitted_companies.map((o) => o.name || o.ticker).join(", ")}{" "}
+                        {thesis.omitted_companies.length > 1 ? "se han omitido" : "se ha omitido"} de esta tesis porque ya {thesis.omitted_companies.length > 1 ? "están" : "está"} en otra tesis que encaja; así no se duplica su valor.
+                    </span>
+                </div>
+            )}
 
             {/* Contra-thesis (between header and value chain) */}
             <ContraSection
