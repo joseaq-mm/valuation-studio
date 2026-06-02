@@ -241,6 +241,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     thesis["companies"] = kept
             if omitted:
                 thesis["omitted_companies"] = omitted
+                mt = await db.theses.find_one(
+                    {"id": matched_thesis_id, "user_id": user_id}, {"_id": 0, "id": 1, "title": 1}
+                )
+                if mt:
+                    thesis["omitted_for_thesis"] = {"id": mt.get("id"), "title": mt.get("title")}
 
             if user_id:
                 tid = f"thesis_{uuid.uuid4().hex[:12]}"

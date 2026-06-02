@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only test for the omitted-companies banner on sister/duplicate trend thesis (/thesis/thesis_31bfeac6318d). All assertions passed: banner is shown, mentions NVIDIA, includes the required phrases, and the title link points to /thesis/thesis_test_aidc with text 'IA y centros de datos'. NVDA company card is correctly absent while the rest of the thesis (5 value-chain stages, 9 company cards: AMD/AVGO/ANET/AMZN/EQIX/VRT/ETN/JCI/MOD) renders normally. Banner text observed verbatim: 'NVIDIA Corporation no aparece en esta tesis porque ya está en IA y centros de datos. Se ha omitido para no duplicar su valor.'",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx is ~520 lines and growing; consider splitting CompanyCard/StageRow/TrendCard/ContraSection into separate files for maintainability (>500 line guideline).",
+    "Banner copy & i18n is hard-coded Spanish strings (singular/plural handled inline). Acceptable for an es-only build, but if multi-locale is later required, extract into an i18n catalog."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 set on REACT_APP_BACKEND_URL host.",
+  "seed_data_creation": "None. Used pre-persisted thesis thesis_31bfeac6318d (omitted_companies=[NVIDIA], omitted_for_thesis={id: thesis_test_aidc, title: 'IA y centros de datos'}).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Banner selector is [data-testid=omitted-companies-note] with internal link [data-testid=omitted-thesis-link]. Renders only when isTrend && thesis.omitted_companies?.length > 0 in ThesisResult.jsx (lines 463-475).",
+  "rca of the issue": "N/A - feature verified working end-to-end."
+}

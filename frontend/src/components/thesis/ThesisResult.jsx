@@ -464,8 +464,12 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 <div className="border border-[#B8860B]/50 bg-[#FBF3E0] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#7a5a10]" data-testid="omitted-companies-note">
                     <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
                     <span>
-                        {thesis.omitted_companies.map((o) => o.name || o.ticker).join(", ")}{" "}
-                        {thesis.omitted_companies.length > 1 ? "se han omitido" : "se ha omitido"} de esta tesis porque ya {thesis.omitted_companies.length > 1 ? "están" : "está"} en otra tesis que encaja; así no se duplica su valor.
+                        <strong>{thesis.omitted_companies.map((o) => o.name || o.ticker).join(", ")}</strong>{" "}
+                        {thesis.omitted_companies.length > 1 ? "no aparecen" : "no aparece"} en esta tesis porque ya {thesis.omitted_companies.length > 1 ? "están" : "está"} en{" "}
+                        {thesis.omitted_for_thesis?.id
+                            ? <Link to={`/thesis/${thesis.omitted_for_thesis.id}`} className="font-bold underline" data-testid="omitted-thesis-link">{thesis.omitted_for_thesis.title}</Link>
+                            : "otra tesis que encaja"}.{" "}
+                        Se {thesis.omitted_companies.length > 1 ? "han" : "ha"} omitido para no duplicar su valor.
                     </span>
                 </div>
             )}
