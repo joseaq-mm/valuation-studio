@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check } from "lucide-react";
-import { ScoreBar, ScoreBadge, ValueBox, tamColor } from "./ScoreBar";
+import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import HoverTip from "@/components/HoverTip";
 import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany } from "@/lib/api";
@@ -141,17 +141,28 @@ function TamScoreBadge({ data, loading, ticker }) {
     const note =
         "TAM Score = (Score global tendencia / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
         (data ? `TAM del eslabón: $${data.stage_tam_busd} B · Ingresos 2027e: $${data.projected_revenue_busd} B (USD).\n\n` : "") +
-        ">1× = el mercado direccionable (ponderado por calidad) supera el tamaño proyectado de la empresa → amplio recorrido. " +
-        "<1× = la empresa ya es grande respecto al TAM del eslabón.";
-    const box = (
-        <div className="flex items-center gap-2" data-testid={isLoading ? `tam-score-loading-${ticker}` : `tam-score-${ticker}`}>
+        ">1 = el mercado direccionable (ponderado por calidad) supera el tamaño proyectado de la empresa → amplio recorrido. " +
+        "<1 = la empresa ya es grande respecto al TAM del eslabón.";
+    const row = (
+        <div className="flex items-center justify-end gap-2" data-testid={isLoading ? `tam-score-loading-${ticker}` : `tam-score-${ticker}`}>
+            <span className="overline text-[#4A4A4A] leading-tight text-right">TAM Score</span>
             {isLoading
                 ? <div className="w-11 h-10 border-2 flex items-center justify-center shrink-0" style={{ borderColor: "#6B7280" }}><Loader2 size={14} className="animate-spin text-[#6B7280]" /></div>
                 : <ValueBox text={txt} color={color} />}
-            <span className="overline text-[#4A4A4A] leading-tight">TAM Score</span>
         </div>
     );
-    return isLoading ? box : <HoverTip text={note} maxWidth={320}><div className="cursor-help">{box}</div></HoverTip>;
+    return isLoading ? row : <HoverTip text={note} maxWidth={320}><div className="cursor-help">{row}</div></HoverTip>;
+}
+
+/** Score with a two-line label on the LEFT and the boxed number on the RIGHT,
+ *  so the boxes align flush to the card's right edge. */
+function ScoreStatRight({ value, label, testid }) {
+    return (
+        <div className="flex items-center justify-end gap-2" data-testid={testid}>
+            <span className="overline text-[#4A4A4A] leading-tight text-right">{label}</span>
+            <ValueBox text={value == null ? "—" : value} color={scoreColor(value)} />
+        </div>
+    );
 }
 
 function CompanyCard({ c, tamData, tamLoading }) {
@@ -169,8 +180,8 @@ function CompanyCard({ c, tamData, tamLoading }) {
                     <div className="font-serif text-xl font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
-                <div className="flex flex-col items-start gap-2 shrink-0">
-                    <ScoreBadge value={c.overall_score} label="Score global tendencia" testid={`overall-${c.ticker}`} />
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                    <ScoreStatRight value={c.overall_score} label={<>Score global<br />tendencia</>} testid={`overall-${c.ticker}`} />
                     <TamScoreBadge data={tamData} loading={tamLoading} ticker={c.ticker} />
                 </div>
             </div>

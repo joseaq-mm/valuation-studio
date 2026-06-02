@@ -11,7 +11,7 @@ export const tamColor = (v) => (v == null ? "#9CA3AF" : v >= 1 ? "#1E7D45" : "#B
 
 export const fmtTamScore = (v) => {
     if (v == null || isNaN(v)) return null;
-    return v >= 10 ? `${Math.round(v)}×` : `${v.toFixed(1)}×`;
+    return v.toFixed(2);
 };
 
 /** Square boxed value, matching the ScoreBadge box look. */
