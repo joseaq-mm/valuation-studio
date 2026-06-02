@@ -25,7 +25,10 @@
   - Backend nuevo: `GET /api/thesis/dashboard` → folders (TAM agregado = suma del TAM de sus tendencias), trends (con TAM + empresas), companies (avg_overall_score + sum_tam_score calculados SOLO desde caché de fundamentals, sin yfinance en vivo).
   - **ThesisExplore** (`components/thesis/ThesisExplore.jsx` + `lib/treemap.js` squarify propio): 4 vistas de cuadrados proporcionales con drilldown + breadcrumb: Megatendencias→Tendencias→Empresas, Tendencias→Empresas, Empresas·score medio, Empresas·TAM total. Color rojo(bajo)→dorado→verde(alto) relativo al conjunto. Clic en empresa → /company/{ticker}.
   - **Dedupe (punto 6):** al regenerar una tesis ya guardada, aviso (intercepta ANTES de la llamada LLM) mencionando el refresco automático semanal, con "Reescribir igualmente" (pasa `overwrite_thesis_id` → el backend actualiza el doc en sitio en vez de duplicar), "Abrir la existente" y "Cancelar".
-  - **✅ Ajustes UI/UX (Feb 2026, testing agent 100% 24/24):**
+  - **✅ Ajustes UI/UX dashboard Tesis — lote 2 (Feb 2026, testing agent 100%):**
+    - Sidebar "Empresas" ahora muestra SOLO tesis de empresa (type=company, buscadas con "Empresa → Tesis"); link del nombre → /thesis/{company_thesis_id}. Su desplegable lista las tesis donde encaja con 3 estados: verde=incluida, gris=existe no incluida, naranja=no generada (cada una con link; naranja → /thesis?trend=NOMBRE para crearla). Backend: dashboard `company_theses` enriquecido con `fit_trends:[{name,thesis_id,state}]` (matcher Jaccard≥0.5).
+    - Treemap: leyenda de color y caption invertidos (verde/alto a la izquierda → rojo/bajo a la derecha) para coherencia con los cuadrados; caption más grande (text-sm).
+    - Breadcrumb del treemap: la entrada de una tesis es un link que navega a /thesis/{id}.
     - Refresco semanal: copy ampliado ("profundiza, refresca las tesis y empresas implicadas y te avisa").
     - Terminología: "tendencia/tendencias" → "tesis" en toda la página del dashboard (tabs "Tesis → Empresas" / "Empresa → Tesis", vista treemap "Tesis", etc.); "megatendencia(s)" se conserva.
     - Sidebar empresas: quitados los scores numéricos (ya están en el treemap central); el desplegable de tesis se movió a la derecha.

@@ -147,7 +147,7 @@ export default function ThesisSidebar({
                         {filtered.slice(0, 10).map((it) => (
                             <Link
                                 key={it.key}
-                                to={it.kind === "trend" ? `/thesis/${it.data.id}` : `/thesis/${it.data.id}`}
+                                to={`/thesis/${it.data.id}`}
                                 onClick={() => setQ("")}
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-[#F5E4D4] transition-colors"
                                 data-testid={`sidebar-search-opt-${it.key}`}
