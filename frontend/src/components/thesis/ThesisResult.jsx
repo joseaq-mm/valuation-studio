@@ -321,7 +321,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
                                 <span data-testid={`trend-already-in-${slug}`}>
                                     {companyLabel} ya está en esta tesis:{" "}
                                     <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
-                                    Ten en cuenta que, al generar esta tesis, {companyLabel} ya aparece en ella; no la añadas de nuevo para no inflar su valor.
+                                    Si generas esta tesis {companyLabel} no aparecerá para no duplicar su valor.
                                 </span>
                             ) : (
                                 <span data-testid={`trend-dup-msg-${slug}`}>
@@ -343,7 +343,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
                                     {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
                                 </button>
                             )}
-                            <Link to={`/thesis?trend=${trendQuery}&auto=1`} className="text-xs text-[#4A4A4A] hover:text-black hover:underline" data-testid={`trend-generate-anyway-${slug}`}>
+                            <Link to={`/thesis?trend=${trendQuery}&auto=1`} className="inline-flex items-center gap-1 text-xs font-semibold border border-black px-2.5 py-1.5 hover:bg-black hover:text-[#FDF1E6] transition-colors" data-testid={`trend-generate-anyway-${slug}`}>
                                 Generar de todas formas
                             </Link>
                         </div>
