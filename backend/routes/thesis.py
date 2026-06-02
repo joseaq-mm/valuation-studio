@@ -761,6 +761,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         )
         return {"enabled": bool(req.enabled)}
 
+    @router.get("/refresh/status")
+    async def refresh_status(user: Dict[str, Any] = Depends(auth_required)):
+        u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "thesis_refresh": 1})
+        return {"enabled": bool(((u or {}).get("thesis_refresh") or {}).get("enabled"))}
+
+    @router.post("/refresh/subscribe")
+    async def refresh_subscribe(req: RadarSubscribeRequest, user: Dict[str, Any] = Depends(auth_required)):
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"thesis_refresh": {"enabled": bool(req.enabled), "updated_at": datetime.now(timezone.utc).isoformat()}}},
+        )
+        return {"enabled": bool(req.enabled)}
+
     @router.post("/{thesis_id}/contra")
     async def generate_contra(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0})

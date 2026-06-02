@@ -16,6 +16,7 @@ from auth import make_router as make_auth_router
 import fx as fx_service
 from screener import run_screener
 from radar import run_radar
+from thesis_refresh import run_thesis_refresh
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -166,6 +167,12 @@ async def admin_run_screener():
 async def admin_run_radar():
     """Manual trigger for the weekly trend radar — useful for QA."""
     return {"ok": True, **(await run_radar(db))}
+
+
+@api_router.post("/admin/run-thesis-refresh")
+async def admin_run_thesis_refresh():
+    """Manual trigger for the weekly thesis refresh + news watch — useful for QA."""
+    return {"ok": True, **(await run_thesis_refresh(db))}
 
 
 @api_router.post("/company/{ticker}/calculate")
@@ -459,6 +466,13 @@ async def _scheduled_radar_run():
         logger.error(f"scheduled radar crashed: {e}")
 
 
+async def _scheduled_thesis_refresh_run():
+    try:
+        await run_thesis_refresh(db)
+    except Exception as e:
+        logger.error(f"scheduled thesis-refresh crashed: {e}")
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
@@ -466,8 +480,9 @@ async def _startup_scheduler():
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
         _scheduler.add_job(_scheduled_radar_run, CronTrigger(day_of_week="mon", hour=7, minute=0))
+        _scheduler.add_job(_scheduled_thesis_refresh_run, CronTrigger(day_of_week="tue", hour=7, minute=0))
         _scheduler.start()
-        logger.info("Schedulers started (screener 06:00 UTC daily, radar Mon 07:00 UTC).")
+        logger.info("Schedulers started (screener 06:00 UTC daily, radar Mon 07:00 UTC, thesis-refresh Tue 07:00 UTC).")
 
 
 @app.on_event("shutdown")

@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus,
-    thesisRadarSubscribe, thesisDashboard,
+    thesisRadarSubscribe, thesisDashboard, thesisRefreshStatus, thesisRefreshSubscribe,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
@@ -30,6 +30,7 @@ export default function Thesis() {
     const [dash, setDash] = useState(null);
     const [newFolder, setNewFolder] = useState("");
     const [radarEnabled, setRadarEnabled] = useState(false);
+    const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
 
     const folders = dash?.folders || [];
@@ -53,9 +54,10 @@ export default function Thesis() {
     const reload = useCallback(async () => {
         if (!user) { setDash(null); return; }
         try {
-            const [d, r] = await Promise.all([thesisDashboard(), thesisRadarStatus()]);
+            const [d, r, rf] = await Promise.all([thesisDashboard(), thesisRadarStatus(), thesisRefreshStatus()]);
             setDash(d);
             setRadarEnabled(!!r.enabled);
+            setRefreshEnabled(!!rf.enabled);
         } catch { /* ignore */ }
     }, [user]);
 
@@ -89,6 +91,18 @@ export default function Thesis() {
         } catch {
             setRadarEnabled(!next);
             toast.error("No se pudo actualizar el radar");
+        }
+    };
+
+    const toggleRefresh = async () => {
+        const next = !refreshEnabled;
+        setRefreshEnabled(next);
+        try {
+            await thesisRefreshSubscribe(next);
+            toast.success(next ? "Refresco semanal activado" : "Refresco semanal desactivado");
+        } catch {
+            setRefreshEnabled(!next);
+            toast.error("No se pudo actualizar el refresco");
         }
     };
 
@@ -419,6 +433,8 @@ export default function Thesis() {
                             onRemoveThesis={removeThesis}
                             radarEnabled={radarEnabled}
                             onToggleRadar={toggleRadar}
+                            refreshEnabled={refreshEnabled}
+                            onToggleRefresh={toggleRefresh}
                         />
                     )}
                 </div>

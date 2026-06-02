@@ -114,3 +114,8 @@ export const thesisAddCompany = (id, ticker, name) =>
 export const thesisRadarStatus = () => api.get(`/thesis/radar/status`).then(r => r.data);
 export const thesisRadarSubscribe = (enabled) =>
     api.post(`/thesis/radar/subscribe`, { enabled }).then(r => r.data);
+
+// Weekly thesis refresh + news watch (email)
+export const thesisRefreshStatus = () => api.get(`/thesis/refresh/status`).then(r => r.data);
+export const thesisRefreshSubscribe = (enabled) =>
+    api.post(`/thesis/refresh/subscribe`, { enabled }).then(r => r.data);

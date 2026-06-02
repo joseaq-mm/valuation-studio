@@ -406,6 +406,57 @@ async def run_discover() -> dict:
     }
 
 
+# ---------------------- Weekly news watch (cheap classifier) ----------------------
+
+NEWS_WATCH_SYS = (
+    "Eres un analista de inversión que vigila NOTICIAS MATERIALES sobre las megatendencias "
+    "que sigue un inversor. Te doy su lista de tendencias y resultados REALES de búsqueda web "
+    "recientes. Identifica SOLO desarrollos verdaderamente importantes y materiales de los "
+    "últimos días (rupturas tecnológicas, regulación relevante, grandes movimientos "
+    "competitivos, resultados que cambian la tesis). Si no hay nada material, devuelve lista "
+    "vacía — sé exigente, NO inventes. Usa el NOMBRE EXACTO de la tendencia tal como aparece "
+    "en la lista. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+)
+
+
+async def run_news_watch(trend_titles: list) -> dict:
+    """One cheap LLM classification over live news for the user's saved trends.
+    Returns {"important": [{trend, headline, summary, why_it_matters, tickers[]}]}.
+    Usually empty — only flags genuinely material developments."""
+    titles = [t for t in (trend_titles or []) if t]
+    if not titles:
+        return {"important": []}
+    year = datetime.now(timezone.utc).year
+    queries = [f"{t} noticias novedades {year}" for t in titles[:6]]
+    queries += [f"{t} breakthrough regulation earnings {year}" for t in titles[:4]]
+    sources = _run_searches(queries, max_results=4, cap=24)
+    user_text = (
+        "TENDENCIAS QUE SIGUE EL INVERSOR:\n" + "\n".join(f"- {t}" for t in titles) +
+        "\n\nRESULTADOS DE BÚSQUEDA WEB RECIENTES:\n" + _sources_block(sources) +
+        "\n\nDevuelve SOLO JSON con esta forma:\n"
+        '{"important":[{"trend":"<nombre EXACTO de la lista>","headline":"titular breve",'
+        '"summary":"2-3 frases","why_it_matters":"por qué cambia o refuerza la tesis",'
+        '"tickers":["TICKERS afectados"]}]}\n'
+        "Si no hay nada material esta semana, devuelve {\"important\":[]}."
+    )
+    raw = await _llm(*INVESTIGATOR_MODEL, f"news-watch-{datetime.now(timezone.utc).timestamp()}",
+                     NEWS_WATCH_SYS, user_text)
+    data = _extract_json(raw)
+    out = []
+    for it in (data.get("important") or [])[:5]:
+        trend = (it.get("trend") or "").strip()
+        if not trend:
+            continue
+        out.append({
+            "trend": trend,
+            "headline": (it.get("headline") or "").strip(),
+            "summary": (it.get("summary") or "").strip(),
+            "why_it_matters": (it.get("why_it_matters") or "").strip(),
+            "tickers": [str(x).upper().strip() for x in (it.get("tickers") or []) if x][:6],
+        })
+    return {"important": out}
+
+
 # ---------------------- Flow B: Company → trends ----------------------
 
 INVESTIGATOR_COMPANY_SYS = (

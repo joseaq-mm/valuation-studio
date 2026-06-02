@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check } from "lucide-react";
+import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
 import { scoreColor, tamColor } from "./ScoreBar";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
@@ -118,6 +118,7 @@ export default function ThesisSidebar({
     trends = [], companies = [], folders = [],
     onAssignFolder, onRemoveThesis,
     radarEnabled, onToggleRadar,
+    refreshEnabled, onToggleRefresh,
 }) {
     const [q, setQ] = useState("");
 
@@ -192,6 +193,25 @@ export default function ThesisSidebar({
                         data-testid="radar-toggle"
                     >
                         <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${radarEnabled ? "translate-x-5" : ""}`} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Weekly thesis refresh + news watch */}
+            <div className="mt-4 pt-4 border-t border-black/10" data-testid="refresh-toggle-wrap">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <div className="overline text-black flex items-center gap-1"><RefreshCw size={12} /> Refresco semanal</div>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza precios y TAM de tus tesis cada semana y, si hay una noticia importante, profundiza y te avisa por email.</p>
+                    </div>
+                    <button
+                        onClick={onToggleRefresh}
+                        role="switch"
+                        aria-checked={refreshEnabled}
+                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${refreshEnabled ? "bg-[#1E7D45]" : "bg-black/20"}`}
+                        data-testid="refresh-toggle"
+                    >
+                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${refreshEnabled ? "translate-x-5" : ""}`} />
                     </button>
                 </div>
             </div>
