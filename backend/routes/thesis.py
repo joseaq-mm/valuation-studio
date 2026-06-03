@@ -708,8 +708,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         _state_rank = {"included": 0, "not_included": 1, "not_generated": 2}
 
         company_theses = []
-        for d in company_docs:
+        seen_tickers = set()
+        for d in company_docs:  # sorted newest-first → keep only the latest per ticker
             tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            if tk and tk in seen_tickers:
+                continue
+            if tk:
+                seen_tickers.add(tk)
             fit = []
             # green / grey: every existing trend thesis, by real membership
             for tr in trends:
