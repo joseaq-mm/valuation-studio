@@ -508,6 +508,7 @@ async def run_company_thesis(company: str, sources: list) -> dict:
             "fit_description": t.get("fit_description"),
             "value_chain_role": t.get("value_chain_role"),
             "relevance_score": _clamp_score(s.get("relevance_score")),
+            "win_probability": _clamp10(s.get("win_probability")),
             "rationale": s.get("rationale"),
         })
     merged.sort(key=lambda x: (x["relevance_score"] is None, -(x["relevance_score"] or 0)))
@@ -538,10 +539,11 @@ SYNTHESIZER_COMPANY_SYS = (
     "Eres un estratega de inversión. Recibes una empresa y una lista de megatendencias GANADORAS en "
     "las que encaja. Asignas a cada tendencia un score de RELEVANCIA de 0 a 100 que refleja el "
     "COMPROMISO ESTRATÉGICO de la empresa con ese tema y la TRACCIÓN observada (NO la mera relevancia "
-    "tangencial), con una justificación breve que explique cómo la empresa está AUMENTANDO su "
-    "participación y la evidencia concreta. También das un score global de relevancia temática y "
-    "estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista temática GANADORA se "
-    "materialice, con una justificación breve. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "tangencial), y una PROBABILIDAD GANADORA (entero 0 a 10) de que ESA tendencia sea "
+    "estructuralmente ganadora / con momentum, con una justificación breve que explique cómo la "
+    "empresa está AUMENTANDO su participación y la evidencia concreta. También das un score global de "
+    "relevancia temática y estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista temática "
+    "GANADORA se materialice, con una justificación breve. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
@@ -590,7 +592,7 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
         '  "overall_relevance": 0-100,\n'
         '  "overall_probability": 0-10,\n'
         '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática ganadora",\n'
-        '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}]\n'
+        '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "win_probability": 0-10, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}]\n'
         "}\n"
         "Incluye TODAS las tendencias con su mismo nombre."
     )

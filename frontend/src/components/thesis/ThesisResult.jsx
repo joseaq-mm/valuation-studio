@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
@@ -282,6 +282,24 @@ const RELEVANCE_TIP =
 const SCORE_GLOBAL_TIP =
     "Score global tendencia (0–100): la calidad y el atractivo de la empresa DENTRO de esta tendencia, ponderado por su exposición al tema (a menor exposición, menor score).\n\nResume sus cuatro sub-scores: posición competitiva, momentum del sector, calidad del management y resiliencia financiera. Mayor = mejor.";
 
+const WINNING_TIP =
+    "Tendencia ganadora (0–10): probabilidad de que esta tendencia sea estructuralmente GANADORA / con momentum (no cuánto pesa para la empresa, sino la fuerza del tema en sí).\n\n≥7 alto momentum · 4–6 medio · <4 bajo. Útil para priorizar qué apuestas desarrollar primero.";
+
+/** Compact "winning thesis" badge (0–10) for the new-thesis suggestions. */
+function WinningBadge({ value }) {
+    if (value == null) return null;
+    const color = value >= 7 ? "#1E7D45" : value >= 4 ? "#B8860B" : "#B32A22";
+    return (
+        <HoverTip text={WINNING_TIP} maxWidth={300}>
+            <div className="inline-flex items-center gap-1 px-2 py-1 border cursor-help" style={{ borderColor: color, color }} data-testid="winning-badge">
+                <Flame size={12} />
+                <span className="font-mono font-bold text-sm leading-none">{value}<span className="text-[10px] opacity-70">/10</span></span>
+                <span className="text-[9px] uppercase tracking-[0.12em] font-semibold">Ganadora</span>
+            </div>
+        </HoverTip>
+    );
+}
+
 /** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
  *  an informational card with a single "Generar tesis" action. */
 function NewThesisCard({ t, idx = 0 }) {
@@ -300,6 +318,9 @@ function NewThesisCard({ t, idx = 0 }) {
                     <div className="cursor-help"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
                 </HoverTip>
             </div>
+            {t.win_probability != null && (
+                <div className="mt-2.5"><WinningBadge value={t.win_probability} /></div>
+            )}
             {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
             {t.value_chain_role && (
                 <div className="mt-2 text-xs text-[#4A4A4A]">

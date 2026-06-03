@@ -7,7 +7,7 @@ import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus,
     thesisRadarSubscribe, thesisDashboard, thesisRefreshStatus, thesisRefreshSubscribe,
-    thesisRestore, thesisGet,
+    thesisRestore, thesisGet, searchTickers,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
@@ -33,6 +33,7 @@ export default function Thesis() {
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
+    const [pendingWrongType, setPendingWrongType] = useState(null);
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
@@ -125,6 +126,16 @@ export default function Thesis() {
         const t = overrideType || mode;
         const s = (overrideSubject ?? subject).trim();
         if (!s) { toast.error("Escribe una tesis o empresa"); return; }
+        // Wrong-type guard: a company (ticker) typed in the TREND search ("Tesis → Empresas")
+        // is almost always a mistake — trends are multi-word. Offer to switch modes.
+        if (!opts.force && !opts.forceType && !matchedThesisId && t === "trend" && !/\s/.test(s)) {
+            try {
+                const res = await searchTickers(s);
+                const exact = (res?.results || []).find((r) => (r.symbol || "").toUpperCase() === s.toUpperCase());
+                if (exact) { setPendingDup(null); setPendingWrongType({ subject: s, symbol: exact.symbol, name: exact.name }); return; }
+            } catch { /* ignore search failures and continue */ }
+        }
+        setPendingWrongType(null);
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
@@ -319,14 +330,14 @@ export default function Thesis() {
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                             <div className="flex gap-0 border border-black w-fit">
                                 <button
-                                    onClick={() => { setMode("trend"); setResult(null); }}
+                                    onClick={() => { setMode("trend"); setSubject(""); setResult(null); setPendingDup(null); setPendingWrongType(null); }}
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors ${mode === "trend" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-trend"
                                 >
                                     <TrendingUp size={14} /> Tesis → Empresas
                                 </button>
                                 <button
-                                    onClick={() => { setMode("company"); setResult(null); }}
+                                    onClick={() => { setMode("company"); setSubject(""); setResult(null); setPendingDup(null); setPendingWrongType(null); }}
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors border-l border-black ${mode === "company" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-company"
                                 >
@@ -393,6 +404,63 @@ export default function Thesis() {
                             </div>
                         )}
                     </div>
+
+                    {/* Wrong-type warning: a company typed in the TREND search.
+                        Placed right below the search box, above megatrends. */}
+                    {pendingWrongType && (
+                        <div className="border border-[#052049] bg-[#EAF0F7] p-4 mb-6" data-testid="wrong-type-warning">
+                            <div className="text-sm text-[#052049] leading-relaxed">
+                                Parece que <strong>«{pendingWrongType.subject}»</strong> es una empresa
+                                {pendingWrongType.name ? ` (${pendingWrongType.name})` : ""} y estás en <strong>«Tesis → Empresas»</strong>,
+                                que analiza <strong>tendencias</strong>. ¿Querías analizar la empresa con <strong>«Empresa → Tesis»</strong>?
+                            </div>
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                                <button
+                                    onClick={() => { setMode("company"); setSubject(pendingWrongType.symbol); setPendingWrongType(null); }}
+                                    className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#052049] text-white px-3 py-1.5 hover:bg-[#03132e] transition-colors flex items-center gap-1.5"
+                                    data-testid="wrong-type-switch-btn"
+                                >
+                                    <Building2 size={13} /> Cambiar a Empresa → Tesis
+                                </button>
+                                <button
+                                    onClick={() => generate("trend", pendingWrongType.subject, null, { forceType: true })}
+                                    className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#052049] text-[#052049] px-3 py-1.5 hover:bg-[#052049] hover:text-white transition-colors"
+                                    data-testid="wrong-type-continue-btn"
+                                >
+                                    Generar como tesis igualmente
+                                </button>
+                                <button onClick={() => setPendingWrongType(null)} className="text-xs text-[#052049] hover:underline" data-testid="wrong-type-cancel-btn">
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Dedup / overwrite warning: right below the search box, above megatrends. */}
+                    {pendingDup && (
+                        <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
+                            <div className="text-sm text-[#7a5a10] leading-relaxed">
+                                Ya tienes esta {pendingDup.type === "trend" ? "tesis" : "empresa"} guardada:{" "}
+                                <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá</strong> el resultado actual.
+                            </div>
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                                <button
+                                    onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
+                                    className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
+                                    data-testid="dedup-rewrite-btn"
+                                >
+                                    Reescribir igualmente
+                                </button>
+                                <Link to={`/thesis/${pendingDup.existing.id}`} className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-3 py-1.5 hover:bg-[#B8860B] hover:text-white transition-colors" data-testid="dedup-open-btn">
+                                    Abrir la existente
+                                </Link>
+                                <button onClick={() => setPendingDup(null)} className="text-xs text-[#7a5a10] hover:underline" data-testid="dedup-cancel-btn">
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Megatendencias management */}
                     {user && (
@@ -463,32 +531,6 @@ export default function Thesis() {
                     {result && !user && (
                         <div className="border border-[#B32A22]/40 bg-white p-3 mb-6 text-sm" data-testid="thesis-login-hint">
                             Inicia sesión con Google (botón <span className="font-semibold">Entrar</span> arriba) para guardar esta tesis en megatendencias.
-                        </div>
-                    )}
-
-                    {/* Dedup warning */}
-                    {pendingDup && (
-                        <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
-                            <div className="text-sm text-[#7a5a10] leading-relaxed">
-                                Ya tienes esta {pendingDup.type === "trend" ? "tesis" : "empresa"} guardada:{" "}
-                                <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá</strong> el resultado actual.
-                            </div>
-                            <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                <button
-                                    onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
-                                    className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
-                                    data-testid="dedup-rewrite-btn"
-                                >
-                                    Reescribir igualmente
-                                </button>
-                                <Link to={`/thesis/${pendingDup.existing.id}`} className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-3 py-1.5 hover:bg-[#B8860B] hover:text-white transition-colors" data-testid="dedup-open-btn">
-                                    Abrir la existente
-                                </Link>
-                                <button onClick={() => setPendingDup(null)} className="text-xs text-[#7a5a10] hover:underline" data-testid="dedup-cancel-btn">
-                                    Cancelar
-                                </button>
-                            </div>
                         </div>
                     )}
 
