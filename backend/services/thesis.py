@@ -169,6 +169,18 @@ def _clamp10(v):
     return max(0, min(10, round(v)))
 
 
+def aggregate_folder_tam(trends):
+    """Sum the global TAM of the trends inside a megatrend (folder), EXCLUDING any
+    trend that is a nested CHILD (sub-thesis) so a sub-segment's market is never
+    double-counted with its mother's broader market ("solo la madre").
+
+    Each `trends` item is a dict with 'tam_busd' (number|None) and 'is_child' (bool).
+    Returns a 1-decimal float (USD billions) or None when nothing is counted.
+    """
+    total = sum((t.get("tam_busd") or 0) for t in trends if not t.get("is_child"))
+    return round(total, 1) if total else None
+
+
 def compute_tam_score(overall_score, stage_tam_busd, revenue_busd):
     """TAM Score = (overall_score/100 × stage_TAM) / projected_revenue.
 
@@ -852,3 +864,48 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         "key_risks": d.get("key_risks"),
         "added_manually": True,
     }
+
+
+# ---------------- TAM hierarchy: detect a parent (superset) thesis ----------------
+
+PARENT_DETECTOR_SYS = (
+    "Eres un analista que detecta JERARQUÍAS de mercado entre tesis de inversión para evitar el "
+    "DOBLE CONTEO del TAM (mercado total direccionable). Una tesis es HIJA (sub-segmento) de otra "
+    "MADRE cuando su mercado está CONTENIDO dentro del mercado de la madre (ej.: 'Inferencia en la "
+    "nube' es hija de 'Centros de datos de IA'; 'Baterías de estado sólido' es hija de "
+    "'Almacenamiento de energía'). NO son madre-hija si solo se solapan parcialmente, son temas "
+    "hermanos distintos, o la una no contiene a la otra. Responde SIEMPRE en español y SOLO con un "
+    "objeto JSON válido, sin texto adicional."
+)
+
+
+async def detect_parent_thesis(new_title: str, new_summary: str, new_tam_busd, existing: list) -> dict:
+    """Decide whether the NEW trend thesis is a CHILD (subset) of one of the user's
+    existing trend theses. `existing`: [{'id','title','summary','tam_busd'}].
+    Returns {'parent_id', 'reason'} when it is a child, else {'parent_id': None}."""
+    if not existing:
+        return {"parent_id": None}
+    valid_ids = {e["id"] for e in existing}
+    lst = "\n".join(
+        f"- id={e['id']} :: {e.get('title')} (TAM ~${e.get('tam_busd') if e.get('tam_busd') is not None else '?'}B). "
+        f"{(e.get('summary') or '')[:220]}"
+        for e in existing
+    )
+    user = (
+        f"NUEVA TESIS:\nTítulo: {new_title}\nResumen: {new_summary}\n"
+        f"TAM global ~${new_tam_busd if new_tam_busd is not None else '?'}B\n\n"
+        f"TESIS EXISTENTES DEL USUARIO:\n{lst}\n\n"
+        "¿La NUEVA tesis es una HIJA (sub-segmento cuyo mercado está CONTENIDO) de ALGUNA de las "
+        "tesis existentes? Si lo es de varias, elige la MADRE MÁS DIRECTA/cercana. Devuelve un JSON "
+        "con esta forma EXACTA:\n"
+        '{ "is_child": true|false, "parent_id": "id EXACTO de la madre o null", '
+        '"reason": "1 frase: por qué el mercado de la nueva está contenido en el de la madre" }\n'
+        "Sé EXIGENTE: responde is_child=false si solo hay solapamiento parcial o son temas hermanos."
+    )
+    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-parent-{datetime.now(timezone.utc).timestamp()}",
+                     PARENT_DETECTOR_SYS, user)
+    data = _extract_json(raw)
+    pid = data.get("parent_id")
+    if data.get("is_child") and pid in valid_ids:
+        return {"parent_id": pid, "reason": (data.get("reason") or "").strip()}
+    return {"parent_id": None}

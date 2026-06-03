@@ -95,6 +95,8 @@ export const thesisGet = (id) => api.get(`/thesis/${id}`).then(r => r.data);
 export const thesisDelete = (id) => api.delete(`/thesis/${id}`).then(r => r.data);
 export const thesisAssignFolder = (id, folder_id) =>
     api.put(`/thesis/${id}/folder`, { folder_id }).then(r => r.data);
+export const thesisAssignParent = (id, parent_id) =>
+    api.put(`/thesis/${id}/parent`, { parent_id }).then(r => r.data);
 export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
 export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
 export const thesisDeleteFolder = (id, mode = "ungroup") =>

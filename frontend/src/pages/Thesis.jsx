@@ -7,7 +7,7 @@ import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
     thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus,
     thesisRadarSubscribe, thesisDashboard, thesisRefreshStatus, thesisRefreshSubscribe,
-    thesisRestore, thesisGet, searchTickers,
+    thesisRestore, thesisGet, searchTickers, thesisAssignParent,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
@@ -269,6 +269,8 @@ export default function Thesis() {
             else await thesisDelete(action.doc.id);
         } else if (t === "assign_folder") {
             await thesisAssignFolder(action.id, (direction === "undo" ? action.prev : action.next) || null);
+        } else if (t === "assign_parent") {
+            await thesisAssignParent(action.id, (direction === "undo" ? action.prev : action.next) || null);
         }
     };
 
@@ -326,6 +328,27 @@ export default function Thesis() {
             pushAction({ type: "assign_folder", id, prev, next: folderId || null });
             reload();
         } catch { toast.error("No se pudo mover la tesis"); }
+    };
+
+    const assignThesisParent = async (id, parentId) => {
+        const prev = (dash?.trends || []).find((t) => t.id === id)?.parent_id || null;
+        try {
+            await thesisAssignParent(id, parentId || null);
+            toast.success(parentId ? "Anidada como sub-tesis" : "Sub-tesis independizada");
+            pushAction({ type: "assign_parent", id, prev, next: parentId || null });
+            reload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo anidar la tesis"); }
+    };
+
+    // Nest the just-generated thesis under the suggested mother (from the result banner).
+    const nestResultUnderParent = async (parentId) => {
+        if (!result?.id) return;
+        try {
+            await thesisAssignParent(result.id, parentId || null);
+            setResult({ ...result, parent_id: parentId, parent_suggestion: null });
+            toast.success("Tesis anidada · su TAM no se sumará al de la madre");
+            reload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo anidar la tesis"); }
     };
 
     const deleteFolder = async (folder, fmode) => {
@@ -596,6 +619,7 @@ export default function Thesis() {
                             onGenerateContra={generateContra}
                             generatingContra={generatingContra}
                             onMutated={reload}
+                            onNest={nestResultUnderParent}
                         />
                     ) : (user && dash && !loading && (
                         <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} />
@@ -615,6 +639,7 @@ export default function Thesis() {
                             companyTheses={dash?.company_theses || []}
                             folders={folders}
                             onAssignFolder={assignThesisFolder}
+                            onAssignParent={assignThesisParent}
                             onRemoveThesis={removeThesis}
                             radarEnabled={radarEnabled}
                             onToggleRadar={toggleRadar}

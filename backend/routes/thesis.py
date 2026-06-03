@@ -18,6 +18,7 @@ from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
     match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
+    detect_parent_thesis, aggregate_folder_tam,
 )
 from services.valuation import fetch_fundamentals_sync
 import fx as fx_service
@@ -126,6 +127,10 @@ def _eval_company_sync(trend_doc: dict, ticker: str, name: str) -> dict:
     ))
 
 
+def _detect_parent_sync(new_title: str, new_summary: str, new_tam, existing: list) -> dict:
+    return asyncio.run(detect_parent_thesis(new_title, new_summary, new_tam, existing))
+
+
 class GenerateRequest(BaseModel):
     type: str  # "trend" | "company"
     subject: str
@@ -139,6 +144,10 @@ class FolderRequest(BaseModel):
 
 class AssignFolderRequest(BaseModel):
     folder_id: Optional[str] = None
+
+
+class AssignParentRequest(BaseModel):
+    parent_id: Optional[str] = None
 
 
 class RestoreRequest(BaseModel):
@@ -275,6 +284,33 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el TAM Score: {e}"}})
 
+    async def _suggest_parent(user_id: str, new_id: str, thesis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """LLM check: is this freshly generated TREND thesis a sub-segment (child) of
+        an existing one? Returns a manual-confirm suggestion {thesis_id, title, reason}
+        or None. Used to prevent TAM double-counting (the child's TAM is later excluded
+        from megatrend aggregates once the user nests it)."""
+        others_docs = await db.theses.find(
+            {"user_id": user_id, "type": "trend", "id": {"$ne": new_id}},
+            {"_id": 0, "id": 1, "title": 1, "summary": 1, "tam": 1},
+        ).to_list(length=300)
+        others = [{"id": o["id"], "title": o.get("title"), "summary": o.get("summary"),
+                   "tam_busd": (o.get("tam") or {}).get("global_busd")} for o in others_docs]
+        if not others:
+            return None
+        try:
+            res = await asyncio.to_thread(
+                _detect_parent_sync, thesis.get("title"), thesis.get("summary"),
+                (thesis.get("tam") or {}).get("global_busd"), others)
+        except Exception as e:
+            logger.warning(f"parent detection failed ({new_id}): {e}")
+            return None
+        pid = res.get("parent_id")
+        if not pid:
+            return None
+        parent = next((o for o in others if o["id"] == pid), None)
+        return {"thesis_id": pid, "title": parent.get("title") if parent else None,
+                "reason": res.get("reason")}
+
     async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None, overwrite_thesis_id: Optional[str] = None):
         try:
             thesis = await asyncio.to_thread(_generate_sync, kind, subject)
@@ -355,6 +391,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         "id": tid,
                         "user_id": user_id,
                         "folder_id": None,
+                        "parent_id": None,
                         "saved": False,
                         "trend_match_id": matched_thesis_id if (kind == "trend" and matched_thesis_id) else None,
                         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -364,6 +401,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     await _persist_qual_snapshots(user_id, tid, thesis)
                     thesis["id"] = tid
                     thesis["saved"] = False
+                    # TAM hierarchy: offer to nest this new thesis under a broader one
+                    # (manual confirm) so its TAM isn't double-counted in megatrends.
+                    if kind == "trend":
+                        parent_sugg = await _suggest_parent(user_id, tid, thesis)
+                        if parent_sugg:
+                            thesis["parent_suggestion"] = parent_sugg
             else:
                 thesis["id"] = None
             await db.thesis_jobs.update_one(
@@ -704,7 +747,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         uid = user["user_id"]
         trend_docs = await db.theses.find(
             {"user_id": uid, "type": "trend"},
-            {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "tam": 1,
+            {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "parent_id": 1, "tam": 1,
              "value_chain": 1, "companies": 1, "created_at": 1},
         ).sort("created_at", -1).to_list(length=1000)
         company_docs = await db.theses.find(
@@ -740,6 +783,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         trends: List[Dict[str, Any]] = []
         comp_agg: Dict[str, Dict[str, Any]] = {}
+        trend_id_set = {t.get("id") for t in trend_docs}
         for t in trend_docs:
             stage_tam: Dict[str, Any] = {}
             for s in (t.get("value_chain") or []):
@@ -767,6 +811,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                                         "overall_score": overall, "tam_score": tam_score})
             trends.append({
                 "id": t.get("id"), "title": t.get("title"), "folder_id": t.get("folder_id"),
+                "parent_id": t.get("parent_id"),
+                "is_child": bool(t.get("parent_id") and t.get("parent_id") in trend_id_set),
                 "tam_busd": (t.get("tam") or {}).get("global_busd"),
                 "company_count": len(clist), "companies": clist,
             })
@@ -784,10 +830,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         folder_out = []
         for f in folders:
             contained = [tr for tr in trends if tr["folder_id"] == f.get("id")]
-            ftam = sum((tr["tam_busd"] or 0) for tr in contained)
+            ftam = aggregate_folder_tam(contained)  # excludes nested children (no double-counting)
             folder_out.append({
                 "id": f.get("id"), "name": f.get("name"),
-                "tam_busd": round(ftam, 1) if ftam else None,
+                "tam_busd": ftam,
                 "trend_ids": [tr["id"] for tr in contained],
                 "trend_count": len(contained),
             })
@@ -842,6 +888,27 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
         return {"ok": True, "folder_id": req.folder_id}
+
+    @router.put("/{thesis_id}/parent")
+    async def assign_parent(thesis_id: str, req: AssignParentRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Nest a thesis under a broader 'mother' thesis (or clear it). A child's TAM is
+        excluded from megatrend aggregates so overlapping markets aren't double-counted."""
+        uid = user["user_id"]
+        thesis = await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0, "id": 1})
+        if not thesis:
+            raise HTTPException(status_code=404, detail="Tesis no encontrada")
+        pid = (req.parent_id or "").strip() or None
+        if pid:
+            if pid == thesis_id:
+                raise HTTPException(status_code=400, detail="Una tesis no puede ser su propia madre")
+            parent = await db.theses.find_one(
+                {"id": pid, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "parent_id": 1})
+            if not parent:
+                raise HTTPException(status_code=404, detail="Tesis madre no encontrada")
+            if parent.get("parent_id") == thesis_id:
+                raise HTTPException(status_code=400, detail="Relación circular: esa tesis ya es hija de esta")
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"parent_id": pid}})
+        return {"ok": True, "parent_id": pid}
 
     @router.post("/{thesis_id}/link-suggestions")
     async def link_suggestions(thesis_id: str, refresh: bool = False, user: Dict[str, Any] = Depends(auth_required)):

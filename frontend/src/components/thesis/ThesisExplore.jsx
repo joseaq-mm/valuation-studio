@@ -16,9 +16,10 @@ const fmtTam = (b) => (b == null ? null : b >= 1000 ? `$${(b / 1000).toFixed(1)}
 function buildItems(view, path, dash) {
     const folders = dash?.folders || [], trends = dash?.trends || [], companies = dash?.companies || [];
     const trendItems = (list) => list.map((t) => ({
-        type: "trend", id: t.id, name: t.title,
+        type: "trend", id: t.id, name: t.is_child ? `↳ ${t.title}` : t.title,
         value: t.tam_busd > 0 ? t.tam_busd : Math.max(t.company_count, 1),
-        metric: t.tam_busd, sub: `${t.company_count} emp.`, badge: fmtTam(t.tam_busd),
+        metric: t.tam_busd, sub: `${t.company_count} emp.`,
+        badge: t.is_child ? "sub-tesis" : fmtTam(t.tam_busd),
     }));
     const companiesOfTrend = (entry) => {
         const t = trends.find((x) => x.id === entry.id);
@@ -191,6 +192,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
             </div>
             <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
                 El tamaño de cada cuadrado es proporcional a {view === "megatrends" || view === "trends" ? "su TAM (potencial de mercado)" : view === "companies_score" ? "su score global medio" : "la suma de sus TAM Scores"}, relativo al resto. El color va de verde (alto) a rojo (bajo).
+                {(view === "megatrends" || view === "trends") && <> El TAM de una <strong>sub-tesis</strong> (↳) no se suma al de su megatendencia para evitar el doble conteo.</>}
             </p>
         </div>
     );

@@ -1,0 +1,41 @@
+{
+  "summary": "Frontend-only E2E validation of TAM hierarchy (parent-child nesting) feature on /thesis. All 4 deterministic flows pass: sidebar parent <select> nesting + toast + note, megatrend folder TAM aggregation excluding child, undo/redo of nesting, and caption mentioning sub-tesis exclusion. Backend was already verified by main agent; UI integration verified end-to-end via Playwright on the live preview URL with the seeded test_profile_user_123 session.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "sidebar_manual_nesting": {
+      "status": "PASS",
+      "details": "Parent <select data-testid=sidebar-trend-parent-thesis_test_robot> shown with option '↳ sub-tesis de: IA y centros de datos'. After selecting, PUT /api/thesis/{id}/parent fires, toast 'Sub-tesis independizada' (on clear) / nesting toast on assign, note rendered with exact text '↳ sub-tesis de «IA y centros de datos» · TAM no sumado' via data-testid sidebar-trend-parent-note-thesis_test_robot. Clearing to 'Sin madre (TAM propio)' removes the note (count=0)."
+    },
+    "treemap_tam_aggregation": {
+      "status": "PASS",
+      "details": "Megatendencias view, folder 'IA & Cómputo' (folder_tam_test) badge: BEFORE nesting = '$1.1T' (1150B = 700 + 450, rendered as $1.1T per fmtTam threshold >=1000 → T). AFTER nesting robot under aidc + refresh-data-btn click = '$700B'. In Tesis view, the child cell shows text '↳ Robótica e IA física' with 'sub-tesis' badge (data-testid explore-cell-trend-thesis_test_robot)."
+    },
+    "undo_redo": {
+      "status": "PASS",
+      "details": "Header undo-btn reverts nesting (folder badge back to $1.1T, sidebar note removed). Redo-btn re-applies (folder badge back to $700B). Both buttons fully integrated with assign_parent action type."
+    },
+    "caption": {
+      "status": "PASS",
+      "details": "explore-caption in Megatendencias and Tesis views contains exact string: 'El TAM de una sub-tesis (↳) no se suma al de su megatendencia para evitar el doble conteo.'"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor (non-blocking): React hydration warning logged in console ('<span> cannot be a child of <option>') caused by the build-time JSX source-map instrumentation injecting <span x-component> wrappers inside <option> children in ThesisSidebar.jsx parent <select>. It is purely a dev-instrumentation issue (does not affect functionality), but it spams the console on every render of TrendRow. Consider mapping options to plain text strings (already plain strings here) — the wrappers are auto-injected by the toolchain, so this may need a JSX instrumentation exclusion or wrapping the dynamic title in a comment expression to suppress.",
+    "Good: data-testid coverage is excellent on sidebar-trend-parent-<id>, sidebar-trend-parent-note-<id>, explore-cell-folder-<id>, explore-cell-trend-<id>, undo-btn/redo-btn/refresh-data-btn — easy automated testing.",
+    "Note: After nesting via sidebar, the central treemap requires a manual click on refresh-data-btn to re-fetch dashboard (the parent assignment does not auto-refresh the folder TAM in the treemap). This is documented in the request but a UX consideration — consider auto-refreshing the dashboard slice on a successful parent assignment to avoid the user having to manually refresh."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 on preview host; user_id=test_profile_user_123",
+  "seed_data_creation": "Re-asserted deterministic seed via direct Mongo upsert: folder_tam_test 'IA & Cómputo' with thesis_test_aidc (tam_busd=700, parent_id=None) and thesis_test_robot (tam_busd=450, parent_id=None). After tests, parent was cleared back to None for next runs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "TAM hierarchy feature is fully working end-to-end. The seed state was restored to independent (parent_id=None on both) after testing. If retesting, the badge value rendering uses fmtTam: >=1000 → $X.XT, >=10 → $XXB. 1150 → $1.1T, 700 → $700B. Treemap requires manual refresh-data-btn click after parent assignment to reflect new folder TAM."
+}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
+import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw, GitBranch } from "lucide-react";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
@@ -57,7 +57,8 @@ function CompanyTrendsDropdown({ company }) {
     );
 }
 
-function TrendRow({ t, folders, onAssignFolder, onRemove }) {
+function TrendRow({ t, folders, trends, onAssignFolder, onAssignParent, onRemove }) {
+    const parent = t.parent_id ? trends.find((x) => x.id === t.parent_id) : null;
     return (
         <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4] group" data-testid={`sidebar-trend-${t.id}`}>
             <div className="flex items-center gap-1.5">
@@ -82,6 +83,27 @@ function TrendRow({ t, folders, onAssignFolder, onRemove }) {
             <Link to={`/thesis/${t.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-trend-title-${t.id}`}>
                 {t.title}
             </Link>
+            {/* TAM hierarchy: nest this thesis under a broader 'mother' so its TAM isn't
+                double-counted in the megatrend aggregate. */}
+            <div className="flex items-center gap-1 mt-1">
+                <GitBranch size={10} className="text-[#4A4A4A] shrink-0" title="Sub-tesis de (jerarquía TAM)" />
+                <select
+                    value={t.parent_id || ""}
+                    onChange={(e) => onAssignParent(t.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`flex-1 min-w-0 border px-1 py-0.5 text-[10px] outline-none cursor-pointer ${t.is_child ? "border-[#B8860B] bg-[#FBF3E0] text-[#7a5a10]" : "border-black/20 bg-white"}`}
+                    title="Anidar como sub-tesis de otra (su TAM no se sumará al de su megatendencia)"
+                    data-testid={`sidebar-trend-parent-${t.id}`}
+                >
+                    <option value="">— Sin madre (TAM propio) —</option>
+                    {trends.filter((o) => o.id !== t.id).map((o) => <option key={o.id} value={o.id}>↳ sub-tesis de: {o.title}</option>)}
+                </select>
+            </div>
+            {parent && (
+                <div className="mt-0.5 text-[10px] text-[#7a5a10] truncate" title={`Su TAM se absorbe en «${parent.title}»`} data-testid={`sidebar-trend-parent-note-${t.id}`}>
+                    ↳ sub-tesis de «{parent.title}» · TAM no sumado
+                </div>
+            )}
         </div>
     );
 }
@@ -109,7 +131,7 @@ function CompanyRow({ c, onRemove }) {
 
 export default function ThesisSidebar({
     trends = [], companyTheses = [], folders = [],
-    onAssignFolder, onRemoveThesis,
+    onAssignFolder, onAssignParent, onRemoveThesis,
     radarEnabled, onToggleRadar,
     refreshEnabled, onToggleRefresh,
 }) {
@@ -164,7 +186,7 @@ export default function ThesisSidebar({
             <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-0.5" data-testid="sidebar-list">
                 {items.length === 0 && <div className="text-xs text-[#4A4A4A]">Aún no hay tesis ni empresas guardadas.</div>}
                 {trends.map((t) => (
-                    <TrendRow key={`t-${t.id}`} t={t} folders={folders} onAssignFolder={onAssignFolder} onRemove={onRemoveThesis} />
+                    <TrendRow key={`t-${t.id}`} t={t} folders={folders} trends={trends} onAssignFolder={onAssignFolder} onAssignParent={onAssignParent} onRemove={onRemoveThesis} />
                 ))}
                 {companyTheses.map((c) => (
                     <CompanyRow key={`c-${c.id}`} c={c} onRemove={onRemoveThesis} />

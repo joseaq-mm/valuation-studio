@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
@@ -480,14 +480,18 @@ function MatchedThesisRow({ match, company, fit, onAdded }) {
     );
 }
 
-export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated }) {
+export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onNest }) {
     const [tamScores, setTamScores] = useState(null);
     const [tamLoading, setTamLoading] = useState(false);
     const [linkData, setLinkData] = useState(null);
     const [linkLoading, setLinkLoading] = useState(false);
     const [mutateTick, setMutateTick] = useState(0);
+    const [parentDismissed, setParentDismissed] = useState(false);
 
     const isTrend = thesis?.type === "trend";
+
+    // Reset the "nest under mother" banner dismissal when a new thesis loads.
+    useEffect(() => { setParentDismissed(false); }, [thesis?.id]);
 
     useEffect(() => {
         if (!thesis || thesis.type !== "trend") { setTamScores(null); return; }
@@ -639,6 +643,36 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             : "otra tesis que encaja"}.{" "}
                         Se {thesis.omitted_companies.length > 1 ? "han" : "ha"} omitido para no duplicar su valor.
                     </span>
+                </div>
+            )}
+
+            {/* TAM hierarchy: this new thesis looks like a sub-segment of a broader one.
+                Offer to nest it (manual confirm) so its TAM isn't double-counted. */}
+            {isTrend && thesis.parent_suggestion && !parentDismissed && (
+                <div className="border border-[#B8860B] bg-[#FBF3E0] px-4 py-3 mb-6" data-testid="parent-suggestion">
+                    <div className="flex items-start gap-2 text-sm text-[#7a5a10] leading-relaxed">
+                        <GitBranch size={16} className="shrink-0 mt-0.5" />
+                        <span>
+                            Esta tesis parece un <strong>sub-segmento</strong> de{" "}
+                            {thesis.parent_suggestion.thesis_id
+                                ? <Link to={`/thesis/${thesis.parent_suggestion.thesis_id}`} className="font-bold underline" data-testid="parent-suggestion-link">{thesis.parent_suggestion.title}</Link>
+                                : <strong>{thesis.parent_suggestion.title}</strong>}.{" "}
+                            {thesis.parent_suggestion.reason}{" "}
+                            Para evitar el <strong>doble conteo del TAM</strong>, puedes anidarla como sub-tesis: su TAM dejará de sumarse al de su megatendencia (contará solo el de la madre).
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <button
+                            onClick={() => onNest?.(thesis.parent_suggestion.thesis_id)}
+                            className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors flex items-center gap-1.5"
+                            data-testid="parent-nest-btn"
+                        >
+                            <GitBranch size={13} /> Anidar como sub-tesis
+                        </button>
+                        <button onClick={() => setParentDismissed(true)} className="text-xs text-[#7a5a10] hover:underline" data-testid="parent-dismiss-btn">
+                            Mantener separada
+                        </button>
+                    </div>
                 </div>
             )}
 
