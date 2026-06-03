@@ -18,6 +18,10 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Empresa→Tesis · descomposición granular por DOBLE PASADA (Jun 2026, e2e LLM real NVDA+DDOG):**
+  - Problema detectado por el usuario: la granularidad era inconsistente (a veces 3 segmentos amplios, a veces 6 finos) porque era una *preferencia blanda* del prompt, no un mecanismo. El usuario eligió la opción **B (doble pasada determinista)** para no depender de un umbral fijo.
+  - Implementación en `run_company_thesis`: **Pass 1** `_identify_business_areas` (GPT-5.2) identifica las grandes áreas de negocio ganadoras; **Pass 2** `_decompose_areas` (GPT-5.2) OBLIGA a dividir cada área en sus sub-segmentos más granulares con entidad propia (cualitativa + TAM propio); luego el **Synthesizer** (Claude) puntúa. Cada sub-segmento lleva `area` + `tam_busd`. Fallback a áreas si Pass 2 vuelve vacío. ~3 llamadas LLM, en background (~50s).
+  - Verificado: NVDA → 2 áreas → 4 sub-segmentos ($420B/$85B/$75B/$45B); DDOG → 2 áreas → 7 sub-segmentos pequeños ($6-18B). Granularidad ahora consistente (cada área se descompone siempre).
 - **✅ Empresa→Tesis: descomposición en SEGMENTOS DE NEGOCIO granulares (Jun 2026, e2e LLM real NVDA + screenshot):**
   - Reformulación pedida por el usuario: en lugar de proponer megatendencias amplias (y gestionar solapamientos), la IA **descompone el negocio de la empresa en los segmentos más GRANULARES** que tienen entidad propia, tanto **cualitativa** (apuesta estratégica ganadora con tracción) como **cuantitativa** (TAM propio significativo), y los propone por separado.
   - Regla de granularidad (clave): prefiere SIEMPRE el nivel más fino — si "Infraestructura de IA" (~850B) se descompone en 4-5 sub-segmentos (~150-200B cada uno) que califican por separado, propone los sub-segmentos, NO el amplio. Nunca propone a la vez un segmento y sus sub-segmentos. El nº de segmentos depende de la empresa: 1-2 en pequeñas/pure-play de pocos B, 4-8 en grandes diversificadas; sin número fijo.

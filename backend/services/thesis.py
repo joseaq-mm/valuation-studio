@@ -471,62 +471,115 @@ async def run_news_watch(trend_titles: list) -> dict:
     return {"important": out}
 
 
-# ---------------------- Flow B: Company → trends ----------------------
+# ---------------------- Flow B: Company → trends (two-pass) ----------------------
+# Pass 1 identifies the company's broad WINNING business areas; Pass 2 forces each
+# area down a level into its most granular self-standing sub-segments. The forced
+# second pass guarantees fine granularity without relying on a fixed TAM threshold.
 
-INVESTIGATOR_COMPANY_SYS = (
+AREAS_INVESTIGATOR_SYS = (
     "Eres un analista de equity research senior. Recibes resultados REALES de búsqueda web reciente "
-    "sobre una empresa cotizada. Tu objetivo es DESCOMPONER su negocio en los SEGMENTOS DE NEGOCIO / "
-    "APUESTAS más GRANULARES que, POR SÍ MISMOS, tengan ENTIDAD como tesis de inversión independiente. "
-    "Cada segmento debe cumplir DOS condiciones: "
-    "(1) ENTIDAD CUALITATIVA: es una apuesta GANADORA de la empresa — tendencia estructuralmente "
-    "favorable + apuesta estratégica explícita (producto, inversión, adquisición, alianza) + "
-    "RESULTADO/tracción observable (crecimiento de ingresos, clientes, reservas o cuota en esa área). "
-    "(2) ENTIDAD CUANTITATIVA: tiene un mercado direccionable (TAM) PROPIO y significativo, suficiente "
-    "para sostener una tesis por sí solo. "
-    "REGLA DE GRANULARIDAD (CLAVE): prefiere SIEMPRE la descomposición MÁS FINA. Si un segmento amplio "
-    "(p.ej. 'Infraestructura de IA', TAM ~850B) puede dividirse en 4-5 sub-segmentos que cada uno cumple "
-    "las dos condiciones (p.ej. cómputo de entrenamiento, redes/interconexión, aceleración de inferencia, "
-    "sistemas/servidores, plataforma de software — cada uno ~150-200B), propón los SUB-SEGMENTOS, NO el "
-    "amplio. Elige el segmento de negocio MÁS PEQUEÑO que aún pueda desarrollarse como tesis propia. NUNCA "
-    "propongas a la vez un segmento y sus sub-segmentos: baja siempre al nivel más fino para que no se "
-    "solapen. "
-    "El NÚMERO de segmentos DEPENDE de la empresa: una gran diversificada puede dar 4-8; una pequeña / "
-    "pure-play quizá solo 1-2 de pocos miles de millones. No fuerces un número fijo. Descarta segmentos "
-    "tangenciales, genéricos o sin tracción/TAM propio. Confirma el TICKER canónico (formato Yahoo Finance). "
+    "sobre una empresa cotizada. Tu tarea (PASO 1 de 2) es identificar las GRANDES ÁREAS DE NEGOCIO "
+    "GANADORAS de la empresa: áreas donde (a) la tendencia es estructuralmente favorable, (b) la empresa "
+    "hace una APUESTA ESTRATÉGICA explícita (producto, inversión, adquisición, alianza) y (c) YA se "
+    "observa RESULTADO/tracción (ingresos, clientes, reservas o cuota). Identifica las áreas AMPLIAS (sin "
+    "descomponer todavía; eso es el paso 2). Descarta áreas tangenciales, genéricas o sin tracción. "
+    "Confirma el TICKER canónico exacto (formato Yahoo Finance). "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+SEGMENT_DECOMPOSER_SYS = (
+    "Eres un analista de equity research senior especializado en descomponer negocios en sus partes "
+    "invertibles. Recibes una empresa, sus GRANDES ÁREAS DE NEGOCIO ganadoras y resultados REALES de "
+    "búsqueda web. Tu tarea (PASO 2 de 2) es DESCOMPONER CADA área en sus SUB-SEGMENTOS más GRANULARES "
+    "que tengan ENTIDAD PROPIA como tesis de inversión independiente, cumpliendo DOS condiciones: "
+    "(1) CUALITATIVA: apuesta estratégica ganadora con tracción observable a ESE nivel granular; "
+    "(2) CUANTITATIVA: un mercado direccionable (TAM) PROPIO y significativo, suficiente para sostener "
+    "una tesis por sí solo. OBLIGATORIO: baja SIEMPRE un nivel — divide cada área en sus sub-segmentos. "
+    "Deja un área como un ÚNICO segmento SOLO si de verdad no admite sub-segmentos invertibles distintos. "
+    "NUNCA devuelvas a la vez un área amplia Y sus sub-segmentos: si la divides, incluye SOLO los "
+    "sub-segmentos. Descarta sub-segmentos sin tracción o sin TAM propio. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
 
-async def run_company_thesis(company: str, sources: list) -> dict:
-    sources_block = _sources_block(sources)
-    inv_user = (
+async def _identify_business_areas(company: str, sources_block: str) -> dict:
+    """Pass 1 (GPT-5.2): the company's broad winning business areas."""
+    user = (
         f"EMPRESA A ANALIZAR (nombre o ticker): {company}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
-        "Descompón el negocio en sus segmentos GANADORES más GRANULARES con entidad propia. "
+        "Identifica las GRANDES ÁREAS DE NEGOCIO GANADORAS (amplias; NO las descompongas todavía). "
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "company": {"name": "Nombre oficial", "ticker": "TICKER"},\n'
-        '  "summary": "2-3 frases sobre el negocio y, en concreto, sus apuestas estratégicas recientes y la tracción observada",\n'
-        '  "trends": [{"name": "segmento de negocio específico y granular", "fit_description": "la APUESTA ESTRATÉGICA concreta de la empresa en ese segmento y el RESULTADO/tracción observado (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol/posición en la cadena de valor de ese segmento", "tam_busd": 0}]\n'
+        '  "summary": "2-3 frases sobre el negocio y sus apuestas estratégicas recientes con tracción",\n'
+        '  "areas": [{"name": "área de negocio amplia", "description": "qué es y por qué es ganadora: la apuesta estratégica concreta y la tracción/resultado observado"}]\n'
+        "}\n"
+        "Incluye SOLO áreas ganadoras reales con evidencia reciente. Para una empresa cotizada real, "
+        "devuelve AL MENOS 1 área (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
+    )
+    inv = {}
+    for attempt in range(2):  # retry once on a transient empty result
+        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-areas-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                         AREAS_INVESTIGATOR_SYS, user)
+        inv = _extract_json(raw)
+        if inv.get("areas"):
+            break
+    return inv
+
+
+async def _decompose_areas(company: str, areas: list, sources_block: str) -> list:
+    """Pass 2 (GPT-5.2): force each broad area down into its most granular self-standing
+    sub-segments, each with its own TAM. Returns the flat list of sub-segments."""
+    areas_block = "\n".join(
+        f"- {a.get('name')}: {a.get('description') or ''}" for a in areas if a.get("name")
+    ) or "(ninguna)"
+    user = (
+        f"EMPRESA: {company}\n\nGRANDES ÁREAS DE NEGOCIO GANADORAS:\n{areas_block}\n\n"
+        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
+        "DESCOMPÓN CADA área en sus SUB-SEGMENTOS más granulares con entidad propia (cualitativa y "
+        "cuantitativa). Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "trends": [{"name": "sub-segmento granular y específico", "area": "nombre EXACTO del área de la que proviene", "fit_description": "la APUESTA ESTRATÉGICA concreta y el RESULTADO/tracción a ESTE nivel granular (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0}]\n'
         "}\n"
         "REGLAS:\n"
-        "- 'tam_busd' es el TAM PROPIO del segmento en miles de millones de USD (2027e). Debe ser un mercado significativo por sí mismo.\n"
-        "- Aplica la REGLA DE GRANULARIDAD: baja siempre al sub-segmento más fino que aún tenga entidad como tesis (no incluyas el amplio si lo has descompuesto).\n"
-        "- Incluye SOLO segmentos GANADORES con apuesta estratégica y tracción observable. El número depende de la empresa (1-2 en empresas pequeñas, 4-8 en grandes diversificadas; sin número fijo).\n"
-        "- Ordénalos por fuerza del encaje/evidencia. Para una empresa cotizada real, devuelve AL MENOS 1 segmento (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
+        "- 'tam_busd' = TAM PROPIO del sub-segmento en miles de millones de USD (2027e), un mercado significativo por sí mismo.\n"
+        "- OBLIGATORIO: divide cada área en sus sub-segmentos; deja un área como un único segmento SOLO si no admite sub-segmentos invertibles distintos.\n"
+        "- NUNCA incluyas el área amplia Y sus sub-segmentos a la vez: si la divides, devuelve solo los sub-segmentos.\n"
+        "- Descarta sub-segmentos sin tracción o sin TAM propio. Ordénalos por fuerza del encaje/evidencia."
     )
-    trends, inv = [], {}
-    for attempt in range(2):  # retry once: a strict/transient miss can return zero trends for a real company
-        inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-co-{attempt}-{datetime.now(timezone.utc).timestamp()}",
-                             INVESTIGATOR_COMPANY_SYS, inv_user)
-        inv = _extract_json(inv_raw)
-        trends = inv.get("trends") or []
+    trends = []
+    for attempt in range(2):  # retry once on a transient empty result
+        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-decomp-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                         SEGMENT_DECOMPOSER_SYS, user)
+        data = _extract_json(raw)
+        trends = data.get("trends") or []
         if trends:
             break
-    if not trends:
-        raise ValueError("El investigador no pudo identificar tendencias para esta empresa. Revisa el nombre o ticker.")
+    return trends
 
+
+async def run_company_thesis(company: str, sources: list) -> dict:
+    sources_block = _sources_block(sources)
+
+    # Pass 1: broad winning business areas.
+    inv = await _identify_business_areas(company, sources_block)
+    areas = inv.get("areas") or []
+    if not areas:
+        raise ValueError("El investigador no pudo identificar áreas de negocio para esta empresa. Revisa el nombre o ticker.")
     comp = inv.get("company") or {}
+
+    # Pass 2: force each area down into its most granular self-standing sub-segments.
+    trends = await _decompose_areas(comp.get("name") or company, areas, sources_block)
+    if not trends:
+        # Fallback: if the decomposer returned nothing, use the broad areas as segments
+        # so the user still gets a result (no fixed-threshold logic needed).
+        trends = [{
+            "name": a.get("name"), "area": a.get("name"),
+            "fit_description": a.get("description"),
+            "value_chain_role": None, "tam_busd": None,
+        } for a in areas if a.get("name")]
+
+    # Pass 3: qualitative scoring of the granular sub-segments.
     syn = await _synthesize_company_trends(comp.get("name") or company, trends)
     syn_trends = syn.get("trends") or []
     aligned = _align_syn_trends(trends, syn_trends)
@@ -535,6 +588,7 @@ async def run_company_thesis(company: str, sources: list) -> dict:
     for t, s in zip(trends, aligned):
         merged.append({
             "name": t.get("name"),
+            "area": t.get("area"),
             "fit_description": t.get("fit_description"),
             "value_chain_role": t.get("value_chain_role"),
             "relevance_score": _clamp_score(s.get("relevance_score")),
