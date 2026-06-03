@@ -527,8 +527,36 @@ async def run_company_thesis(company: str, sources: list) -> dict:
             "relevance_score": _clamp_score(s.get("relevance_score")),
             "win_probability": _clamp10(s.get("win_probability")),
             "rationale": s.get("rationale"),
+            "tam_busd": _busd(s.get("tam_busd")),
         })
     merged.sort(key=lambda x: (x["relevance_score"] is None, -(x["relevance_score"] or 0)))
+
+    # Mutually-exclusive TAM: the synthesizer flags trends whose markets OVERLAP (one
+    # is a sub-market of another). We group them so the UI poses the disjunctive
+    # (develop the broad OR the specific, never both) — the company's proposed theses
+    # are TAM-exclusive by construction, no manual parent-child cleanup needed later.
+    names = [m.get("name") for m in merged]
+    overlap_groups = []
+    for g in (syn.get("overlap_groups") or []):
+        members = [_resolve_trend_name(x, names) for x in (g.get("members") or [])]
+        members = [m for m in dict.fromkeys(members) if m]
+        if len(members) >= 2:
+            broadest = _resolve_trend_name(g.get("broadest"), names) or members[0]
+            overlap_groups.append({
+                "note": (g.get("note") or "").strip(),
+                "members": members,
+                "broadest": broadest,
+            })
+    gi_by_name = {}
+    for gi, g in enumerate(overlap_groups):
+        for m in g["members"]:
+            gi_by_name[m.strip().lower()] = gi
+    for m in merged:
+        nm = (m.get("name") or "").strip().lower()
+        gi = gi_by_name.get(nm)
+        m["overlap_group"] = gi
+        if gi is not None:
+            m["is_broadest"] = (overlap_groups[gi]["broadest"].strip().lower() == nm)
 
     overall_relevance = _clamp_score(syn.get("overall_relevance"))
     relevance_unavailable = overall_relevance is None and not any(
@@ -545,6 +573,7 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "probability_rationale": syn.get("overall_probability_rationale"),
         "trends": merged,
         "overall_relevance": overall_relevance,
+        "overlap_groups": overlap_groups,
         "flags": {"relevance_unavailable": relevance_unavailable},
         "contra": None,
         "sources": sources,
@@ -560,7 +589,13 @@ SYNTHESIZER_COMPANY_SYS = (
     "estructuralmente ganadora / con momentum, con una justificación breve que explique cómo la "
     "empresa está AUMENTANDO su participación y la evidencia concreta. También das un score global de "
     "relevancia temática y estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista temática "
-    "GANADORA se materialice, con una justificación breve. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "GANADORA se materialice, con una justificación breve. "
+    "ADEMÁS, para cada tendencia estimas su TAM global aproximado en MILES DE MILLONES DE USD (a 2027, "
+    "base TTM) y detectas SOLAPAMIENTOS de mercado entre las tendencias propuestas: cuando el mercado "
+    "de una tendencia está CONTENIDO en el de otra (madre-hija, p.ej. 'Inferencia en la nube' dentro de "
+    "'Centros de datos de IA') o dos se solapan fuertemente, las AGRUPAS para que el usuario desarrolle "
+    "SOLO UNA por grupo y sus TAM no se dupliquen. Sé exigente: agrupa solo solapamientos reales de "
+    "mercado, no temas hermanos distintos. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
@@ -609,9 +644,12 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
         '  "overall_relevance": 0-100,\n'
         '  "overall_probability": 0-10,\n'
         '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática ganadora",\n'
-        '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "win_probability": 0-10, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}]\n'
+        '  "trends": [{"name": "misma tendencia", "tam_busd": 0, "relevance_score": 0-100, "win_probability": 0-10, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}],\n'
+        '  "overlap_groups": [{"note": "1 frase: por qué se solapan en mercado y la disyuntiva", "members": ["COPIA EXACTA de los nombres de las tendencias que se solapan"], "broadest": "nombre EXACTO de la tendencia MÁS AMPLIA (la madre que contiene a las demás)"}]\n'
         "}\n"
-        "Incluye TODAS las tendencias con su mismo nombre."
+        "REGLAS: 'tam_busd' es un número en miles de millones de USD. Incluye TODAS las tendencias con su mismo nombre. "
+        "Pon tendencias en 'overlap_groups' SOLO si el mercado de una está realmente contenido o se solapa fuertemente con otra; "
+        "si todas son independientes (TAM excluyente), devuelve overlap_groups como lista VACÍA. Una tendencia puede estar en como máximo un grupo."
     )
     data = {}
     for attempt in range(2):  # retry once: a transient parse/LLM miss left relevance blank
