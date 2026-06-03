@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
@@ -602,6 +602,24 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </div>
                 {thesis.summary && <p className="text-base mt-4 leading-relaxed text-[#1a1a1a]">{thesis.summary}</p>}
             </div>
+
+            {!isTrend && thesis.no_changes && (
+                <div className="border border-[#052049]/40 bg-[#EAF0F7] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#052049]" data-testid="no-changes-note">
+                    <ShieldAlert size={14} className="shrink-0 mt-0.5" />
+                    <span>Sin novedades relevantes: hemos vuelto a analizar la empresa y no hay cambios significativos respecto a tu tesis guardada, así que la <strong>conservamos</strong> tal cual.</span>
+                </div>
+            )}
+
+            {!isTrend && thesis.changes?.length > 0 && (
+                <div className="border border-[#1E7D45]/40 bg-[#E8F3EC] px-4 py-3 mb-6 text-xs text-[#13532f]" data-testid="changes-note">
+                    <div className="font-semibold flex items-center gap-2 mb-1.5">
+                        <RefreshCw size={13} /> Tesis actualizada · {thesis.changes.length} cambio{thesis.changes.length > 1 ? "s" : ""} detectado{thesis.changes.length > 1 ? "s" : ""}
+                    </div>
+                    <ul className="list-disc pl-5 space-y-0.5">
+                        {thesis.changes.map((c, i) => (<li key={i}>{c}</li>))}
+                    </ul>
+                </div>
+            )}
 
             {!isTrend && thesis.flags?.relevance_unavailable && (
                 <div className="border border-[#B8860B]/50 bg-[#FBF3E0] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#7a5a10]" data-testid="relevance-unavailable-note">

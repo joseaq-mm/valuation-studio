@@ -28,6 +28,61 @@ logger = logging.getLogger(__name__)
 _BG_TASKS: set = set()
 
 
+def _fmt_val(v):
+    return v if v is not None else "—"
+
+
+def _score_far(a, b, tol):
+    """True if two scores differ by more than `tol` (or one is missing and not both)."""
+    if a is None and b is None:
+        return False
+    if a is None or b is None:
+        return True
+    try:
+        return abs(float(a) - float(b)) > tol
+    except (TypeError, ValueError):
+        return a != b
+
+
+def _company_thesis_changes(old: dict, new: dict) -> list:
+    """Human-readable changes (Spanish) between a saved company thesis and a freshly
+    regenerated one. Trends are paired by token overlap (Jaccard ≥ 0.5) so a reworded
+    name isn't seen as new+removed. Empty list = practically identical (no novelty)."""
+    changes = []
+    if _score_far(old.get("overall_relevance"), new.get("overall_relevance"), 6):
+        changes.append(f"Relevancia temática global: {_fmt_val(old.get('overall_relevance'))} → {_fmt_val(new.get('overall_relevance'))}")
+    if _score_far(old.get("probability"), new.get("probability"), 1):
+        changes.append(f"Probabilidad de la tesis: {_fmt_val(old.get('probability'))} → {_fmt_val(new.get('probability'))}")
+    old_tr = list(old.get("trends") or [])
+    new_tr = list(new.get("trends") or [])
+    used = set()
+    for nt in new_tr:
+        na = set((nt.get("name") or "").lower().split())
+        best_j, best_score = None, 0.0
+        for j, ot in enumerate(old_tr):
+            if j in used:
+                continue
+            ob = set((ot.get("name") or "").lower().split())
+            union = len(na | ob)
+            score = (len(na & ob) / union) if union else 0.0
+            if score > best_score:
+                best_j, best_score = j, score
+        if best_j is not None and best_score >= 0.5:
+            used.add(best_j)
+            ot = old_tr[best_j]
+            name = nt.get("name")
+            if _score_far(ot.get("relevance_score"), nt.get("relevance_score"), 6):
+                changes.append(f"Relevancia de «{name}»: {_fmt_val(ot.get('relevance_score'))} → {_fmt_val(nt.get('relevance_score'))}")
+            if _score_far(ot.get("win_probability"), nt.get("win_probability"), 1):
+                changes.append(f"Probabilidad ganadora de «{name}»: {_fmt_val(ot.get('win_probability'))} → {_fmt_val(nt.get('win_probability'))}")
+        else:
+            changes.append(f"Nueva tendencia: {nt.get('name')}")
+    for j, ot in enumerate(old_tr):
+        if j not in used:
+            changes.append(f"Tendencia eliminada: {ot.get('name')}")
+    return changes
+
+
 def _spawn(coro):
     task = asyncio.create_task(coro)
     _BG_TASKS.add(task)
@@ -266,10 +321,25 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 existing = None
                 if overwrite_thesis_id:
                     existing = await db.theses.find_one(
-                        {"id": overwrite_thesis_id, "user_id": user_id}, {"_id": 0, "id": 1}
+                        {"id": overwrite_thesis_id, "user_id": user_id}, {"_id": 0}
                     )
                 if existing:
                     tid = existing["id"]
+                    # Novelty check (company regen): if the new analysis is practically
+                    # identical to the saved one, KEEP the existing thesis and inform the
+                    # user instead of overwriting with the same content.
+                    changes = _company_thesis_changes(existing, thesis) if kind == "company" else None
+                    if changes is not None and not changes:
+                        kept = {k: v for k, v in existing.items() if k != "user_id"}
+                        kept["id"] = tid
+                        kept["saved"] = True
+                        kept["no_changes"] = True
+                        await db.thesis_jobs.update_one(
+                            {"id": job_id},
+                            {"$set": {"status": "done", "result": kept,
+                                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+                        )
+                        return
                     await db.theses.update_one(
                         {"id": tid, "user_id": user_id},
                         {"$set": {**thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -277,6 +347,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     await _persist_qual_snapshots(user_id, tid, thesis)
                     thesis["id"] = tid
                     thesis["saved"] = True
+                    if changes:
+                        thesis["changes"] = changes  # result-only (not persisted)
                 else:
                     tid = f"thesis_{uuid.uuid4().hex[:12]}"
                     doc = {

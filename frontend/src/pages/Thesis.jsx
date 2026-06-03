@@ -208,6 +208,8 @@ export default function Thesis() {
         try {
             const data = await thesisGenerate(t, s, matchedThesisId, opts.overwriteId || null);
             setResult(data);
+            if (data?.no_changes) toast.info("Sin novedades relevantes: conservamos tu tesis actual.");
+            else if (data?.changes?.length) toast.success(`Tesis actualizada · ${data.changes.length} cambio${data.changes.length > 1 ? "s" : ""}`);
             reload();
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar la tesis. Inténtalo de nuevo.");

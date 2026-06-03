@@ -18,6 +18,11 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Comparador de novedad al regenerar una tesis de empresa (Jun 2026, pytest 5/5 + e2e curl):**
+  - Al **regenerar** (sobrescribir) una tesis de EMPRESA, `_run_generate_job` compara la nueva con la guardada vía `_company_thesis_changes` (en `routes/thesis.py`): empareja tendencias por **solapamiento de tokens (Jaccard ≥ 0.5)** para tolerar reformulaciones, y compara relevancia global (tol ±6), probabilidad (tol ±1), relevancia y probabilidad ganadora por tendencia, más tendencias nuevas/eliminadas.
+  - **Sin novedades** (lista vacía) → NO sobrescribe; conserva la tesis guardada y devuelve `no_changes:true` → banner `no-changes-note` + toast "Sin novedades relevantes". 
+  - **Con cambios** → sobrescribe y devuelve `changes:[...]` (solo en el resultado, no se persiste) → banner verde `changes-note` con la lista + toast "Tesis actualizada · N cambios".
+  - Solo aplica a empresas (las tendencias regeneran como antes). Tests: `backend/tests/test_company_thesis_changes.py` (5/5). E2e: regen MSFT → changes [relevancia 88→95, prob →9, nuevas/eliminadas].
 - **✅ Fixes flujo Empresa→Tesis: botón Generar + regeneración sin "nada encontrado" (Jun 2026, screenshot + curl):**
   - **Problema 1 — "Generar tesis" no generaba tras el auto-cambio:** cuando el aviso de sobreescritura (`dedup-warning`) ya está visible para esa empresa, un clic en el botón principal **"Generar tesis"** ahora **confirma la sobreescritura** (mismo efecto que "Reescribir igualmente": se añade `overwriteId` y arranca la generación). Verificado por screenshot (Microsoft: tras el aviso, "Generar tesis" → "GENERANDO…", aviso desaparece).
   - **Problema 2 — regeneración devolvía "no se encontró nada":** con los prompts estrictos, el investigador podía devolver 0 tendencias para una empresa real → error. Ahora `run_company_thesis` **reintenta el investigador** y el prompt pide **AL MENOS 1 tendencia** para una empresa cotizada real (no vacío salvo que no exista/cotice). Así la regeneración produce la nueva tesis y **sobrescribe** la anterior. Verificado por curl (PATH/UiPath → 1 tendencia ganadora, overall 72). NOTA: un error de generación NO sobrescribe la tesis existente (se preserva).
