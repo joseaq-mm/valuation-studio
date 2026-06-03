@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Undo2, Redo2 } from "lucide-react";
+import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Undo2, Redo2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
     thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
@@ -36,6 +36,7 @@ export default function Thesis() {
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
 
     const folders = dash?.folders || [];
 
@@ -66,6 +67,16 @@ export default function Thesis() {
     }, [user]);
 
     useEffect(() => { reload(); }, [reload]);
+
+    const manualRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await reload();
+            toast.success("Datos actualizados");
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
     // Prefill / auto-generate from a ?company / ?trend deep link.
     const lastAutoRef = useRef(null);
@@ -294,6 +305,10 @@ export default function Thesis() {
                                 <button onClick={redo} disabled={!redoStack.length} title="Rehacer" data-testid="redo-btn"
                                         className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                     <Redo2 size={16} />
+                                </button>
+                                <button onClick={manualRefresh} disabled={refreshing} title="Actualizar datos" data-testid="refresh-data-btn"
+                                        className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
                                 </button>
                             </div>
                         )}
