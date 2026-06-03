@@ -273,7 +273,7 @@ export default function Thesis() {
         try {
             const doc = await thesisGet(id);
             await thesisDelete(id);
-            toast.success("Tesis eliminada");
+            toast.success(doc?.type === "company" ? "Empresa eliminada" : "Tesis eliminada");
             pushAction({ type: "delete_thesis", doc });
             reload();
         } catch { toast.error("No se pudo eliminar"); }
