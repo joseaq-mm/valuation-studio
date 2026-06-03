@@ -473,10 +473,15 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     const ticker = thesis?.company?.ticker;
 
     // 1.1b — existing theses the company fits but isn't a member of yet.
-    const existingMatches = useMemo(
-        () => (linkData?.to_add || []).filter((a) => !a.already_in),
-        [linkData],
-    );
+    // Dedupe by thesis_id (several company trends can map to the same thesis).
+    const existingMatches = useMemo(() => {
+        const seen = new Set();
+        return (linkData?.to_add || []).filter((a) => {
+            if (a.already_in || !a.thesis_id || seen.has(a.thesis_id)) return false;
+            seen.add(a.thesis_id);
+            return true;
+        });
+    }, [linkData]);
 
     // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
     // rich trend objects. Fallback to all themes while link data is unavailable.
