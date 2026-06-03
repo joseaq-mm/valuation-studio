@@ -492,12 +492,11 @@ SEGMENT_DECOMPOSER_SYS = (
     "REALMENTE invertibles por separado. Recibes una empresa, sus GRANDES ÁREAS DE NEGOCIO ganadoras y "
     "resultados REALES de búsqueda web. Tu tarea (PASO 2 de 2) es, para CADA área, decidir si se "
     "descompone en sub-segmentos o se mantiene como UNA sola tesis, aplicando un TEST DE ENTIDAD PROPIA. "
-    "DIVIDE un área en sub-segmentos SOLO SI cada sub-segmento resultante cumple LOS TRES criterios: "
+    "DIVIDE un área en sub-segmentos SOLO SI cada sub-segmento resultante cumple LOS DOS criterios: "
     "(1) DISTINCIÓN DE MERCADO: distinto comprador/cliente objetivo, distinto conjunto de competidores y "
     "distinta cadena de valor/go-to-market que sus hermanos; "
     "(2) MONETIZACIÓN SEPARADA: la empresa lo vende/monetiza como un negocio diferenciado, NO como un "
-    "simple módulo o feature de una plataforma unificada que se vende junta al mismo cliente; "
-    "(3) ESCALA PROPIA: tiene un TAM propio y material, suficiente para sostener una tesis por sí solo. "
+    "simple módulo o feature de una plataforma unificada que se vende junta al mismo cliente. "
     "Si los candidatos a sub-segmento son en realidad funcionalidades/módulos de una MISMA plataforma "
     "vendida como un todo al mismo cliente (p.ej. APM + logs + métricas dentro de una suite de "
     "observabilidad), NO los dividas: mantén el área como UN único segmento. "
@@ -548,10 +547,10 @@ async def _decompose_areas(company: str, areas: list, sources_block: str) -> lis
         '  "trends": [{"name": "segmento de negocio con entidad propia", "area": "nombre EXACTO del área de la que proviene", "fit_description": "la APUESTA ESTRATÉGICA concreta y el RESULTADO/tracción de este segmento (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0}]\n'
         "}\n"
         "REGLAS:\n"
-        "- 'tam_busd' = TAM PROPIO del segmento en miles de millones de USD (2027e), un mercado significativo por sí mismo.\n"
-        "- Divide un área SOLO si cada sub-segmento cumple los 3 criterios (distinción de mercado + monetización separada + escala propia). Si son módulos de una plataforma unificada vendida junta al mismo cliente, deja el área como UN segmento.\n"
+        "- 'tam_busd' = TAM estimado del segmento en miles de millones de USD (2027e). Es informativo; NO es condición para dividir.\n"
+        "- Divide un área SOLO si cada sub-segmento cumple los 2 criterios (distinción de mercado + monetización separada). Si son módulos de una plataforma unificada vendida junta al mismo cliente, deja el área como UN segmento.\n"
         "- NUNCA incluyas el área amplia Y sus sub-segmentos a la vez.\n"
-        "- Descarta segmentos sin tracción o sin TAM propio. Ordénalos por fuerza del encaje/evidencia."
+        "- Descarta segmentos sin tracción. Ordénalos por fuerza del encaje/evidencia."
     )
     trends = []
     for attempt in range(2):  # retry once on a transient empty result
