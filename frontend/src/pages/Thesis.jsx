@@ -299,22 +299,6 @@ export default function Thesis() {
                         )}
                     </div>
 
-                    {/* Megatendencias management */}
-                    {user && (
-                        <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
-                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
-                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatendencias</strong>.</p>
-                            <div className="flex gap-1 max-w-sm">
-                                <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
-                                       onKeyDown={(e) => e.key === "Enter" && createFolder()}
-                                       placeholder="Nueva megatendencia" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
-                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatendencia">
-                                    <FolderPlus size={14} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Generator */}
                     <div className="border border-black bg-white p-5 mb-6" data-testid="thesis-generator">
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
@@ -394,6 +378,22 @@ export default function Thesis() {
                             </div>
                         )}
                     </div>
+
+                    {/* Megatendencias management */}
+                    {user && (
+                        <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
+                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
+                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatendencias</strong>.</p>
+                            <div className="flex gap-1 max-w-sm">
+                                <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
+                                       onKeyDown={(e) => e.key === "Enter" && createFolder()}
+                                       placeholder="Nueva megatendencia" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
+                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatendencia">
+                                    <FolderPlus size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Discovered candidate trends */}
                     {candidates && candidates.length > 0 && (
