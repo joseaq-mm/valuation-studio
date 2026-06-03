@@ -57,6 +57,24 @@ export default function Thesis() {
         return (dash.company_theses || []).find((c) => (c.ticker || "").toUpperCase() === up || _norm(c.title) === n);
     };
 
+    // Detect whether the TREND search box actually holds an individual COMPANY (so we
+    // can block & redirect to "Empresa → Tesis"). Real trend phrases return no equity
+    // quotes from /api/search; a company name/ticker returns an EQUITY whose name/symbol
+    // matches the input. Returns the matched quote or null.
+    const matchCompany = (input, results) => {
+        const clean = (x) => (x || "").trim().toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ");
+        const q = clean(input);
+        if (!q) return null;
+        for (const r of results || []) {
+            if ((r.type || "").toUpperCase() !== "EQUITY") continue;
+            const sym = clean(r.symbol);
+            const name = clean(r.name);
+            if (sym === q) return r;
+            if (name && (name.startsWith(q) || (q.length >= 4 && name.includes(q)))) return r;
+        }
+        return null;
+    };
+
     const reload = useCallback(async () => {
         if (!user) { setDash(null); return; }
         try {
@@ -126,13 +144,14 @@ export default function Thesis() {
         const t = overrideType || mode;
         const s = (overrideSubject ?? subject).trim();
         if (!s) { toast.error("Escribe una tesis o empresa"); return; }
-        // Wrong-type guard: a company (ticker) typed in the TREND search ("Tesis → Empresas")
-        // is almost always a mistake — trends are multi-word. Offer to switch modes.
-        if (!opts.force && !opts.forceType && !matchedThesisId && t === "trend" && !/\s/.test(s)) {
+        // Wrong-type guard: an individual COMPANY typed in the TREND search
+        // ("Tesis → Empresas") is a mistake. Detect it (by ticker OR company name via
+        // /api/search → EQUITY match) and BLOCK generation; the user must switch modes.
+        if (!opts.force && !matchedThesisId && t === "trend") {
             try {
                 const res = await searchTickers(s);
-                const exact = (res?.results || []).find((r) => (r.symbol || "").toUpperCase() === s.toUpperCase());
-                if (exact) { setPendingDup(null); setPendingWrongType({ subject: s, symbol: exact.symbol, name: exact.name }); return; }
+                const co = matchCompany(s, res?.results || []);
+                if (co) { setPendingDup(null); setPendingWrongType({ subject: s, symbol: co.symbol, name: co.name }); return; }
             } catch { /* ignore search failures and continue */ }
         }
         setPendingWrongType(null);
@@ -410,9 +429,9 @@ export default function Thesis() {
                     {pendingWrongType && (
                         <div className="border border-[#052049] bg-[#EAF0F7] p-4 mb-6" data-testid="wrong-type-warning">
                             <div className="text-sm text-[#052049] leading-relaxed">
-                                Parece que <strong>«{pendingWrongType.subject}»</strong> es una empresa
-                                {pendingWrongType.name ? ` (${pendingWrongType.name})` : ""} y estás en <strong>«Tesis → Empresas»</strong>,
-                                que analiza <strong>tendencias</strong>. ¿Querías analizar la empresa con <strong>«Empresa → Tesis»</strong>?
+                                <strong>«{pendingWrongType.subject}»</strong> es una empresa
+                                {pendingWrongType.name ? ` (${pendingWrongType.name})` : ""}, y <strong>«Tesis → Empresas»</strong> solo
+                                analiza <strong>tendencias</strong>. No se ha generado nada. Para analizar esta empresa, usa <strong>«Empresa → Tesis»</strong>.
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                                 <button
@@ -420,14 +439,7 @@ export default function Thesis() {
                                     className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#052049] text-white px-3 py-1.5 hover:bg-[#03132e] transition-colors flex items-center gap-1.5"
                                     data-testid="wrong-type-switch-btn"
                                 >
-                                    <Building2 size={13} /> Cambiar a Empresa → Tesis
-                                </button>
-                                <button
-                                    onClick={() => generate("trend", pendingWrongType.subject, null, { forceType: true })}
-                                    className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#052049] text-[#052049] px-3 py-1.5 hover:bg-[#052049] hover:text-white transition-colors"
-                                    data-testid="wrong-type-continue-btn"
-                                >
-                                    Generar como tesis igualmente
+                                    <Building2 size={13} /> Analizar en Empresa → Tesis
                                 </button>
                                 <button onClick={() => setPendingWrongType(null)} className="text-xs text-[#052049] hover:underline" data-testid="wrong-type-cancel-btn">
                                     Cancelar
