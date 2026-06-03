@@ -18,6 +18,13 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Rediseño/simplificación del flujo Empresa → Tesis (Jun 2026, testing agent frontend 100%, iteration_13):**
+  - Al generar una tesis de EMPRESA el resultado se divide en DOS bloques claros (sin mezclarse):
+    - **Bloque 1.1 "Tesis ya generadas"**: (a) recuadro reutilizado de la página de empresa (`CompanyQualCard` con prop `hideEmpty` + `refreshKey`) con las tesis de tendencia donde la empresa YA es miembro (títulos + Score global + TAM Score + medias); (b) lista `existing-matches` (`MatchedThesisRow`) con las tesis de tendencia existentes que encajan pero donde la empresa AÚN NO está incluida, cada una con botón **"Añadir {TICKER}"** (anti-duplicación: la empresa se une a la tesis existente en vez de crear una casi-duplicada).
+    - **Bloque 1.2 "Nuevas tesis sugeridas"** (`NewThesisCard`): fichas informativas SOLO con temas NUEVOS no cubiertos por ninguna tesis existente (derivados de `link-suggestions.to_create`), cada una con botón "Generar tesis". Estado vacío `new-trends-empty` cuando todo está cubierto.
+  - Se ELIMINÓ el antiguo aviso rojo de duplicado por ficha (`trend-dup-warning-*`), el botón "Generar de todas formas" por ficha y la lógica `findMatch`. La clasificación usa `POST /thesis/{id}/link-suggestions` → `to_add` (con `already_in`, filtramos los no incluidos para 1.1b) y `to_create` (1.2).
+  - **Desplegable lateral (sidebar) simplificado**: `CompanyTrendsDropdown` ahora lista SOLO las tesis ya generadas donde la empresa SÍ aparece (verde/incluida). Se quitaron los estados gris "no incluida" y naranja "no generada", la leyenda de 3 estados y el `STATE_COLOR` multi-estado. Backend `GET /thesis/dashboard` → `fit_trends` solo `state:"included"` (membresía real); se eliminó el backfill semántico (`_backfill_link_matches`, `_BACKFILL_INFLIGHT`) que ya no hace falta.
+  - **Refresco tras añadir**: al pulsar "Añadir {TICKER}", `ThesisResult` incrementa `mutateTick` (re-fetch de `link-suggestions` + `CompanyQualCard`) y llama `onMutated={reload}` (recarga dashboard/sidebar). El desplegable lateral refleja la nueva membresía al recargar (cambio de página o botón Actualizar `refresh-data-btn`). Verificado E2E: MSFT pasó de "0 tesis" a "1 tesis" tras añadirla a `thesis_test_aidc`.
 - **✅ Rediseño dashboard de /thesis (Feb 2026, Fase A+B — testing agent 100%, 21/21):**
   - Layout: sidebar derecho "Mis tesis y empresas (N)" alineado arriba (junto al hero) con buscador desplegable en vivo.
   - Generador: botón "Tesis automática" movido junto a los tabs Tendencia/Empresa; eliminado el texto "¿Sin ideas?" y el placeholder "Genera tu primera tesis".
