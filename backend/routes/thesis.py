@@ -675,49 +675,58 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trend_count": len(contained),
             })
 
-        # Match each company-thesis fit-trend to an existing trend thesis (if any) and
-        # resolve its state: included (company is in it) / not_included / not_generated.
+        # Company dropdown logic:
+        #  - green/grey come from REAL membership across ALL existing trend theses
+        #    (included if the company is a member, otherwise not_included).
+        #  - orange (not_generated) = themes from the company analysis that are NOT yet
+        #    represented by any existing thesis. A lenient match drops "sibling" variants
+        #    that already fit one of the existing theses.
         trend_index = [(tr["id"], (tr["title"] or "").strip().lower()) for tr in trends]
         trend_tickers = {
             tr["id"]: {(c.get("ticker") or "").upper() for c in tr["companies"] if c.get("ticker")}
             for tr in trends
         }
 
-        def _match_trend(name: str):
+        def _covered(name: str) -> bool:
+            """Is this company-analysis theme already represented by an existing thesis?
+            Lenient (exact / substring / Jaccard >= 0.3) so sibling variants are merged."""
             n = (name or "").strip().lower()
             if not n:
-                return None
-            for tid, title in trend_index:
-                if title == n:
-                    return tid
-            for tid, title in trend_index:
-                if title and (n in title or title in n):
-                    return tid
+                return True
             nset = set(n.split())
-            best, best_s = None, 0.0
-            for tid, title in trend_index:
-                tset = set(title.split())
-                if not tset:
+            for _tid, title in trend_index:
+                if not title:
                     continue
+                if title == n or n in title or title in n:
+                    return True
+                tset = set(title.split())
                 union = len(nset | tset)
-                s = (len(nset & tset) / union) if union else 0.0
-                if s > best_s:
-                    best, best_s = tid, s
-            return best if best_s >= 0.5 else None
+                if union and (len(nset & tset) / union) >= 0.3:
+                    return True
+            return False
+
+        _state_rank = {"included": 0, "not_included": 1, "not_generated": 2}
 
         company_theses = []
         for d in company_docs:
             tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
             fit = []
+            # green / grey: every existing trend thesis, by real membership
+            for tr in trends:
+                included = tk in trend_tickers.get(tr["id"], set())
+                fit.append({"name": tr["title"], "thesis_id": tr["id"],
+                            "state": "included" if included else "not_included"})
+            # orange: analysis themes not yet represented by any existing thesis
+            seen = set()
             for ft in (d.get("trends") or []):
                 nm = ft.get("name")
-                mid = _match_trend(nm)
-                if mid:
-                    state = "included" if tk in trend_tickers.get(mid, set()) else "not_included"
-                else:
-                    state = "not_generated"
-                fit.append({"name": nm, "thesis_id": mid, "state": state,
+                key = (nm or "").strip().lower()
+                if not key or key in seen or _covered(nm):
+                    continue
+                seen.add(key)
+                fit.append({"name": nm, "thesis_id": None, "state": "not_generated",
                             "relevance_score": ft.get("relevance_score")})
+            fit.sort(key=lambda x: _state_rank.get(x["state"], 9))
             company_theses.append({
                 "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
                 "ticker": tk or None, "overall_relevance": d.get("overall_relevance"),
