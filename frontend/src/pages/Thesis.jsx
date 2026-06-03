@@ -33,7 +33,8 @@ export default function Thesis() {
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
-    const [pendingWrongType, setPendingWrongType] = useState(null);
+    const [coSugg, setCoSugg] = useState([]);
+    const coSuggRef = useRef(null);
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
@@ -57,10 +58,9 @@ export default function Thesis() {
         return (dash.company_theses || []).find((c) => (c.ticker || "").toUpperCase() === up || _norm(c.title) === n);
     };
 
-    // Detect whether the TREND search box actually holds an individual COMPANY (so we
-    // can block & redirect to "Empresa → Tesis"). Real trend phrases return no equity
-    // quotes from /api/search; a company name/ticker returns an EQUITY whose name/symbol
-    // matches the input. Returns the matched quote or null.
+    // Detect whether the TREND search box actually holds an individual COMPANY. Real
+    // trend phrases return no equity quotes from /api/search; a company name/ticker
+    // returns an EQUITY whose name/symbol matches the input. Returns the matched quote.
     const matchCompany = (input, results) => {
         const clean = (x) => (x || "").trim().toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ");
         const q = clean(input);
@@ -74,6 +74,41 @@ export default function Thesis() {
         }
         return null;
     };
+
+    // User picked a company from the trend-search suggestions (or it was detected on
+    // generate): switch to "Empresa → Tesis" and ask to confirm generating its thesis.
+    const selectCompanyFromTrend = (r) => {
+        setMode("company");
+        setSubject(r.symbol);
+        setCoSugg([]);
+        setPendingDup(null);
+        // Generate directly. generate("company") shows the overwrite confirm
+        // (dedup-warning, with the weekly-refresh note) ONLY if this company thesis
+        // already exists; otherwise it starts generating right away (no extra click).
+        generate("company", r.symbol);
+    };
+
+    // Live company suggestions for the TREND search box (so a mistyped company opens a
+    // dropdown; clicking it switches to company mode). Trend phrases return nothing.
+    useEffect(() => {
+        if (mode !== "trend") { setCoSugg([]); return; }
+        const s = subject.trim();
+        if (s.length < 2) { setCoSugg([]); return; }
+        const tid = setTimeout(async () => {
+            try {
+                const res = await searchTickers(s);
+                const items = (res?.results || []).filter((r) => (r.type || "").toUpperCase() === "EQUITY" && r.symbol);
+                setCoSugg(items.slice(0, 6));
+            } catch { setCoSugg([]); }
+        }, 250);
+        return () => clearTimeout(tid);
+    }, [subject, mode]);
+
+    useEffect(() => {
+        const onDoc = (e) => { if (coSuggRef.current && !coSuggRef.current.contains(e.target)) setCoSugg([]); };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, []);
 
     const reload = useCallback(async () => {
         if (!user) { setDash(null); return; }
@@ -144,17 +179,15 @@ export default function Thesis() {
         const t = overrideType || mode;
         const s = (overrideSubject ?? subject).trim();
         if (!s) { toast.error("Escribe una tesis o empresa"); return; }
-        // Wrong-type guard: an individual COMPANY typed in the TREND search
-        // ("Tesis → Empresas") is a mistake. Detect it (by ticker OR company name via
-        // /api/search → EQUITY match) and BLOCK generation; the user must switch modes.
+        // Wrong-type guard: a company typed (full name/ticker) in the TREND search and
+        // submitted without picking a suggestion → auto-switch to company mode + confirm.
         if (!opts.force && !matchedThesisId && t === "trend") {
             try {
                 const res = await searchTickers(s);
                 const co = matchCompany(s, res?.results || []);
-                if (co) { setPendingDup(null); setPendingWrongType({ subject: s, symbol: co.symbol, name: co.name }); return; }
+                if (co) { selectCompanyFromTrend(co); return; }
             } catch { /* ignore search failures and continue */ }
         }
-        setPendingWrongType(null);
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
@@ -349,14 +382,14 @@ export default function Thesis() {
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                             <div className="flex gap-0 border border-black w-fit">
                                 <button
-                                    onClick={() => { setMode("trend"); setSubject(""); setResult(null); setPendingDup(null); setPendingWrongType(null); }}
+                                    onClick={() => { setMode("trend"); setSubject(""); setResult(null); setPendingDup(null); setCoSugg([]); }}
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors ${mode === "trend" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-trend"
                                 >
                                     <TrendingUp size={14} /> Tesis → Empresas
                                 </button>
                                 <button
-                                    onClick={() => { setMode("company"); setSubject(""); setResult(null); setPendingDup(null); setPendingWrongType(null); }}
+                                    onClick={() => { setMode("company"); setSubject(""); setResult(null); setPendingDup(null); setCoSugg([]); }}
                                     className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors border-l border-black ${mode === "company" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                                     data-testid="mode-company"
                                 >
@@ -388,15 +421,35 @@ export default function Thesis() {
                                     />
                                 </div>
                             ) : (
-                                <input
-                                    value={subject}
-                                    onChange={(e) => setSubject(e.target.value)}
-                                    onKeyDown={(e) => e.key === "Enter" && !loading && generate()}
-                                    placeholder="Ej.: Inteligencia artificial y centros de datos"
-                                    className="flex-1 px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
-                                    data-testid="thesis-input"
-                                    disabled={loading}
-                                />
+                                <div className="relative flex-1" ref={coSuggRef}>
+                                    <input
+                                        value={subject}
+                                        onChange={(e) => setSubject(e.target.value)}
+                                        onKeyDown={(e) => e.key === "Enter" && !loading && generate()}
+                                        placeholder="Ej.: Inteligencia artificial y centros de datos"
+                                        className="w-full px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
+                                        data-testid="thesis-input"
+                                        disabled={loading}
+                                        autoComplete="off"
+                                    />
+                                    {coSugg.length > 0 && (
+                                        <div className="absolute left-0 right-0 z-30 bg-white border border-black border-t-0 max-h-64 overflow-y-auto" data-testid="trend-company-suggestions">
+                                            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#4A4A4A] bg-[#FDF1E6] border-b border-black/10">¿Buscas una empresa? Selecciónala para analizarla en Empresa → Tesis</div>
+                                            {coSugg.map((r) => (
+                                                <button
+                                                    key={r.symbol}
+                                                    type="button"
+                                                    onClick={() => selectCompanyFromTrend(r)}
+                                                    className="w-full text-left px-3 py-2 border-b border-black/10 last:border-b-0 hover:bg-[#F5E4D4] transition-colors"
+                                                    data-testid={`trend-company-opt-${r.symbol}`}
+                                                >
+                                                    <div className="font-mono text-sm">{r.symbol} <span className="text-[#4A4A4A] text-[10px]">{r.exchange || ""}</span></div>
+                                                    <div className="text-xs text-[#4A4A4A]">{r.name}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             )}
                             <button onClick={() => generate()} disabled={loading} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
                                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
@@ -426,28 +479,6 @@ export default function Thesis() {
 
                     {/* Wrong-type warning: a company typed in the TREND search.
                         Placed right below the search box, above megatrends. */}
-                    {pendingWrongType && (
-                        <div className="border border-[#052049] bg-[#EAF0F7] p-4 mb-6" data-testid="wrong-type-warning">
-                            <div className="text-sm text-[#052049] leading-relaxed">
-                                <strong>«{pendingWrongType.subject}»</strong> es una empresa
-                                {pendingWrongType.name ? ` (${pendingWrongType.name})` : ""}, y <strong>«Tesis → Empresas»</strong> solo
-                                analiza <strong>tendencias</strong>. No se ha generado nada. Para analizar esta empresa, usa <strong>«Empresa → Tesis»</strong>.
-                            </div>
-                            <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                <button
-                                    onClick={() => { setMode("company"); setSubject(pendingWrongType.symbol); setPendingWrongType(null); }}
-                                    className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#052049] text-white px-3 py-1.5 hover:bg-[#03132e] transition-colors flex items-center gap-1.5"
-                                    data-testid="wrong-type-switch-btn"
-                                >
-                                    <Building2 size={13} /> Analizar en Empresa → Tesis
-                                </button>
-                                <button onClick={() => setPendingWrongType(null)} className="text-xs text-[#052049] hover:underline" data-testid="wrong-type-cancel-btn">
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Dedup / overwrite warning: right below the search box, above megatrends. */}
                     {pendingDup && (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
