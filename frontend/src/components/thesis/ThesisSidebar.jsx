@@ -86,9 +86,9 @@ function TrendRow({ t, folders, onAssignFolder, onRemove }) {
     );
 }
 
-function CompanyRow({ c }) {
+function CompanyRow({ c, onRemove }) {
     return (
-        <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4]" data-testid={`sidebar-company-${c.ticker}`}>
+        <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4] group" data-testid={`sidebar-company-${c.ticker}`}>
             <div className="flex items-center gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider text-[#052049] flex items-center gap-1 shrink-0">
                     <Building2 size={10} /> Empresa
@@ -96,6 +96,9 @@ function CompanyRow({ c }) {
                 <div className="ml-auto shrink-0">
                     <CompanyTrendsDropdown company={c} />
                 </div>
+                <button onClick={() => onRemove(c.id)} className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0" title="Eliminar tesis de empresa" data-testid={`sidebar-company-remove-${c.ticker}`}>
+                    <Trash2 size={12} />
+                </button>
             </div>
             <Link to={`/thesis/${c.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
                 {c.title || c.ticker} {c.ticker && <span className="font-mono text-[11px] text-[#4A4A4A]">{c.ticker}</span>}
@@ -164,7 +167,7 @@ export default function ThesisSidebar({
                     <TrendRow key={`t-${t.id}`} t={t} folders={folders} onAssignFolder={onAssignFolder} onRemove={onRemoveThesis} />
                 ))}
                 {companyTheses.map((c) => (
-                    <CompanyRow key={`c-${c.id}`} c={c} />
+                    <CompanyRow key={`c-${c.id}`} c={c} onRemove={onRemoveThesis} />
                 ))}
             </div>
 
