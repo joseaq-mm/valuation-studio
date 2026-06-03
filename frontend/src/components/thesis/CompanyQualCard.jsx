@@ -14,7 +14,7 @@ import HoverTip from "@/components/HoverTip";
  * its TAM Score. Footer: average of all overall scores (overall quality) and the
  * sum of all TAM Scores (total potential).
  */
-export default function CompanyQualCard({ ticker }) {
+export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey = 0 }) {
     const { user } = useAuth();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -28,9 +28,13 @@ export default function CompanyQualCard({ ticker }) {
             .catch(() => { if (alive) setProfile(null); })
             .finally(() => { if (alive) setLoading(false); });
         return () => { alive = false; };
-    }, [user, ticker]);
+    }, [user, ticker, refreshKey]);
 
     if (loading) return null;
+
+    // Embedded inside the thesis result (hideEmpty): show nothing when logged out
+    // or when there is no qualitative data — the surrounding page handles those.
+    if (hideEmpty && (!user || (!(profile?.trend_rows || []).length && !profile?.reverse))) return null;
 
     // Not logged in → subtle prompt
     if (!user) {

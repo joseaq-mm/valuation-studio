@@ -499,6 +499,7 @@ export default function Thesis() {
                             canGenerateContra={!!result.id}
                             onGenerateContra={generateContra}
                             generatingContra={generatingContra}
+                            onMutated={reload}
                         />
                     ) : (user && dash && !loading && (
                         <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} />

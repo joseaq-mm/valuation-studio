@@ -1,14 +1,12 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Building2, Folder, Trash2, Bell, ChevronDown, Check, RefreshCw, Plus } from "lucide-react";
+import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
-const STATE_COLOR = { included: "#1E7D45", not_included: "#9CA3AF", not_generated: "#C2410C" };
-
-/** Dropdown for an actively-searched company: lists the tesis it fits, coloured
- *  green (already included), grey (existing but not included) or orange (not yet
- *  generated). Each row links to that tesis (or to create it). */
+/** Dropdown for a saved company: lists ONLY the trend theses already generated where
+ *  the company actually appears (membership). Each row links to that thesis. The list
+ *  reflects live membership, so adding the company to a thesis shows up on reload. */
 function CompanyTrendsDropdown({ company }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -23,14 +21,13 @@ function CompanyTrendsDropdown({ company }) {
     const goTo = (ft) => {
         setOpen(false);
         if (ft.thesis_id) navigate(`/thesis/${ft.thesis_id}`);
-        else navigate(`/thesis?trend=${encodeURIComponent(ft.name)}`);
     };
 
     return (
         <div className="relative" ref={ref}>
             <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
-                title="Tesis donde encaja. Verde: ya incluida · gris: no incluida · naranja: no generada. Clic para ir."
+                title="Tesis ya generadas donde la empresa está incluida. Clic para abrir."
                 className="flex items-center gap-1 text-[10px] uppercase tracking-wider border border-black/25 px-1.5 py-0.5 hover:bg-[#F5E4D4] transition-colors"
                 data-testid={`company-trends-toggle-${company.ticker}`}
             >
@@ -39,19 +36,18 @@ function CompanyTrendsDropdown({ company }) {
             {open && (
                 <div className="absolute right-0 z-30 mt-1 w-64 max-h-60 overflow-auto border border-black bg-white shadow-lg" data-testid={`company-trends-menu-${company.ticker}`}>
                     <div className="px-2 py-1.5 text-[10px] text-[#4A4A4A] border-b border-black/10 bg-[#FDF1E6] leading-snug">
-                        <span style={{ color: STATE_COLOR.included }} className="font-semibold">incluida</span> · <span style={{ color: STATE_COLOR.not_included }} className="font-semibold">no incluida</span> · <span style={{ color: STATE_COLOR.not_generated }} className="font-semibold">no generada</span>
+                        Tesis donde <span className="font-mono font-semibold">{company.ticker}</span> ya está incluida
                     </div>
-                    {fits.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">Sin tesis identificadas.</div>}
+                    {fits.length === 0 && <div className="px-2 py-2 text-xs text-[#9CA3AF]">Aún no aparece en ninguna tesis.</div>}
                     {fits.map((ft, i) => (
                         <button
                             key={i}
                             onClick={() => goTo(ft)}
-                            className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[#F5E4D4] transition-colors"
-                            style={{ color: STATE_COLOR[ft.state] || "#9CA3AF" }}
-                            title={ft.state === "not_generated" ? "Aún no generada — clic para crearla" : ft.state === "included" ? "La empresa ya está incluida — clic para abrir" : "Tesis existente — la empresa aún no está incluida"}
+                            className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[#F5E4D4] transition-colors text-[#1E7D45]"
+                            title="La empresa ya está incluida — clic para abrir"
                             data-testid={`company-trend-opt-${company.ticker}-${i}`}
                         >
-                            {ft.state === "included" ? <Check size={11} className="shrink-0" /> : ft.state === "not_generated" ? <Plus size={11} className="shrink-0" /> : <span className="w-[11px] shrink-0" />}
+                            <Check size={11} className="shrink-0" />
                             <span className="truncate">{ft.name}</span>
                         </button>
                     ))}

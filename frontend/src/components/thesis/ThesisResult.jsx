@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
+import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
 import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany } from "@/lib/api";
 
@@ -274,27 +275,15 @@ function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
     return <>{groups.map((g, i) => <StageRow key={i} group={g} tamScores={tamScores} tamLoading={tamLoading} />)}</>;
 }
 
-function TrendCard({ t, match, company, idx = 0 }) {
-    const [adding, setAdding] = useState(false);
-    const [added, setAdded] = useState(false);
+const RELEVANCE_TIP =
+    "Relevancia (0–100): cuánto pesa esta tendencia en la tesis de inversión de la empresa — qué tan central es este tema para su caso alcista.\n\nNo mide la calidad de la empresa, sino el encaje/peso del tema. Es relativa entre las tendencias en las que encaja: ≥75 (verde) = motor central del negocio; <50 (rojo) = encaje marginal o secundario.";
+
+/** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
+ *  an informational card with a single "Generar tesis" action. */
+function NewThesisCard({ t, idx = 0 }) {
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
     const trendQuery = encodeURIComponent(t.name || "");
-    const companyLabel = company?.name || company?.ticker || "La empresa";
-
-    const addToExisting = async () => {
-        if (!match?.thesis_id || !company?.ticker) return;
-        setAdding(true);
-        try {
-            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
-            setAdded(true);
-            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
-        } finally {
-            setAdding(false);
-        }
-    };
 
     return (
         <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
@@ -303,10 +292,7 @@ function TrendCard({ t, match, company, idx = 0 }) {
                     <TrendingUp size={18} className="text-[#052049] shrink-0" />
                     {t.name}
                 </div>
-                <HoverTip
-                    text={"Relevancia (0–100): cuánto pesa esta tendencia en la tesis de inversión de la empresa — qué tan central es este tema para su caso alcista.\n\nNo mide la calidad de la empresa, sino el encaje/peso del tema. Es relativa entre las tendencias en las que encaja: ≥75 (verde) = motor central del negocio; <50 (rojo) = encaje marginal o secundario."}
-                    maxWidth={320}
-                >
+                <HoverTip text={RELEVANCE_TIP} maxWidth={320}>
                     <div className="cursor-help"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
                 </HoverTip>
             </div>
@@ -321,63 +307,69 @@ function TrendCard({ t, match, company, idx = 0 }) {
                     <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
                 </div>
             )}
-
-            {/* Action footer: generate, or duplicate warning + add-to-existing */}
             <div className="mt-auto pt-4 border-t border-black/10">
-                {match ? (
-                    <div className="border border-[#B32A22] bg-[#FBE4E0] p-2.5" data-testid={`trend-dup-warning-${slug}`}>
-                        <div className="flex items-start gap-2 text-xs text-[#8B1A12]">
-                            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B32A22]" />
-                            {match.already_in ? (
-                                <span data-testid={`trend-already-in-${slug}`}>
-                                    {companyLabel} ya está en esta tesis:{" "}
-                                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
-                                    Si generas esta tesis {companyLabel} no aparecerá para no duplicar su valor.
-                                </span>
-                            ) : (
-                                <span data-testid={`trend-dup-msg-${slug}`}>
-                                    Ya tienes una tesis desarrollada que encaja:{" "}
-                                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold underline" data-testid={`trend-dup-link-${slug}`}>{match.thesis_title}</Link>.{" "}
-                                    Puedes añadir {companyLabel} a esa tesis y/o generar de todas formas; {companyLabel} no se duplicará para no inflar su valor.
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-2.5 flex-wrap">
-                            {!match.already_in && (
-                                <button
-                                    onClick={addToExisting}
-                                    disabled={adding || added}
-                                    className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
-                                    data-testid={`trend-add-${slug}`}
-                                >
-                                    {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
-                                    {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"} a esa tesis`}
-                                </button>
-                            )}
-                            <Link to={`/thesis?trend=${trendQuery}&auto=1&matched=${match.thesis_id}`} className="inline-flex items-center gap-1 text-xs font-semibold border border-black px-2.5 py-1.5 hover:bg-black hover:text-[#FDF1E6] transition-colors" data-testid={`trend-generate-anyway-${slug}`}>
-                                Generar de todas formas
-                            </Link>
-                        </div>
-                    </div>
-                ) : (
-                    <Link
-                        to={`/thesis?trend=${trendQuery}&auto=1`}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
-                        data-testid={`trend-generate-${slug}`}
-                    >
-                        <Sparkles size={13} /> Generar tesis <ArrowRight size={12} />
-                    </Link>
-                )}
+                <Link
+                    to={`/thesis?trend=${trendQuery}&auto=1`}
+                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
+                    data-testid={`trend-generate-${slug}`}
+                >
+                    <Sparkles size={13} /> Generar tesis <ArrowRight size={12} />
+                </Link>
             </div>
         </div>
     );
 }
 
-export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false }) {
+/** Bloque 1.1b — an EXISTING trend thesis the company fits but isn't a member of yet:
+ *  link to it + an "Añadir {ticker}" button (anti-duplication: the company joins the
+ *  existing thesis instead of spawning a near-duplicate). */
+function MatchedThesisRow({ match, company, onAdded }) {
+    const [adding, setAdding] = useState(false);
+    const [added, setAdded] = useState(false);
+    const companyLabel = company?.name || company?.ticker || "La empresa";
+
+    const add = async () => {
+        if (!match?.thesis_id || !company?.ticker) return;
+        setAdding(true);
+        try {
+            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
+            setAdded(true);
+            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
+            onAdded?.();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
+        } finally {
+            setAdding(false);
+        }
+    };
+
+    return (
+        <div className="border border-black/30 bg-white px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap" data-testid={`matched-thesis-${match.thesis_id}`}>
+            <div className="min-w-0 text-sm">
+                <Link to={`/thesis/${match.thesis_id}`} className="font-bold hover:underline inline-flex items-center gap-1" data-testid={`matched-thesis-link-${match.thesis_id}`}>
+                    <span className="truncate">{match.thesis_title}</span><ArrowRight size={12} className="shrink-0" />
+                </Link>
+                <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>
+            </div>
+            <button
+                onClick={add}
+                disabled={adding || added}
+                className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors shrink-0 ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
+                data-testid={`matched-thesis-add-${match.thesis_id}`}
+            >
+                {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
+                {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"}`}
+            </button>
+        </div>
+    );
+}
+
+export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated }) {
     const [tamScores, setTamScores] = useState(null);
     const [tamLoading, setTamLoading] = useState(false);
     const [linkData, setLinkData] = useState(null);
     const [linkLoading, setLinkLoading] = useState(false);
+    const [mutateTick, setMutateTick] = useState(0);
 
     const isTrend = thesis?.type === "trend";
 
@@ -405,8 +397,8 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [thesis?.id, thesis?.generated_at, thesis?.type]);
 
-    // Company mode: check which of the company's trends already have a matching
-    // saved trend-thesis, to warn against duplicating (and offer add-to-existing).
+    // Company mode: classify the company's themes against the user's saved trend
+    // theses → matches (existing) vs. to_create (genuinely new). Re-run on add.
     useEffect(() => {
         if (!thesis || thesis.type !== "company" || !thesis.id) { setLinkData(null); return; }
         let alive = true;
@@ -417,22 +409,28 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             .finally(() => { if (alive) setLinkLoading(false); });
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [thesis?.id, thesis?.type]);
+    }, [thesis?.id, thesis?.type, mutateTick]);
 
-    // Robustly resolve a trend card to its matched existing thesis. The backend
-    // already maps trend_name to the exact company-trend string, but we keep a
-    // substring fallback so a tiny LLM rewording never hides the warning.
-    const findMatch = (trendName) => {
-        const adds = linkData?.to_add || [];
-        if (!adds.length) return undefined;
-        const n = _norm(trendName);
-        let m = adds.find((a) => _norm(a.trend_name) === n);
-        if (m) return m;
-        return adds.find((a) => {
-            const an = _norm(a.trend_name);
-            return an && (an.includes(n) || n.includes(an));
-        });
-    };
+    const ticker = thesis?.company?.ticker;
+
+    // 1.1b — existing theses the company fits but isn't a member of yet.
+    const existingMatches = useMemo(
+        () => (linkData?.to_add || []).filter((a) => !a.already_in),
+        [linkData],
+    );
+
+    // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
+    // rich trend objects. Fallback to all themes while link data is unavailable.
+    const newTrends = useMemo(() => {
+        const all = thesis?.trends || [];
+        if (!linkData) return all;
+        const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
+        return all.filter((t) => create.has(_norm(t.name)));
+    }, [thesis?.trends, linkData]);
+
+    // After adding the company to an existing thesis: refresh this view (matches +
+    // membership box) and tell the parent to reload the dashboard/sidebar.
+    const handleAdded = () => { setMutateTick((t) => t + 1); onMutated?.(); };
 
     if (!thesis) return null;
 
@@ -507,19 +505,43 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </>
             ) : (
                 <>
+                    {/* 1.1a — existing theses where the company already appears (reused box) */}
+                    {ticker && <CompanyQualCard ticker={ticker} hideEmpty refreshKey={mutateTick} />}
+
+                    {/* 1.1b — existing theses it fits but isn't included in yet → add */}
+                    {existingMatches.length > 0 && (
+                        <div className="mb-6" data-testid="existing-matches">
+                            <div className="overline text-[#4A4A4A] mb-2">Tesis ya generadas que encajan</div>
+                            <div className="space-y-2">
+                                {existingMatches.map((m) => (
+                                    <MatchedThesisRow key={m.thesis_id} match={m} company={thesis.company} onAdded={handleAdded} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 1.2 — new suggested theses (not similar to the ones above) */}
                     <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="overline text-[#4A4A4A]">Tendencias donde encaja</div>
+                        <div className="overline text-[#4A4A4A]">Nuevas tesis sugeridas</div>
                         {linkLoading && (
                             <span className="text-[11px] text-[#4A4A4A] flex items-center gap-1" data-testid="trends-dup-checking">
                                 <Loader2 size={11} className="animate-spin" /> Comprobando duplicados…
                             </span>
                         )}
                     </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                        {(thesis.trends || []).map((t, i) => (
-                            <TrendCard key={i} idx={i} t={t} match={findMatch(t.name)} company={thesis.company} />
-                        ))}
-                    </div>
+                    {thesis.id && linkLoading && !linkData ? (
+                        <div className="text-xs text-[#4A4A4A] flex items-center gap-2 border border-dashed border-black/20 p-4" data-testid="new-trends-loading">
+                            <Loader2 size={13} className="animate-spin" /> Analizando en qué tesis nuevas encaja…
+                        </div>
+                    ) : newTrends.length ? (
+                        <div className="grid md:grid-cols-2 gap-4">
+                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} />)}
+                        </div>
+                    ) : (
+                        <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">
+                            Todas las tendencias en las que encaja {ticker || "la empresa"} ya están cubiertas por tus tesis. No hay tesis nuevas que generar.
+                        </div>
+                    )}
                 </>
             )}
 

@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only retest of the Empresa→Tesis redesign on /thesis. All 3 target behaviors PASS end-to-end against live preview URL with seeded session cookie. (1) Sidebar 'included-only' dropdown: NVDA toggle shows '2 tesis', menu header 'Tesis donde NVDA ya está incluida', 2 green rows (rgb(30,125,69)) 'Robótica e IA física' + 'IA y centros de datos', NO grey/orange states, NO 3-state legend. MSFT toggle shows '0 tesis' and menu shows 'Aún no aparece en ninguna tesis.' (2) MSFT company-thesis generation (Empresa→Tesis): dedup-warning shown on submit, 'Reescribir igualmente' triggered fresh LLM generation (completed in ~55s); result rendered with block 1.1a (company-qual-card) + block 1.1 existing-matches containing exactly 1 'Añadir MSFT' row pointing at thesis_test_aidc; OLD per-card 'trend-dup-warning-*' testid CONFIRMED REMOVED. (3) Add+refresh flow: clicking matched-thesis-add-thesis_test_aidc completed in ~12s, row disappeared, then after refresh-data-btn the MSFT sidebar dropdown updated from '0 tesis' to '1 tesis'. Block 1.2 'Nuevas tesis sugeridas' rendered 0 cards on this run — data-dependent (the LLM rewrite of MSFT may not have produced any new themes that weren't already covered by existing user theses); the UI has a documented empty-state (new-trends-empty testid) for that case, so this is not a UI defect.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_13.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx — `newTrends` falls back to `thesis.trends` when linkData is null (loading) which is fine, but if the backend link-suggestions call fails (catch sets linkData=null and linkLoading=false) the UI will render ALL trends as 'new' cards. Consider showing the empty/error state instead of all-trends fallback when the call has settled but failed.",
+    "ThesisResult.jsx line ~417 — `existingMatches` filters out `already_in=true` rows from to_add. That hides matches the company is already in (correct for block 1.1b), but the redundant filter implies the backend can still return already_in=true here; clarify the contract in backend so the filter is defensive only.",
+    "ThesisSidebar.jsx — `CompanyTrendsDropdown` doesn't handle keyboard (Esc to close, Enter on row). Minor a11y."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "cookie session_token=test_profile_token_fixed_123 (user_id=test_profile_user_123) — set via page.context.add_cookies before navigate.",
+  "seed_data_creation": "No new seeds. Reused thesis_test_aidc, thesis_test_robot, thesis_test_company_nvda, thesis_test_company_msft. NOTE: this test run added MSFT to thesis_test_aidc via the new 'Añadir MSFT' flow, so subsequent runs will see MSFT as a member of thesis_test_aidc (sidebar will show '1 tesis' instead of '0 tesis' until reset by re-running seed_company_thesis_test.py).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth: add cookie session_token=test_profile_token_fixed_123 on host ai-valuation-desk.preview.emergentagent.com. Generation uses real LLM and takes ~30-90s — poll up to 200s for [data-testid=thesis-result]. To test block 1.2 with non-empty content reliably, re-run /app/backend/tests/seed_company_thesis_test.py BEFORE the test (it resets MSFT's seeded thesis with the 2 deterministic trends 'IA y centros de datos' (matches existing) + 'Ciberseguridad empresarial' (to_create)). Avoid pressing 'Reescribir igualmente' if you want deterministic 1.2 — instead use a different ticker that doesn't have a saved thesis yet, or just inspect the already-saved thesis_test_company_msft via /thesis/<id>.",
+  "rca of the issue": "No bugs. Block 1.2 emptiness on this run is LLM/data-dependent: after the rewrite, all of MSFT's generated trends either matched existing theses or none were classified as to_create by /api/thesis/{id}/link-suggestions. The UI correctly renders the empty state via the new-trends-empty data-testid."
+}

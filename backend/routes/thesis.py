@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 # Keep strong references to background tasks so they are not garbage-collected.
 _BG_TASKS: set = set()
-# Guard so rapid dashboard reloads don't spawn duplicate semantic-match backfills.
-_BACKFILL_INFLIGHT: set = set()
 
 
 def _spawn(coro):
@@ -579,36 +577,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "reverse": reverse,
         }
 
-    async def _backfill_link_matches(uid: str, docs: List[Dict[str, Any]], existing_min: List[Dict[str, Any]], sig: List[str]):
-        """Recompute & persist the SEMANTIC company→theses match (same matcher the
-        analysis page uses) for company theses whose cached result is stale/missing.
-        Runs in the background so the dashboard response is never blocked. Keeps the
-        sidebar dropdown coherent with the company-analysis page."""
-        for d in docs:
-            company = (d.get("company") or {}).get("name") or d.get("title") or d.get("query")
-            company_trends = [t.get("name") for t in (d.get("trends") or []) if t.get("name")]
-            if not company_trends:
-                _BACKFILL_INFLIGHT.discard(d["id"])
-                continue
-            try:
-                if not existing_min:
-                    result = {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
-                else:
-                    result = await asyncio.to_thread(_match_sync, company, company_trends, existing_min)
-                await db.theses.update_one(
-                    {"id": d["id"], "user_id": uid},
-                    {"$set": {"link_matches": {
-                        "v": 2, "sig": sig,
-                        "to_add": result.get("to_add", []),
-                        "to_create": result.get("to_create", []),
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }}},
-                )
-            except Exception as e:
-                logger.error(f"backfill link_matches failed ({d.get('id')}): {e}")
-            finally:
-                _BACKFILL_INFLIGHT.discard(d["id"])
-
     @router.get("/dashboard")
     async def dashboard(user: Dict[str, Any] = Depends(auth_required)):
         """Aggregated data backbone for the Thesis dashboard (sidebar + treemaps):
@@ -707,95 +675,32 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trend_count": len(contained),
             })
 
-        # Company dropdown logic:
-        #  - green/grey come from REAL membership across ALL existing trend theses
-        #    (included if the company is a member, otherwise not_included).
-        #  - orange (not_generated) = themes from the company analysis that are NOT yet
-        #    represented by any existing thesis. A lenient match drops "sibling" variants
-        #    that already fit one of the existing theses.
-        trend_index = [(tr["id"], (tr["title"] or "").strip().lower()) for tr in trends]
+        # Company dropdown (simplified): list ONLY the trend theses already generated
+        # where the company really appears (membership). Newest doc per ticker. The
+        # list reflects live membership, so adding a company to an existing thesis
+        # shows up on the next dashboard reload (page change or the Refresh button).
         trend_tickers = {
             tr["id"]: {(c.get("ticker") or "").upper() for c in tr["companies"] if c.get("ticker")}
             for tr in trends
         }
-
-        def _covered(name: str) -> bool:
-            """Is this company-analysis theme already represented by an existing thesis?
-            Lenient (exact / substring / Jaccard >= 0.3) so sibling variants are merged."""
-            n = (name or "").strip().lower()
-            if not n:
-                return True
-            nset = set(n.split())
-            for _tid, title in trend_index:
-                if not title:
-                    continue
-                if title == n or n in title or title in n:
-                    return True
-                tset = set(title.split())
-                union = len(nset | tset)
-                if union and (len(nset & tset) / union) >= 0.3:
-                    return True
-            return False
-
-        _state_rank = {"included": 0, "not_included": 1, "not_generated": 2}
-        current_sig = sorted([tr["id"] for tr in trends])
-        existing_min = [{"id": tr["id"], "title": tr["title"]} for tr in trends]
-
         company_theses = []
         seen_tickers = set()
-        stale_docs = []
         for d in company_docs:  # sorted newest-first → keep only the latest per ticker
             tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
             if tk and tk in seen_tickers:
                 continue
             if tk:
                 seen_tickers.add(tk)
-            fit = []
-            # green / grey: every existing trend thesis, by real membership
-            for tr in trends:
-                included = tk in trend_tickers.get(tr["id"], set())
-                fit.append({"name": tr["title"], "thesis_id": tr["id"],
-                            "state": "included" if included else "not_included"})
-            # orange (not_generated): prefer the persisted SEMANTIC resolution
-            # (link_matches.to_create) so it stays coherent with the analysis page.
-            # Fallback to the lexical matcher while the semantic one is (re)computed.
-            lm = d.get("link_matches")
-            fresh = bool(lm) and lm.get("v") == 2 and lm.get("sig") == current_sig
-            seen = set()
-            if fresh:
-                for c in (lm.get("to_create") or []):
-                    nm = c.get("trend_name")
-                    key = (nm or "").strip().lower()
-                    if not nm or key in seen:
-                        continue
-                    seen.add(key)
-                    fit.append({"name": nm, "thesis_id": None, "state": "not_generated"})
-            else:
-                if [t.get("name") for t in (d.get("trends") or []) if t.get("name")]:
-                    stale_docs.append(d)
-                for ft in (d.get("trends") or []):
-                    nm = ft.get("name")
-                    key = (nm or "").strip().lower()
-                    if not key or key in seen or _covered(nm):
-                        continue
-                    seen.add(key)
-                    fit.append({"name": nm, "thesis_id": None, "state": "not_generated",
-                                "relevance_score": ft.get("relevance_score")})
-            fit.sort(key=lambda x: _state_rank.get(x["state"], 9))
+            fit = [
+                {"name": tr["title"], "thesis_id": tr["id"], "state": "included"}
+                for tr in trends
+                if tk and tk in trend_tickers.get(tr["id"], set())
+            ]
             company_theses.append({
                 "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
                 "ticker": tk or None, "overall_relevance": d.get("overall_relevance"),
                 "fit_trends": fit,
             })
-
-        # Self-healing: recompute the semantic match for stale company theses in the
-        # background (non-blocking). Next dashboard load uses the coherent result.
-        if stale_docs:
-            to_fix = [d for d in stale_docs if d["id"] not in _BACKFILL_INFLIGHT][:5]
-            if to_fix:
-                for d in to_fix:
-                    _BACKFILL_INFLIGHT.add(d["id"])
-                _spawn(_backfill_link_matches(uid, to_fix, existing_min, current_sig))
 
         return {"folders": folder_out, "trends": trends,
                 "companies": companies, "company_theses": company_theses}
