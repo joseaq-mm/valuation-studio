@@ -191,7 +191,16 @@ export default function Thesis() {
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
-            if (dup) { setPendingDup({ type: t, subject: s, existing: dup }); return; }
+            if (dup) {
+                // If the overwrite warning is ALREADY shown for this same item, treat a
+                // click on "Generar tesis" as confirmation (same effect as "Reescribir").
+                if (pendingDup && pendingDup.type === t && pendingDup.subject === s) {
+                    opts = { ...opts, overwriteId: dup.id };
+                } else {
+                    setPendingDup({ type: t, subject: s, existing: dup });
+                    return;
+                }
+            }
         }
         setPendingDup(null);
         setLoading(true);

@@ -487,12 +487,17 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         '  "trends": [{"name": "megatendencia ganadora", "fit_description": "la APUESTA ESTRATÉGICA concreta de la empresa en ese tema y el RESULTADO/tracción observado (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol en esa cadena"}]\n'
         "}\n"
         "Incluye SOLO las tendencias GANADORAS donde la empresa apuesta estratégicamente y se observa algún resultado "
-        "(pueden ser de 1 a 6; prioriza calidad sobre cantidad). Ordénalas por fuerza del encaje/evidencia."
+        "(pueden ser de 1 a 6; prioriza calidad sobre cantidad). Ordénalas por fuerza del encaje/evidencia. "
+        "Para una empresa cotizada real, devuelve AL MENOS 1 tendencia (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
     )
-    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-co-{datetime.now(timezone.utc).timestamp()}",
-                         INVESTIGATOR_COMPANY_SYS, inv_user)
-    inv = _extract_json(inv_raw)
-    trends = inv.get("trends") or []
+    trends, inv = [], {}
+    for attempt in range(2):  # retry once: a strict/transient miss can return zero trends for a real company
+        inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-co-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                             INVESTIGATOR_COMPANY_SYS, inv_user)
+        inv = _extract_json(inv_raw)
+        trends = inv.get("trends") or []
+        if trends:
+            break
     if not trends:
         raise ValueError("El investigador no pudo identificar tendencias para esta empresa. Revisa el nombre o ticker.")
 
