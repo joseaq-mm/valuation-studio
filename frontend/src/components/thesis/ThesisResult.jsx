@@ -329,11 +329,25 @@ function NewThesisCard({ t, idx = 0 }) {
  *  Score global tendencia and the TAM Score; "Confirmar" then adds the company reusing
  *  that evaluation (no second LLM call). Anti-duplication: the company joins the
  *  existing thesis instead of spawning a near-duplicate. */
-function MatchedThesisRow({ match, company, onAdded }) {
-    const [phase, setPhase] = useState("idle"); // idle | evaluating | preview | adding | added
+function MatchedThesisRow({ match, company, fit, onAdded }) {
+    const [phase, setPhase] = useState("idle"); // idle | evaluating | preview | adding | adding-direct | added
     const [preview, setPreview] = useState(null);
     const companyLabel = company?.name || company?.ticker || "La empresa";
     const showPreview = phase === "preview" || phase === "adding";
+
+    const directAdd = async () => {
+        if (!match?.thesis_id || !company?.ticker) return;
+        setPhase("adding-direct");
+        try {
+            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
+            setPhase("added");
+            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
+            onAdded?.();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
+            setPhase("idle");
+        }
+    };
 
     const evaluate = async () => {
         if (!match?.thesis_id || !company?.ticker) return;
@@ -363,25 +377,41 @@ function MatchedThesisRow({ match, company, onAdded }) {
 
     return (
         <div className="border border-black/30 bg-white px-3 py-2.5" data-testid={`matched-thesis-${match.thesis_id}`}>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0 text-sm">
                     <Link to={`/thesis/${match.thesis_id}`} className="font-bold hover:underline inline-flex items-center gap-1" data-testid={`matched-thesis-link-${match.thesis_id}`}>
                         <span className="truncate">{match.thesis_title}</span><ArrowRight size={12} className="shrink-0" />
                     </Link>
-                    <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>
+                    {fit
+                        ? <div className="text-xs text-[#1a1a1a] mt-1 leading-snug" data-testid={`matched-thesis-fit-${match.thesis_id}`}>{fit}</div>
+                        : <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>}
                 </div>
                 {phase === "idle" && (
-                    <button
-                        onClick={evaluate}
-                        className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors border border-black hover:bg-black hover:text-[#FDF1E6] shrink-0"
-                        data-testid={`matched-thesis-eval-${match.thesis_id}`}
-                    >
-                        <Sparkles size={12} /> Calcular score
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={directAdd}
+                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors bg-black text-[#FDF1E6] hover:bg-[#052049]"
+                            data-testid={`matched-thesis-add-direct-${match.thesis_id}`}
+                        >
+                            <Plus size={12} /> Añadir a tesis
+                        </button>
+                        <button
+                            onClick={evaluate}
+                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors border border-black hover:bg-black hover:text-[#FDF1E6]"
+                            data-testid={`matched-thesis-eval-${match.thesis_id}`}
+                        >
+                            <Sparkles size={12} /> Calcular score
+                        </button>
+                    </div>
                 )}
                 {phase === "evaluating" && (
                     <span className="text-xs text-[#4A4A4A] flex items-center gap-1.5 shrink-0" data-testid={`matched-thesis-evaluating-${match.thesis_id}`}>
                         <Loader2 size={12} className="animate-spin" /> Calculando score…
+                    </span>
+                )}
+                {phase === "adding-direct" && (
+                    <span className="text-xs text-[#4A4A4A] flex items-center gap-1.5 shrink-0" data-testid={`matched-thesis-adding-${match.thesis_id}`}>
+                        <Loader2 size={12} className="animate-spin" /> Añadiendo…
                     </span>
                 )}
                 {phase === "added" && (
@@ -498,6 +528,18 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         return all.filter((t) => create.has(_norm(t.name)));
     }, [thesis?.trends, linkData]);
 
+    // Map a matched thesis to a short "why it fits" (the company-trend fit description
+    // / rationale, falling back to the matcher's reason) for the existing-matches rows.
+    const trendByName = useMemo(() => {
+        const m = {};
+        (thesis?.trends || []).forEach((t) => { m[_norm(t.name)] = t; });
+        return m;
+    }, [thesis?.trends]);
+    const fitFor = (match) => {
+        const t = trendByName[_norm(match.trend_name)];
+        return t?.fit_description || t?.rationale || match.reason || null;
+    };
+
     // After adding the company to an existing thesis: refresh this view (matches +
     // membership box) and tell the parent to reload the dashboard/sidebar.
     const handleAdded = () => { setMutateTick((t) => t + 1); onMutated?.(); };
@@ -539,6 +581,13 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </div>
                 {thesis.summary && <p className="text-base mt-4 leading-relaxed text-[#1a1a1a]">{thesis.summary}</p>}
             </div>
+
+            {!isTrend && thesis.flags?.relevance_unavailable && (
+                <div className="border border-[#B8860B]/50 bg-[#FBF3E0] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#7a5a10]" data-testid="relevance-unavailable-note">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[#B8860B]" />
+                    <span>La IA no pudo calcular los scores de <strong>relevancia</strong> en esta generación (fallo puntual del modelo). El resto del análisis es válido; vuelve a <strong>generar la tesis</strong> para reintentar el cálculo de relevancia.</span>
+                </div>
+            )}
 
             {isTrend && thesis.omitted_companies?.length > 0 && (
                 <div className="border border-[#B8860B]/50 bg-[#FBF3E0] px-4 py-2.5 mb-6 flex items-start gap-2 text-xs text-[#7a5a10]" data-testid="omitted-companies-note">
@@ -584,7 +633,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             <div className="overline text-[#4A4A4A] mb-2">Tesis ya generadas que encajan</div>
                             <div className="space-y-2">
                                 {existingMatches.map((m) => (
-                                    <MatchedThesisRow key={m.thesis_id} match={m} company={thesis.company} onAdded={handleAdded} />
+                                    <MatchedThesisRow key={m.thesis_id} match={m} company={thesis.company} fit={fitFor(m)} onAdded={handleAdded} />
                                 ))}
                             </div>
                         </div>

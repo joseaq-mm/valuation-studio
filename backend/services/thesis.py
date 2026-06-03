@@ -77,6 +77,8 @@ def gather_sources(subject: str, kind: str, max_results: int = 5) -> list:
             f"{subject} growth drivers macro trends tailwinds {year}",
             f"{subject} business segments industry value chain",
             f"{subject} stock investment thesis outlook {year}",
+            f"{subject} latest strategy product launch partnership acquisition {year}",
+            f"{subject} revenue growth new customers bookings traction segment {year}",
         ]
     else:
         queries = [
@@ -461,8 +463,13 @@ async def run_news_watch(trend_titles: list) -> dict:
 
 INVESTIGATOR_COMPANY_SYS = (
     "Eres un analista de equity research senior. Recibes resultados REALES de búsqueda web "
-    "reciente sobre una empresa cotizada. Identificas las MEGATENDENCIAS / temas estructurales "
-    "en los que la empresa encaja y su rol dentro de la cadena de valor de cada una. "
+    "reciente sobre una empresa cotizada. Tu objetivo es detectar las MEGATENDENCIAS / temas "
+    "estructurales GANADORES en los que la empresa es —o se está convirtiendo en— un GANADOR: "
+    "temas donde (a) la tendencia es estructuralmente favorable, (b) la empresa hace una APUESTA "
+    "ESTRATÉGICA explícita (producto, inversión, adquisición, alianza) y (c) YA se observa algún "
+    "RESULTADO o tracción (crecimiento de ingresos, clientes, reservas o cuota en esa área). "
+    "Prioriza CALIDAD sobre cantidad: incluye SOLO temas con encaje real respaldado por evidencia "
+    "reciente; pueden ser pocos. Descarta temas meramente tangenciales, genéricos o sin resultado. "
     "Confirma el TICKER bursátil canónico exacto de la empresa (formato Yahoo Finance). "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
@@ -476,10 +483,11 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "company": {"name": "Nombre oficial", "ticker": "TICKER"},\n'
-        '  "summary": "2-3 frases sobre el negocio y su posicionamiento",\n'
-        '  "trends": [{"name": "megatendencia", "fit_description": "cómo encaja la empresa", "value_chain_role": "su rol en esa cadena"}]\n'
+        '  "summary": "2-3 frases sobre el negocio y, en concreto, sus apuestas estratégicas recientes y la tracción observada",\n'
+        '  "trends": [{"name": "megatendencia ganadora", "fit_description": "la APUESTA ESTRATÉGICA concreta de la empresa en ese tema y el RESULTADO/tracción observado (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol en esa cadena"}]\n'
         "}\n"
-        "Incluye entre 3 y 6 tendencias estructurales reales, ordenadas por relevancia para la empresa."
+        "Incluye SOLO las tendencias GANADORAS donde la empresa apuesta estratégicamente y se observa algún resultado "
+        "(pueden ser de 1 a 6; prioriza calidad sobre cantidad). Ordénalas por fuerza del encaje/evidencia."
     )
     inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-co-{datetime.now(timezone.utc).timestamp()}",
                          INVESTIGATOR_COMPANY_SYS, inv_user)
@@ -491,11 +499,10 @@ async def run_company_thesis(company: str, sources: list) -> dict:
     comp = inv.get("company") or {}
     syn = await _synthesize_company_trends(comp.get("name") or company, trends)
     syn_trends = syn.get("trends") or []
-    rel_by_name = {(t.get("name") or "").lower(): t for t in syn_trends}
+    aligned = _align_syn_trends(trends, syn_trends)
 
     merged = []
-    for idx, t in enumerate(trends):
-        s = rel_by_name.get((t.get("name") or "").lower()) or (syn_trends[idx] if idx < len(syn_trends) else {})
+    for t, s in zip(trends, aligned):
         merged.append({
             "name": t.get("name"),
             "fit_description": t.get("fit_description"),
@@ -504,6 +511,11 @@ async def run_company_thesis(company: str, sources: list) -> dict:
             "rationale": s.get("rationale"),
         })
     merged.sort(key=lambda x: (x["relevance_score"] is None, -(x["relevance_score"] or 0)))
+
+    overall_relevance = _clamp_score(syn.get("overall_relevance"))
+    relevance_unavailable = overall_relevance is None and not any(
+        m["relevance_score"] is not None for m in merged
+    )
 
     return {
         "type": "company",
@@ -514,7 +526,8 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "probability": _clamp10(syn.get("overall_probability")),
         "probability_rationale": syn.get("overall_probability_rationale"),
         "trends": merged,
-        "overall_relevance": _clamp_score(syn.get("overall_relevance")),
+        "overall_relevance": overall_relevance,
+        "flags": {"relevance_unavailable": relevance_unavailable},
         "contra": None,
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -522,31 +535,74 @@ async def run_company_thesis(company: str, sources: list) -> dict:
 
 
 SYNTHESIZER_COMPANY_SYS = (
-    "Eres un estratega de inversión. Recibes una empresa y una lista de megatendencias en las "
-    "que encaja. Asignas a cada tendencia un score de RELEVANCIA de 0 a 100 (cuánto pesa esa "
-    "tendencia en la tesis de la empresa) con una justificación breve, y un score global de "
-    "relevancia temática. También estimas la PROBABILIDAD (entero 0 a 10) de que la tesis "
-    "alcista temática de la empresa se materialice, con una justificación breve. "
-    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "Eres un estratega de inversión. Recibes una empresa y una lista de megatendencias GANADORAS en "
+    "las que encaja. Asignas a cada tendencia un score de RELEVANCIA de 0 a 100 que refleja el "
+    "COMPROMISO ESTRATÉGICO de la empresa con ese tema y la TRACCIÓN observada (NO la mera relevancia "
+    "tangencial), con una justificación breve que explique cómo la empresa está AUMENTANDO su "
+    "participación y la evidencia concreta. También das un score global de relevancia temática y "
+    "estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista temática GANADORA se "
+    "materialice, con una justificación breve. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
+
+
+def _align_syn_trends(inv_trends: list, syn_trends: list) -> list:
+    """Align synthesizer trend objects to the investigator trends: exact name → token
+    overlap → positional, each consumed once. Prevents a reworded name from silently
+    dropping the relevance/rationale (root cause of empty relevance)."""
+    norm = [(i, (st.get("name") or "").strip().lower()) for i, st in enumerate(syn_trends)]
+    used, out = set(), []
+    for idx, t in enumerate(inv_trends):
+        key = (t.get("name") or "").strip().lower()
+        chosen = None
+        for i, nm in norm:  # exact
+            if i not in used and nm == key:
+                chosen = i
+                break
+        if chosen is None and key:  # token overlap
+            kset = set(key.split())
+            best_i, best_score = None, 0.0
+            for i, nm in norm:
+                if i in used:
+                    continue
+                sset = set(nm.split())
+                union = len(kset | sset)
+                score = (len(kset & sset) / union) if union else 0.0
+                if score > best_score:
+                    best_i, best_score = i, score
+            if best_i is not None and best_score >= 0.3:
+                chosen = best_i
+        if chosen is None and idx < len(syn_trends) and idx not in used:  # positional
+            chosen = idx
+        if chosen is not None:
+            used.add(chosen)
+            out.append(syn_trends[chosen])
+        else:
+            out.append({})
+    return out
 
 
 async def _synthesize_company_trends(company: str, trends: list) -> dict:
     lst = "\n".join(f"- {t.get('name')}: {t.get('fit_description')}" for t in trends)
     user = (
-        f"EMPRESA: {company}\n\nTENDENCIAS:\n{lst}\n\n"
+        f"EMPRESA: {company}\n\nTENDENCIAS GANADORAS:\n{lst}\n\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "overall_relevance": 0-100,\n'
         '  "overall_probability": 0-10,\n'
-        '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática",\n'
-        '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "rationale": "1-2 frases"}]\n'
+        '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática ganadora",\n'
+        '  "trends": [{"name": "misma tendencia", "relevance_score": 0-100, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}]\n'
         "}\n"
         "Incluye TODAS las tendencias con su mismo nombre."
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-syn-co-{datetime.now(timezone.utc).timestamp()}",
-                     SYNTHESIZER_COMPANY_SYS, user)
-    return _extract_json(raw)
+    data = {}
+    for attempt in range(2):  # retry once: a transient parse/LLM miss left relevance blank
+        raw = await _llm(*SYNTHESIZER_MODEL,
+                         f"thesis-syn-co-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                         SYNTHESIZER_COMPANY_SYS, user)
+        data = _extract_json(raw)
+        if data.get("overall_relevance") is not None or data.get("trends"):
+            return data
+    return data
 
 
 # ---------------------- Contra-thesis (antítesis, bajo demanda) ----------------------
@@ -670,9 +726,12 @@ async def run_company_contra(company: str, summary: str) -> dict:
 # ---------------------- F5: Cross-linking company ↔ existing theses ----------------------
 
 MATCHER_SYS = (
-    "Eres un analista que relaciona las tendencias de una empresa con las TESIS de tendencia que "
-    "el usuario ya tiene guardadas. Dos tendencias 'coinciden' si tratan el MISMO tema estructural "
-    "aunque el nombre difiera. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "Eres un analista que relaciona las tendencias GANADORAS de una empresa con las TESIS de "
+    "tendencia que el usuario ya tiene guardadas. Dos tendencias 'coinciden' si tratan el MISMO "
+    "tema estructural aunque el nombre difiera. Solo debes asociar (to_add) o sugerir como nueva "
+    "(to_create) una tendencia cuando la empresa sea un GANADOR/participante estratégico con algún "
+    "resultado observable en ese tema; si una tendencia no lo cumple, NO la incluyas en ninguna "
+    "lista. Ambas listas PUEDEN quedar vacías. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
@@ -716,12 +775,12 @@ async def match_company_to_theses(company: str, company_trends: list, existing: 
         "Para cada tendencia de la empresa, decide si corresponde a una tesis existente (mismo tema) o no.\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
-        '  "to_add": [{"thesis_id": "id EXACTO de la lista", "thesis_title": "título", "trend_name": "COPIA LITERAL de la tendencia de la empresa", "reason": "1 frase"}],\n'
-        '  "to_create": [{"trend_name": "COPIA LITERAL de la tendencia sin tesis asociada", "why": "1 frase: por qué merece su propia tesis"}]\n'
+        '  "to_add": [{"thesis_id": "id EXACTO de la lista", "thesis_title": "título", "trend_name": "COPIA LITERAL de la tendencia de la empresa", "reason": "1 frase: por qué la empresa es un ganador estratégico en esta tesis y la evidencia/resultado"}],\n'
+        '  "to_create": [{"trend_name": "COPIA LITERAL de la tendencia sin tesis asociada", "why": "1 frase: por qué es una tesis ganadora y la empresa apuesta estratégicamente por ella con resultados"}]\n'
         "}\n"
         "IMPORTANTE: 'trend_name' debe ser una COPIA EXACTA (carácter por carácter) de una de las tendencias listadas arriba. "
-        "Usa SOLO los id que aparecen en la lista para 'to_add'. Si no hay tesis existentes, todo va en 'to_create'. "
-        "No repitas la misma tendencia en ambas listas."
+        "Usa SOLO los id que aparecen en la lista para 'to_add'. Si no hay tesis existentes, las tendencias ganadoras van en 'to_create'. "
+        "No repitas la misma tendencia en ambas listas. Si ninguna tendencia cumple el criterio ganador/estratégico, devuelve ambas listas VACÍAS."
     )
     raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-match-{datetime.now(timezone.utc).timestamp()}",
                      MATCHER_SYS, user)

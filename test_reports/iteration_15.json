@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only verification of Thesis Engine block 1.1b NEW UI (fit explanation + direct-add button). FULL PASS for ALL scope items on MSFT company-thesis. (1) Generated MSFT via Empresa→Tesis: dedup-warning shown → 'Reescribir igualmente' → thesis-result rendered after generation. Cabecera 'Relevancia temática global' shows '95' (numeric, not '—'). (2) Block 1.1b 'existing-matches' rendered with row [data-testid=matched-thesis-thesis_test_aidc]. (3) Fit explanation [data-testid=matched-thesis-fit-thesis_test_aidc] visible with 200 chars of meaningful Spanish text: 'Microsoft lidera con Azure como infraestructura cloud para IA generativa, generando ingresos récord en servicios cloud y posicionándose como plataforma dominante de compute para modelos fundacionales.' (4) Both idle buttons present: [data-testid=matched-thesis-add-direct-thesis_test_aidc] ('Añadir a tesis') AND [data-testid=matched-thesis-eval-thesis_test_aidc] ('Calcular score'). (5) Clicked direct-add → 'Añadiendo…' indicator [matched-thesis-adding-thesis_test_aidc] appeared → completed in 13.7s → row removed from existing-matches → toast 'MSFT añadida a \"IA y centros de datos\"' shown. (6) CompanyQualCard then renders 'IA y centros de datos' with Score 74 / TAM 0.71. (7) Clicked refresh-data-btn → opened company-trends-toggle-MSFT → sidebar block shows '1 TESIS' and lists 'IA y centros de datos' as included. (8) relevance-unavailable-note: not present (expected — LLM produced relevance score 95).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_15.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx 'existing-matches' check timing: link-suggestions can still be in 'Comprobando duplicados…' state after thesis-result mounts; any consumer (tests or users skimming quickly) needs to wait for it to settle before judging whether matches exist. Current UX is fine (the spinner is shown next to 'Nuevas tesis sugeridas') but the empty/non-empty transition can flash. A skeleton inside the existing-matches block region would be clearer.",
+    "Some 401 responses logged at page load (before cookie auth establishes). Not user-visible but noisy in console."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "cookie session_token=test_profile_token_fixed_123 (user_id=test_profile_user_123) on host ai-valuation-desk.preview.emergentagent.com",
+  "seed_data_creation": "Re-ran /app/backend/tests/seed_company_thesis_test.py. Verified MSFT was NOT a member of thesis_test_aidc.companies before the run (pull modified_count=0; companies=['NVDA']). After this run, MSFT is again a member of thesis_test_aidc (via direct-add) — re-run seed_company_thesis_test.py + mongo pull (db.theses.update_one({'id':'thesis_test_aidc'},{'$pull':{'companies':{'ticker':'MSFT'}}})) before retesting block 1.1b.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth: cookie session_token=test_profile_token_fixed_123 on ai-valuation-desk.preview.emergentagent.com. Block 1.1b requires MSFT NOT already in thesis_test_aidc.companies (otherwise already_in=true filters the row out). After running the direct-add test, MSFT is added back so reset before next run. Generation ~30-45s with real LLM. Direct-add (LLM-evaluate then attach) ~10-30s. 'Calcular score' route (matched-thesis-eval → preview-overall-{id} + preview-tam-{id} → matched-thesis-add-{id} Confirmar) was already verified in iteration_14 and remains code-present; not re-exercised in this run.",
+  "rca of the issue": "No issues found. The two main new features (fit text + direct-add) work end-to-end with real LLM."
+}
