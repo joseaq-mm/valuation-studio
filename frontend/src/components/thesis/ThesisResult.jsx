@@ -303,9 +303,12 @@ function WinningBadge({ value }) {
 /** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
  *  an informational card with a single "Generar tesis" action. */
 function NewThesisCard({ t, idx = 0 }) {
+    const [showSplits, setShowSplits] = useState(false);
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
     const trendQuery = encodeURIComponent(t.name || "");
+    const splits = Array.isArray(t.splits) && t.splits.length >= 2 ? t.splits : null;
+    const splitSum = splits ? splits.reduce((a, s) => a + (s.tam_busd || 0), 0) : 0;
 
     return (
         <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
@@ -350,13 +353,46 @@ function NewThesisCard({ t, idx = 0 }) {
                     <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
                 </div>
             )}
+            {splits && (
+                <div className="mt-3 border-t border-dashed border-black/15 pt-3">
+                    <button
+                        onClick={() => setShowSplits((v) => !v)}
+                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.1em] font-semibold text-[#052049] hover:underline"
+                        data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
+                    >
+                        <GitBranch size={13} /> {showSplits ? "Ocultar desglose" : `Dividir en ${splits.length} partes`}
+                    </button>
+                    {showSplits && (
+                        <div className="mt-2 space-y-1.5" data-testid={`thesis-splits-${(t.name || "").slice(0, 12)}`}>
+                            <div className="text-[11px] text-[#4A4A4A] leading-snug">
+                                Sub-tesis independientes (sus TAM suman {fmtTam(splitSum) || "≈ el TAM del driver"}). Desarrolla una parte en vez del conjunto:
+                            </div>
+                            {splits.map((sp, i) => (
+                                <div key={i} className="flex items-center justify-between gap-2 border border-black/15 bg-[#FAF6F0] px-2 py-1.5">
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-medium leading-tight truncate">{sp.name}</div>
+                                        {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
+                                    </div>
+                                    <Link
+                                        to={`/thesis?trend=${encodeURIComponent(sp.name || "")}&auto=1`}
+                                        className="shrink-0 text-[11px] uppercase tracking-[0.1em] font-semibold border border-black px-2 py-1 hover:bg-black hover:text-[#FDF1E6] transition-colors"
+                                        data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
+                                    >
+                                        Generar
+                                    </Link>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
             <div className="mt-auto pt-4 border-t border-black/10">
                 <Link
                     to={`/thesis?trend=${trendQuery}&auto=1`}
                     className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
                     data-testid={`trend-generate-${slug}`}
                 >
-                    <Sparkles size={13} /> Generar tesis <ArrowRight size={12} />
+                    <Sparkles size={13} /> Generar tesis (conjunto) <ArrowRight size={12} />
                 </Link>
             </div>
         </div>

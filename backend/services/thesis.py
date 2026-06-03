@@ -512,6 +512,10 @@ DRIVER_RECONCILER_SYS = (
     "la vez): elige el nivel en que los drivers son INDEPENDIENTES entre sí. "
     "(4) Ajusta cada TAM al valor más alto posible que mantenga la EXCLUSIVIDAD mutua (sin doble conteo). "
     "Conserva la etiqueta de tipo (actual/futura) de cada driver. "
+    "ADEMÁS: para cada tesis que sea un CORE GRANDE y descomponible en sub-drivers INDEPENDIENTES (p.ej. "
+    "cómputo de IA → entrenamiento + inferencia), incluye un desglose OPCIONAL 'splits' con sus sub-partes "
+    "independientes cuyos TAM SUMEN aproximadamente el TAM de la tesis (CONSERVACIÓN: no inflar el total). "
+    "Para tesis pequeñas o no descomponibles, deja 'splits' como lista VACÍA. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
@@ -558,11 +562,12 @@ async def _reconcile_drivers(company: str, drivers: list, sources_block: str) ->
         "excluyentes y lo más altos posible, sin que un driver sea sub-conjunto de otro). Devuelve un JSON "
         "con esta forma EXACTA:\n"
         "{\n"
-        '  "trends": [{"name": "tesis (driver de crecimiento)", "type": "actual|futura", "demand_driver": "la fuente de demanda que lo mueve", "fit_description": "la apuesta de la empresa y la evidencia/lógica de alta convicción", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0}]\n'
+        '  "trends": [{"name": "tesis (driver de crecimiento)", "type": "actual|futura", "demand_driver": "la fuente de demanda que lo mueve", "fit_description": "la apuesta de la empresa y la evidencia/lógica de alta convicción", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0, "splits": [{"name": "sub-driver independiente", "demand_driver": "su fuente de demanda", "fit_description": "1 frase", "tam_busd": 0}]}]\n'
         "}\n"
         "REGLAS: TAMs mutuamente excluyentes (el más alto posible sin doble conteo); NO incluyas un negocio "
         "y su sub-driver a la vez; conserva la etiqueta type (actual/futura); mantén solo alta convicción; "
-        "ordénalos por convicción."
+        "ordénalos por convicción. 'splits' SOLO para cores grandes descomponibles (sus TAM deben sumar ~el "
+        "TAM de la tesis); vacío en el resto."
     )
     trends = []
     for attempt in range(2):  # retry once on a transient empty result
@@ -582,6 +587,29 @@ def _norm_type(v) -> str:
     if t in ("futura", "futuras", "future", "futuro", "adyacente", "adyacencia"):
         return "futura"
     return "actual"
+
+
+def _build_splits(raw_splits, parent_tam):
+    """Optional decomposition of a large core driver into independent sub-drivers.
+    Rescales the sub-parts' TAM proportionally so they sum EXACTLY to the parent
+    driver's TAM (conservation: no inflation). Returns [] when there is no
+    meaningful split (fewer than 2 sub-parts)."""
+    splits = []
+    for sp in (raw_splits or []):
+        if sp.get("name"):
+            splits.append({
+                "name": sp.get("name"),
+                "demand_driver": sp.get("demand_driver"),
+                "fit_description": sp.get("fit_description"),
+                "tam_busd": _busd(sp.get("tam_busd")),
+            })
+    if len(splits) < 2:
+        return []
+    total = sum(s["tam_busd"] for s in splits if s["tam_busd"] is not None)
+    if parent_tam and total and all(s["tam_busd"] is not None for s in splits):
+        for s in splits:
+            s["tam_busd"] = round(s["tam_busd"] * parent_tam / total, 1)
+    return splits
 
 
 async def run_company_thesis(company: str, sources: list) -> dict:
@@ -612,6 +640,7 @@ async def run_company_thesis(company: str, sources: list) -> dict:
 
     merged = []
     for t, s in zip(trends, aligned):
+        tam = _busd(t.get("tam_busd"))
         merged.append({
             "name": t.get("name"),
             "type": _norm_type(t.get("type")),
@@ -621,7 +650,8 @@ async def run_company_thesis(company: str, sources: list) -> dict:
             "relevance_score": _clamp_score(s.get("relevance_score")),
             "win_probability": _clamp10(s.get("win_probability")),
             "rationale": s.get("rationale"),
-            "tam_busd": _busd(t.get("tam_busd")),
+            "tam_busd": tam,
+            "splits": _build_splits(t.get("splits"), tam),
         })
     merged.sort(key=lambda x: (x["relevance_score"] is None, -(x["relevance_score"] or 0)))
 
