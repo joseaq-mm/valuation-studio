@@ -471,91 +471,103 @@ async def run_news_watch(trend_titles: list) -> dict:
     return {"important": out}
 
 
-# ---------------------- Flow B: Company → trends (two-pass) ----------------------
-# Pass 1 identifies the company's broad WINNING business areas; Pass 2 forces each
-# area down a level into its most granular self-standing sub-segments. The forced
-# second pass guarantees fine granularity without relying on a fixed TAM threshold.
+# ---------------------- Flow B: Company → growth-driver theses (3 passes) ----------------------
+# A thesis = a HIGH-CONVICTION bet on an INDEPENDENT growth driver (own, non-overlapping
+# TAM), tagged Actual (core in expansion) or Futura (future bet / adjacency).
+#   Pass 1 (_map_growth_drivers): map current sub-drivers + future/adjacent bets.
+#   Pass 2 (_reconcile_drivers): merge correlated drivers, drop low conviction, keep TAMs
+#           mutually exclusive (highest non-overlapping). Qualitative, no deterministic rule.
+#   Pass 3 (_synthesize_company_trends): score relevance + win_probability.
 
-AREAS_INVESTIGATOR_SYS = (
-    "Eres un analista de equity research senior. Recibes resultados REALES de búsqueda web reciente "
-    "sobre una empresa cotizada. Tu tarea (PASO 1 de 2) es identificar las GRANDES ÁREAS DE NEGOCIO "
-    "GANADORAS de la empresa: áreas donde (a) la tendencia es estructuralmente favorable, (b) la empresa "
-    "hace una APUESTA ESTRATÉGICA explícita (producto, inversión, adquisición, alianza) y (c) YA se "
-    "observa RESULTADO/tracción (ingresos, clientes, reservas o cuota). Identifica las áreas AMPLIAS (sin "
-    "descomponer todavía; eso es el paso 2). Descarta áreas tangenciales, genéricas o sin tracción. "
-    "Confirma el TICKER canónico exacto (formato Yahoo Finance). "
+GROWTH_DRIVER_MAPPER_SYS = (
+    "Eres un analista de equity research senior. Una TESIS es una apuesta de ALTA CONVICCIÓN sobre un "
+    "DRIVER DE CRECIMIENTO independiente de la empresa, con TAM propio y NO solapado con los demás. "
+    "Recibes resultados REALES de búsqueda web reciente sobre una empresa cotizada. Tu tarea (PASO 1 de 3) "
+    "es MAPEAR sus drivers de crecimiento, de DOS tipos: "
+    "ACTUALES: negocios que hoy crecen a tasas altas; en empresas grandes, DESCOMPÓN el núcleo en sus "
+    "sub-drivers INDEPENDIENTES (cada uno con dinámica de demanda y TAM propios; p.ej. en cómputo de IA, "
+    "entrenamiento e inferencia son drivers distintos). "
+    "FUTURAS/ADYACENTES: apuestas de futuro (con poca o nula tracción hoy) y áreas adyacentes con "
+    "sinergias que expanden el negocio y refuerzan las barreras de entrada (moat). "
+    "PRINCIPIO DE DRIVER INDEPENDIENTE: dos cosas son drivers DISTINTOS si su crecimiento es en gran "
+    "medida INDEPENDIENTE (causas de demanda distintas y TAM propio); si crecen por la MISMA causa "
+    "(demanda correlacionada, mismo pool de TAM, módulos de una misma plataforma vendida junta), son UN "
+    "solo driver (no los separes). "
+    "TAM: a cada driver asígnale el TAM MÁS ALTO posible que NO se solape con el de los demás (mutuamente "
+    "excluyentes). CONVICCIÓN: prioriza drivers de alta convicción = fuertes en (i) viento de cola "
+    "estructural, (ii) derecho a ganar de la empresa (posición/activos/compromiso estratégico) y (iii) TAM "
+    "dimensionable. El NÚMERO de drivers EMERGE de la empresa (una gran diversificada dará varios; una "
+    "focalizada, pocos + quizá 1 adyacencia); no fuerces un número. Confirma el TICKER canónico (formato "
+    "Yahoo Finance). Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+DRIVER_RECONCILER_SYS = (
+    "Eres un analista de equity research senior. Recibes una empresa y una lista PRELIMINAR de drivers de "
+    "crecimiento. Tu tarea (PASO 2 de 3) es DEPURARLA hasta dejar un conjunto de tesis de ALTA CONVICCIÓN "
+    "con TAMs MUTUAMENTE EXCLUYENTES (sin solaparse) y lo más altos posible: "
+    "(1) FUSIONA los drivers que crezcan por la MISMA causa de demanda o que compartan el mismo pool de "
+    "TAM (p.ej. módulos de una plataforma vendida junta como una suite → un solo driver). "
+    "(2) DESCARTA los de convicción baja o especulativos sin compromiso real. "
+    "(3) Asegura que NINGÚN driver sea un sub-conjunto de otro (no devuelvas un negocio y su sub-driver a "
+    "la vez): elige el nivel en que los drivers son INDEPENDIENTES entre sí. "
+    "(4) Ajusta cada TAM al valor más alto posible que mantenga la EXCLUSIVIDAD mutua (sin doble conteo). "
+    "Conserva la etiqueta de tipo (actual/futura) de cada driver. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
-SEGMENT_DECOMPOSER_SYS = (
-    "Eres un analista de equity research senior especializado en separar un negocio en sus partes "
-    "REALMENTE invertibles por separado. Recibes una empresa, sus GRANDES ÁREAS DE NEGOCIO ganadoras y "
-    "resultados REALES de búsqueda web. Tu tarea (PASO 2 de 2) es, para CADA área, decidir si se "
-    "descompone en sub-segmentos o se mantiene como UNA sola tesis, aplicando un TEST DE ENTIDAD PROPIA. "
-    "DIVIDE un área en sub-segmentos SOLO SI cada sub-segmento resultante cumple LOS DOS criterios: "
-    "(1) DISTINCIÓN DE MERCADO: distinto comprador/cliente objetivo, distinto conjunto de competidores y "
-    "distinta cadena de valor/go-to-market que sus hermanos; "
-    "(2) MONETIZACIÓN SEPARADA: la empresa lo vende/monetiza como un negocio diferenciado, NO como un "
-    "simple módulo o feature de una plataforma unificada que se vende junta al mismo cliente. "
-    "Si los candidatos a sub-segmento son en realidad funcionalidades/módulos de una MISMA plataforma "
-    "vendida como un todo al mismo cliente (p.ej. APM + logs + métricas dentro de una suite de "
-    "observabilidad), NO los dividas: mantén el área como UN único segmento. "
-    "El número de segmentos EMERGE de este test, no de una cuota fija: una empresa diversificada con "
-    "varios mercados distintos dará varios; una empresa de plataforma enfocada dará pocos (a menudo 1 por "
-    "área). Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
-)
 
-
-async def _identify_business_areas(company: str, sources_block: str) -> dict:
-    """Pass 1 (GPT-5.2): the company's broad winning business areas."""
+async def _map_growth_drivers(company: str, sources_block: str) -> dict:
+    """Pass 1 (GPT-5.2): map the company's current sub-drivers + future/adjacent bets."""
     user = (
         f"EMPRESA A ANALIZAR (nombre o ticker): {company}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
-        "Identifica las GRANDES ÁREAS DE NEGOCIO GANADORAS (amplias; NO las descompongas todavía). "
-        "Devuelve un JSON con esta forma EXACTA:\n"
+        "Mapea los DRIVERS DE CRECIMIENTO (actuales y futuros/adyacentes). Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "company": {"name": "Nombre oficial", "ticker": "TICKER"},\n'
-        '  "summary": "2-3 frases sobre el negocio y sus apuestas estratégicas recientes con tracción",\n'
-        '  "areas": [{"name": "área de negocio amplia", "description": "qué es y por qué es ganadora: la apuesta estratégica concreta y la tracción/resultado observado"}]\n'
-        "}\n"
-        "Incluye SOLO áreas ganadoras reales con evidencia reciente. Para una empresa cotizada real, "
-        "devuelve AL MENOS 1 área (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
-    )
-    inv = {}
-    for attempt in range(2):  # retry once on a transient empty result
-        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-areas-{attempt}-{datetime.now(timezone.utc).timestamp()}",
-                         AREAS_INVESTIGATOR_SYS, user)
-        inv = _extract_json(raw)
-        if inv.get("areas"):
-            break
-    return inv
-
-
-async def _decompose_areas(company: str, areas: list, sources_block: str) -> list:
-    """Pass 2 (GPT-5.2): force each broad area down into its most granular self-standing
-    sub-segments, each with its own TAM. Returns the flat list of sub-segments."""
-    areas_block = "\n".join(
-        f"- {a.get('name')}: {a.get('description') or ''}" for a in areas if a.get("name")
-    ) or "(ninguna)"
-    user = (
-        f"EMPRESA: {company}\n\nGRANDES ÁREAS DE NEGOCIO GANADORAS:\n{areas_block}\n\n"
-        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
-        "Para CADA área, aplica el TEST DE ENTIDAD PROPIA y emite los segmentos resultantes (divide solo "
-        "cuando proceda; si los candidatos son módulos de una plataforma unificada vendida junta, deja el "
-        "área entera como UN segmento). Devuelve un JSON con esta forma EXACTA:\n"
-        "{\n"
-        '  "trends": [{"name": "segmento de negocio con entidad propia", "area": "nombre EXACTO del área de la que proviene", "fit_description": "la APUESTA ESTRATÉGICA concreta y el RESULTADO/tracción de este segmento (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0}]\n'
+        '  "summary": "2-3 frases sobre el negocio y sus motores de crecimiento",\n'
+        '  "drivers": [{"name": "driver de crecimiento concreto", "type": "actual|futura", "demand_driver": "qué causa su crecimiento (la fuente de demanda)", "conviction_rationale": "por qué es de alta convicción: viento de cola + derecho a ganar + evidencia", "tam_busd": 0}]\n'
         "}\n"
         "REGLAS:\n"
-        "- 'tam_busd' = TAM estimado del segmento en miles de millones de USD (2027e). Es informativo; NO es condición para dividir.\n"
-        "- Divide un área SOLO si cada sub-segmento cumple los 2 criterios (distinción de mercado + monetización separada). Si son módulos de una plataforma unificada vendida junta al mismo cliente, deja el área como UN segmento.\n"
-        "- NUNCA incluyas el área amplia Y sus sub-segmentos a la vez.\n"
-        "- Descarta segmentos sin tracción. Ordénalos por fuerza del encaje/evidencia."
+        "- Drivers INDEPENDIENTES: si dos crecen por la misma causa o comparten el mismo pool de TAM, fusiónalos en uno.\n"
+        "- 'tam_busd' = el TAM más alto posible del driver SIN solaparse con los demás (USD miles de millones, 2027e).\n"
+        "- Incluye apuestas FUTURAS aunque tengan poca tracción si son de alta convicción (márcalas type='futura').\n"
+        "- Para una empresa cotizada real, devuelve AL MENOS 1 driver (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
+    )
+    mp = {}
+    for attempt in range(2):  # retry once on a transient empty result
+        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-map-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                         GROWTH_DRIVER_MAPPER_SYS, user)
+        mp = _extract_json(raw)
+        if mp.get("drivers"):
+            break
+    return mp
+
+
+async def _reconcile_drivers(company: str, drivers: list, sources_block: str) -> list:
+    """Pass 2 (GPT-5.2): merge correlated drivers, drop low conviction, keep TAMs
+    mutually exclusive. Returns the final, non-overlapping high-conviction set."""
+    drivers_block = "\n".join(
+        f"- [{(d.get('type') or '').lower()}] {d.get('name')} (TAM ~${d.get('tam_busd')}B; driver: "
+        f"{d.get('demand_driver') or '?'}). {(d.get('conviction_rationale') or '')[:200]}"
+        for d in drivers if d.get("name")
+    ) or "(ninguno)"
+    user = (
+        f"EMPRESA: {company}\n\nDRIVERS PRELIMINARES:\n{drivers_block}\n\n"
+        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
+        "Depura la lista (fusiona correlacionados, descarta baja convicción, garantiza TAMs mutuamente "
+        "excluyentes y lo más altos posible, sin que un driver sea sub-conjunto de otro). Devuelve un JSON "
+        "con esta forma EXACTA:\n"
+        "{\n"
+        '  "trends": [{"name": "tesis (driver de crecimiento)", "type": "actual|futura", "demand_driver": "la fuente de demanda que lo mueve", "fit_description": "la apuesta de la empresa y la evidencia/lógica de alta convicción", "value_chain_role": "su rol/posición en la cadena de valor", "tam_busd": 0}]\n'
+        "}\n"
+        "REGLAS: TAMs mutuamente excluyentes (el más alto posible sin doble conteo); NO incluyas un negocio "
+        "y su sub-driver a la vez; conserva la etiqueta type (actual/futura); mantén solo alta convicción; "
+        "ordénalos por convicción."
     )
     trends = []
     for attempt in range(2):  # retry once on a transient empty result
-        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-decomp-{attempt}-{datetime.now(timezone.utc).timestamp()}",
-                         SEGMENT_DECOMPOSER_SYS, user)
+        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-recon-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+                         DRIVER_RECONCILER_SYS, user)
         data = _extract_json(raw)
         trends = data.get("trends") or []
         if trends:
@@ -563,28 +575,37 @@ async def _decompose_areas(company: str, areas: list, sources_block: str) -> lis
     return trends
 
 
+def _norm_type(v) -> str:
+    t = (v or "").strip().lower()
+    if t in ("actual", "actuales", "current"):
+        return "actual"
+    if t in ("futura", "futuras", "future", "futuro", "adyacente", "adyacencia"):
+        return "futura"
+    return "actual"
+
+
 async def run_company_thesis(company: str, sources: list) -> dict:
     sources_block = _sources_block(sources)
 
-    # Pass 1: broad winning business areas.
-    inv = await _identify_business_areas(company, sources_block)
-    areas = inv.get("areas") or []
-    if not areas:
-        raise ValueError("El investigador no pudo identificar áreas de negocio para esta empresa. Revisa el nombre o ticker.")
-    comp = inv.get("company") or {}
+    # Pass 1: map current + future/adjacent growth drivers.
+    mp = await _map_growth_drivers(company, sources_block)
+    drivers = mp.get("drivers") or []
+    if not drivers:
+        raise ValueError("No se pudieron identificar drivers de crecimiento para esta empresa. Revisa el nombre o ticker.")
+    comp = mp.get("company") or {}
 
-    # Pass 2: force each area down into its most granular self-standing sub-segments.
-    trends = await _decompose_areas(comp.get("name") or company, areas, sources_block)
+    # Pass 2: reconcile into a non-overlapping, high-conviction set.
+    trends = await _reconcile_drivers(comp.get("name") or company, drivers, sources_block)
     if not trends:
-        # Fallback: if the decomposer returned nothing, use the broad areas as segments
-        # so the user still gets a result (no fixed-threshold logic needed).
+        # Fallback: use the mapped drivers directly so the user still gets a result.
         trends = [{
-            "name": a.get("name"), "area": a.get("name"),
-            "fit_description": a.get("description"),
-            "value_chain_role": None, "tam_busd": None,
-        } for a in areas if a.get("name")]
+            "name": d.get("name"), "type": d.get("type"),
+            "demand_driver": d.get("demand_driver"),
+            "fit_description": d.get("conviction_rationale"),
+            "value_chain_role": None, "tam_busd": d.get("tam_busd"),
+        } for d in drivers if d.get("name")]
 
-    # Pass 3: qualitative scoring of the granular sub-segments.
+    # Pass 3: qualitative scoring of the final theses.
     syn = await _synthesize_company_trends(comp.get("name") or company, trends)
     syn_trends = syn.get("trends") or []
     aligned = _align_syn_trends(trends, syn_trends)
@@ -593,7 +614,8 @@ async def run_company_thesis(company: str, sources: list) -> dict:
     for t, s in zip(trends, aligned):
         merged.append({
             "name": t.get("name"),
-            "area": t.get("area"),
+            "type": _norm_type(t.get("type")),
+            "demand_driver": t.get("demand_driver"),
             "fit_description": t.get("fit_description"),
             "value_chain_role": t.get("value_chain_role"),
             "relevance_score": _clamp_score(s.get("relevance_score")),
@@ -613,7 +635,7 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "query": company,
         "company": {"name": comp.get("name") or company, "ticker": (comp.get("ticker") or "").upper().strip()},
         "title": comp.get("name") or company,
-        "summary": inv.get("summary"),
+        "summary": mp.get("summary"),
         "probability": _clamp10(syn.get("overall_probability")),
         "probability_rationale": syn.get("overall_probability_rationale"),
         "trends": merged,

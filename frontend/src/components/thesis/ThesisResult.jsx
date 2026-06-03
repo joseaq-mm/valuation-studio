@@ -318,6 +318,18 @@ function NewThesisCard({ t, idx = 0 }) {
                     <div className="cursor-help"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
                 </HoverTip>
             </div>
+            {(t.type === "actual" || t.type === "futura") && (
+                <span
+                    className="inline-block w-fit mt-2 text-[10px] uppercase tracking-[0.12em] font-bold px-2 py-0.5"
+                    style={t.type === "actual"
+                        ? { background: "#052049", color: "#FDF1E6" }
+                        : { background: "#FBF3E0", color: "#7a5a10", border: "1px solid #B8860B" }}
+                    data-testid={`thesis-type-${(t.name || "").slice(0, 12)}`}
+                    title={t.type === "actual" ? "Driver de crecimiento actual (negocio en expansión)" : "Apuesta de crecimiento futuro / adyacencia"}
+                >
+                    {t.type === "actual" ? "Crecimiento actual" : "Apuesta futura"}
+                </span>
+            )}
             {fmtTam(t.tam_busd) && (
                 <div className="mt-1.5 inline-flex items-center gap-1 text-xs" data-testid={`new-thesis-tam-${(t.name || "").slice(0, 12)}`}>
                     <span className="overline text-[#4A4A4A]">TAM estimado</span>
@@ -720,7 +732,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
 
                     {/* 1.2 — new suggested theses (not similar to the ones above) */}
                     <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="overline text-[#4A4A4A]">Segmentos de negocio · nuevas tesis</div>
+                        <div className="overline text-[#4A4A4A]">Drivers de crecimiento · nuevas tesis</div>
                         {linkLoading && (
                             <span className="text-[11px] text-[#4A4A4A] flex items-center gap-1" data-testid="trends-dup-checking">
                                 <Loader2 size={11} className="animate-spin" /> Comprobando duplicados…
@@ -729,7 +741,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                     {thesis.id && linkLoading && !linkData ? (
                         <div className="text-xs text-[#4A4A4A] flex items-center gap-2 border border-dashed border-black/20 p-4" data-testid="new-trends-loading">
-                            <Loader2 size={13} className="animate-spin" /> Analizando segmentos de negocio…
+                            <Loader2 size={13} className="animate-spin" /> Analizando drivers de crecimiento…
                         </div>
                     ) : newTrends.length ? (
                         <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">

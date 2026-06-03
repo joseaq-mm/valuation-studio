@@ -18,7 +18,13 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
-- **✅ Empresa→Tesis · descomposición granular por DOBLE PASADA (Jun 2026, e2e LLM real NVDA+DDOG):**
+- **✅ Empresa→Tesis · MODELO DE DRIVERS DE CRECIMIENTO (Jun 2026, e2e LLM real NVDA+DDOG + screenshot) — modelo vigente:**
+  - Definición acordada con el usuario: una tesis = apuesta de ALTA CONVICCIÓN sobre un DRIVER DE CRECIMIENTO independiente (TAM propio, no solapado), etiquetada Actual (núcleo en expansión) o Futura (apuesta de futuro / adyacencia con sinergia+moat).
+  - 3 pasadas: (1) `_map_growth_drivers` mapea drivers actuales (núcleo descompuesto en sub-drivers independientes) + futuros/adyacentes; (2) `_reconcile_drivers` fusiona drivers correlacionados/mismo pool de TAM, descarta baja convicción, garantiza TAMs mutuamente excluyentes (el más alto posible) sin reglas deterministas ni info de solapamiento visible; (3) `_synthesize_company_trends` puntúa. Convicción = juicio cualitativo del modelo (sin corte numérico, por petición del usuario).
+  - Principio único "driver independiente": dos cosas son drivers distintos si su crecimiento es independiente; si crecen por la misma causa, son uno → produce la asimetría grande/pequeña, parte NVIDIA sin romper Datadog y garantiza exclusividad de TAM por construcción.
+  - Verificado: NVDA → 5 tesis (3 actuales + 2 futuras: robótica+simulación, gemelos digitales); DDOG → 5 (observabilidad core unificada + seguridad/CNAPP como TAM aparte + FinOps/DX + AIOps futura). Frontend muestra badge "Crecimiento actual"/"Apuesta futura" por tesis (verificado por screenshot). Lint OK.
+  - Sustituye a los enfoques anteriores (descomposición por áreas/segmentos, disyuntiva de solapamiento), todos retirados.
+- **✅ Empresa→Tesis · descomposición granular por DOBLE PASADA (Jun 2026) [SUPERADO por el modelo de drivers de crecimiento]:**
   - Problema detectado por el usuario: la granularidad era inconsistente (a veces 3 segmentos amplios, a veces 6 finos) porque era una *preferencia blanda* del prompt, no un mecanismo. El usuario eligió la opción **B (doble pasada determinista)** para no depender de un umbral fijo.
   - Implementación en `run_company_thesis`: **Pass 1** `_identify_business_areas` (GPT-5.2) identifica las grandes áreas de negocio ganadoras; **Pass 2** `_decompose_areas` (GPT-5.2) OBLIGA a dividir cada área en sus sub-segmentos más granulares con entidad propia (cualitativa + TAM propio); luego el **Synthesizer** (Claude) puntúa. Cada sub-segmento lleva `area` + `tam_busd`. Fallback a áreas si Pass 2 vuelve vacío. ~3 llamadas LLM, en background (~50s).
   - Verificado: NVDA → 2 áreas → 4 sub-segmentos ($420B/$85B/$75B/$45B); DDOG → 2 áreas → 7 sub-segmentos pequeños ($6-18B). Granularidad ahora consistente (cada área se descompone siempre).
