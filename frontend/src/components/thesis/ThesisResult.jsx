@@ -157,13 +157,14 @@ function TamScoreBadge({ data, loading, ticker }) {
 
 /** Score with a two-line label on the LEFT and the boxed number on the RIGHT,
  *  so the boxes align flush to the card's right edge. */
-function ScoreStatRight({ value, label, testid }) {
-    return (
+function ScoreStatRight({ value, label, testid, tip }) {
+    const row = (
         <div className="flex items-center justify-end gap-2" data-testid={testid}>
             <span className="overline text-[#4A4A4A] leading-tight text-right">{label}</span>
             <ValueBox text={value == null ? "—" : value} color={scoreColor(value)} />
         </div>
     );
+    return tip ? <HoverTip text={tip} maxWidth={320}><div className="cursor-help">{row}</div></HoverTip> : row;
 }
 
 function CompanyCard({ c, tamData, tamLoading }) {
@@ -182,7 +183,7 @@ function CompanyCard({ c, tamData, tamLoading }) {
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                    <ScoreStatRight value={c.overall_score} label={<>Score global<br />tendencia</>} testid={`overall-${c.ticker}`} />
+                    <ScoreStatRight value={c.overall_score} label={<>Score global<br />tendencia</>} testid={`overall-${c.ticker}`} tip={SCORE_GLOBAL_TIP} />
                     <TamScoreBadge data={tamData} loading={tamLoading} ticker={c.ticker} />
                 </div>
             </div>
@@ -277,6 +278,9 @@ function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
 
 const RELEVANCE_TIP =
     "Relevancia (0–100): cuánto pesa esta tendencia en la tesis de inversión de la empresa — qué tan central es este tema para su caso alcista.\n\nNo mide la calidad de la empresa, sino el encaje/peso del tema. Es relativa entre las tendencias en las que encaja: ≥75 (verde) = motor central del negocio; <50 (rojo) = encaje marginal o secundario.";
+
+const SCORE_GLOBAL_TIP =
+    "Score global tendencia (0–100): la calidad y el atractivo de la empresa DENTRO de esta tendencia, ponderado por su exposición al tema (a menor exposición, menor score).\n\nResume sus cuatro sub-scores: posición competitiva, momentum del sector, calidad del management y resiliencia financiera. Mayor = mejor.";
 
 /** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
  *  an informational card with a single "Generar tesis" action. */
@@ -390,10 +394,12 @@ function MatchedThesisRow({ match, company, onAdded }) {
             {showPreview && preview && (
                 <div className="mt-2.5 pt-2.5 border-t border-black/10 flex items-center justify-between gap-3 flex-wrap" data-testid={`matched-thesis-preview-${match.thesis_id}`}>
                     <div className="flex items-center gap-5">
-                        <div className="flex items-center gap-2">
-                            <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tendencia</span>
-                            <ValueBox text={preview.overall_score ?? "—"} color={scoreColor(preview.overall_score)} testid={`preview-overall-${match.thesis_id}`} />
-                        </div>
+                        <HoverTip text={SCORE_GLOBAL_TIP} maxWidth={320}>
+                            <div className="flex items-center gap-2 cursor-help">
+                                <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tendencia</span>
+                                <ValueBox text={preview.overall_score ?? "—"} color={scoreColor(preview.overall_score)} testid={`preview-overall-${match.thesis_id}`} />
+                            </div>
+                        </HoverTip>
                         <HoverTip text="TAM Score que tendría la empresa en esta tesis: (Score global tendencia / 100 × TAM del eslabón) / Ingresos proyectados 2027 (USD). >1 = amplio recorrido." maxWidth={300}>
                             <div className="flex items-center gap-2 cursor-help">
                                 <span className="overline text-[#4A4A4A] leading-tight text-right">TAM<br />Score</span>
