@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only validation of the NEW two-step add-to-thesis flow with dual-score preview in block 1.1b ('Tesis ya generadas que encajan'). End-to-end PASS for ALL scope items. (1) Generated MSFT company thesis via Empresa→Tesis mode, hit dedup-warning, clicked 'Reescribir igualmente' → thesis-result appeared after ~40s. (2) Block 1.1b 'existing-matches' rendered. (3) Clicked 'Calcular score' (data-testid matched-thesis-eval-thesis_test_aidc) → 'Calculando score…' indicator shown immediately → preview appeared in ~11s with BOTH numeric values: preview-overall-thesis_test_aidc='74' and preview-tam-thesis_test_aidc='0.71'. (4) 'Cancelar' (matched-thesis-cancel-thesis_test_aidc) works: clicking it hides the preview (count→0); re-clicking 'Calcular score' re-evaluates and re-shows preview. (5) 'Confirmar · Añadir MSFT' (matched-thesis-add-thesis_test_aidc) completed in 4.0s (FAST, reusing prior evaluation — well under the 30s LLM path). Toast 'MSFT añadida a \"IA y centros de datos\"' shown. Row disappeared after success. (6) Sidebar refresh (refresh-data-btn) updated MSFT toggle from '0 TESIS' → '1 TESIS' and dropdown lists 'IA y centros de datos' as included.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ThesisResult.jsx → existing-matches block",
+        "issue": "Duplicate matched-thesis rows for the same thesis_id. When the LLM rewrite of MSFT produces two trends that both map to thesis_test_aidc, the backend's link-suggestions returns the same matched thesis twice and the UI renders TWO identical rows (verified: 2 instances of [data-testid=matched-thesis-thesis_test_aidc] and 2 of [data-testid=matched-thesis-eval-thesis_test_aidc] in the DOM). React also logs 'Encountered two children with the same key: thesis_test_aidc'. Functionality still works (clicking either yields the correct flow) but the testids become non-unique (strict mode violations in tests) and the user sees two redundant rows.",
+        "selector": "[data-testid^='matched-thesis-']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_14.json"],
+  "action_items": [
+    "Dedupe existing-matches by thesis_id before rendering in ThesisResult.jsx (e.g. const matches = uniqBy(linkData?.to_add?.filter(m=>!m.already_in), 'thesis_id')). This will also fix the React duplicate-key warning emitted on every render of this block."
+  ],
+  "critical_code_review_comments": [
+    "ThesisResult.jsx — existing-matches rendering does not deduplicate by thesis_id. Backend /thesis/{id}/link-suggestions can legitimately return the same matched thesis multiple times (one per matching trend in the company thesis), but the UI should aggregate to a single row per thesis. Currently uses thesis_id as React key with duplicates, producing the key collision warning.",
+    "ThesisResult.jsx — Re-clicking 'Calcular score' after Cancelar makes a fresh LLM call (~15s) rather than caching the previously computed evaluation in component state. Consider memoizing the last preview keyed by ticker so a Cancel→re-Calcular is instantaneous within the same session."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "cookie session_token=test_profile_token_fixed_123 (user_id=test_profile_user_123)",
+  "seed_data_creation": "Re-ran /app/backend/tests/seed_company_thesis_test.py to reset MSFT's company-thesis seed. IMPORTANT: that seed alone does NOT remove MSFT from thesis_test_aidc.companies (a previous test run had added MSFT). I manually removed it via a direct MongoDB update: db.theses.update_one({'id':'thesis_test_aidc'}, {$pull: {companies: {ticker:'MSFT'}}}) so the existing-matches block would render the 'Calcular score' button. After this test run, MSFT is again a member of thesis_test_aidc — re-run the same pull to reset before retesting.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth: cookie session_token=test_profile_token_fixed_123 on host ai-valuation-desk.preview.emergentagent.com. To re-exercise block 1.1b you MUST first remove MSFT from thesis_test_aidc.companies in Mongo (see seed_data_creation), otherwise the matching row is filtered out (already_in=true) and the 'Calcular score' button never appears. Generation uses real LLM ~40s; preview evaluation ~10-15s; Confirm (reusing evaluation) ~3-5s. Confirmed observed scores on this run: overall=74, tam=0.71 (varies per LLM run). Block 1.2 'Nuevas tesis sugeridas' was empty on this run (all rewritten trends matched existing theses) — UI correctly shows the empty-state message.",
+  "rca of the issue": "DUPLICATE ROW BUG: When generating a company thesis (e.g. MSFT) that has multiple trends mapping to the same existing user thesis (e.g. thesis_test_aidc), POST /thesis/{id}/link-suggestions returns one entry per (company_trend, matched_thesis) pair without deduplicating by thesis_id. The frontend's existingMatches.map() then renders one MatchedThesisRow per entry using thesis_id as the React key, producing both visual duplicates and a React 'duplicate key' console error. Mitigation: dedupe in ThesisResult.jsx by thesis_id (keep highest similarity / first occurrence) OR fix in the backend route to group matches per thesis_id."
+}

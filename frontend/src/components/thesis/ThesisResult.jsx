@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check } from "lucide-react";
-import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor } from "./ScoreBar";
+import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
-import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany } from "@/lib/api";
+import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -320,46 +320,105 @@ function NewThesisCard({ t, idx = 0 }) {
     );
 }
 
-/** Bloque 1.1b — an EXISTING trend thesis the company fits but isn't a member of yet:
- *  link to it + an "Añadir {ticker}" button (anti-duplication: the company joins the
- *  existing thesis instead of spawning a near-duplicate). */
+/** Bloque 1.1b — an EXISTING trend thesis the company fits but isn't a member of yet.
+ *  Two-step add: "Calcular score" runs a no-persist evaluation and previews BOTH the
+ *  Score global tendencia and the TAM Score; "Confirmar" then adds the company reusing
+ *  that evaluation (no second LLM call). Anti-duplication: the company joins the
+ *  existing thesis instead of spawning a near-duplicate. */
 function MatchedThesisRow({ match, company, onAdded }) {
-    const [adding, setAdding] = useState(false);
-    const [added, setAdded] = useState(false);
+    const [phase, setPhase] = useState("idle"); // idle | evaluating | preview | adding | added
+    const [preview, setPreview] = useState(null);
     const companyLabel = company?.name || company?.ticker || "La empresa";
+    const showPreview = phase === "preview" || phase === "adding";
 
-    const add = async () => {
+    const evaluate = async () => {
         if (!match?.thesis_id || !company?.ticker) return;
-        setAdding(true);
+        setPhase("evaluating");
         try {
-            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
-            setAdded(true);
+            const res = await thesisEvaluateCompany(match.thesis_id, company.ticker, company.name);
+            setPreview(res);
+            setPhase("preview");
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo calcular el score.");
+            setPhase("idle");
+        }
+    };
+
+    const confirm = async () => {
+        setPhase("adding");
+        try {
+            await thesisAddCompany(match.thesis_id, company.ticker, company.name, preview?.entry || null);
+            setPhase("added");
             toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
             onAdded?.();
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
-        } finally {
-            setAdding(false);
+            setPhase("preview");
         }
     };
 
     return (
-        <div className="border border-black/30 bg-white px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap" data-testid={`matched-thesis-${match.thesis_id}`}>
-            <div className="min-w-0 text-sm">
-                <Link to={`/thesis/${match.thesis_id}`} className="font-bold hover:underline inline-flex items-center gap-1" data-testid={`matched-thesis-link-${match.thesis_id}`}>
-                    <span className="truncate">{match.thesis_title}</span><ArrowRight size={12} className="shrink-0" />
-                </Link>
-                <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>
+        <div className="border border-black/30 bg-white px-3 py-2.5" data-testid={`matched-thesis-${match.thesis_id}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0 text-sm">
+                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold hover:underline inline-flex items-center gap-1" data-testid={`matched-thesis-link-${match.thesis_id}`}>
+                        <span className="truncate">{match.thesis_title}</span><ArrowRight size={12} className="shrink-0" />
+                    </Link>
+                    <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>
+                </div>
+                {phase === "idle" && (
+                    <button
+                        onClick={evaluate}
+                        className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors border border-black hover:bg-black hover:text-[#FDF1E6] shrink-0"
+                        data-testid={`matched-thesis-eval-${match.thesis_id}`}
+                    >
+                        <Sparkles size={12} /> Calcular score
+                    </button>
+                )}
+                {phase === "evaluating" && (
+                    <span className="text-xs text-[#4A4A4A] flex items-center gap-1.5 shrink-0" data-testid={`matched-thesis-evaluating-${match.thesis_id}`}>
+                        <Loader2 size={12} className="animate-spin" /> Calculando score…
+                    </span>
+                )}
+                {phase === "added" && (
+                    <span className="text-xs font-semibold text-[#1E7D45] flex items-center gap-1 shrink-0" data-testid={`matched-thesis-added-${match.thesis_id}`}>
+                        <Check size={12} /> Añadida
+                    </span>
+                )}
             </div>
-            <button
-                onClick={add}
-                disabled={adding || added}
-                className={`text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors shrink-0 ${added ? "bg-[#1E7D45] text-white" : "bg-black text-[#FDF1E6] hover:bg-[#052049]"} disabled:opacity-70`}
-                data-testid={`matched-thesis-add-${match.thesis_id}`}
-            >
-                {adding ? <Loader2 size={12} className="animate-spin" /> : added ? <Check size={12} /> : <Plus size={12} />}
-                {added ? "Añadida" : adding ? "Añadiendo…" : `Añadir ${company?.ticker || "empresa"}`}
-            </button>
+
+            {showPreview && preview && (
+                <div className="mt-2.5 pt-2.5 border-t border-black/10 flex items-center justify-between gap-3 flex-wrap" data-testid={`matched-thesis-preview-${match.thesis_id}`}>
+                    <div className="flex items-center gap-5">
+                        <div className="flex items-center gap-2">
+                            <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tendencia</span>
+                            <ValueBox text={preview.overall_score ?? "—"} color={scoreColor(preview.overall_score)} testid={`preview-overall-${match.thesis_id}`} />
+                        </div>
+                        <HoverTip text="TAM Score que tendría la empresa en esta tesis: (Score global tendencia / 100 × TAM del eslabón) / Ingresos proyectados 2027 (USD). >1 = amplio recorrido." maxWidth={300}>
+                            <div className="flex items-center gap-2 cursor-help">
+                                <span className="overline text-[#4A4A4A] leading-tight text-right">TAM<br />Score</span>
+                                <ValueBox text={fmtTamScore(preview.tam_score) ?? "—"} color={tamColor(preview.tam_score)} testid={`preview-tam-${match.thesis_id}`} />
+                            </div>
+                        </HoverTip>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={confirm}
+                            disabled={phase === "adding"}
+                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors bg-black text-[#FDF1E6] hover:bg-[#052049] disabled:opacity-70"
+                            data-testid={`matched-thesis-add-${match.thesis_id}`}
+                        >
+                            {phase === "adding" ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                            {phase === "adding" ? "Añadiendo…" : `Confirmar · Añadir ${company?.ticker || "empresa"}`}
+                        </button>
+                        {phase !== "adding" && (
+                            <button onClick={() => { setPhase("idle"); setPreview(null); }} className="text-xs text-[#4A4A4A] hover:underline" data-testid={`matched-thesis-cancel-${match.thesis_id}`}>
+                                Cancelar
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

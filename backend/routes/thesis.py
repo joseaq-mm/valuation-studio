@@ -95,6 +95,12 @@ class RestoreRequest(BaseModel):
 class AddCompanyRequest(BaseModel):
     ticker: str
     name: Optional[str] = None
+    entry: Optional[Dict[str, Any]] = None  # precomputed evaluation (from /evaluate-company) → skip LLM
+
+
+class EvaluateCompanyRequest(BaseModel):
+    ticker: str
+    name: Optional[str] = None
 
 
 class RadarSubscribeRequest(BaseModel):
@@ -331,13 +337,17 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error detectando tendencias: {e}"}})
 
-    async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str):
+    async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str, precomputed: Optional[dict] = None):
         try:
             doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id, "type": "trend"}, {"_id": 0})
             if not doc:
                 await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
                 return
-            entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
+            # Reuse the score preview computed by /evaluate-company (no second LLM call).
+            if precomputed and (precomputed.get("ticker") or "").upper().strip() == ticker:
+                entry = precomputed
+            else:
+                entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
             tk = (entry.get("ticker") or "").upper().strip()
             companies = doc.get("companies") or []
             companies = [c for c in companies if (c.get("ticker") or "").upper() != tk]  # de-dupe
@@ -365,6 +375,41 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             logger.error(f"add-company failed ({thesis_id}/{ticker}): {e}")
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error añadiendo la empresa: {e}"}})
+
+    async def _run_eval_company_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str):
+        """Score PREVIEW: evaluate the company inside the trend (LLM) WITHOUT persisting,
+        returning both the 'Score global tendencia' (overall_score) and the TAM Score so
+        the user can decide before confirming the add."""
+        try:
+            doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id, "type": "trend"}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
+                return
+            entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
+            role = (entry.get("value_chain_role") or "").strip().lower()
+            stage_tam = None
+            for s in (doc.get("value_chain") or []):
+                if (s.get("stage") or "").strip().lower() == role:
+                    stage_tam = s.get("tam_busd")
+                    break
+            rev_busd, currency = await _projected_revenue_usd_busd(ticker)
+            tam_score = compute_tam_score(entry.get("overall_score"), stage_tam, rev_busd)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": {
+                    "entry": entry,
+                    "overall_score": entry.get("overall_score"),
+                    "tam_score": tam_score,
+                    "stage_tam_busd": stage_tam,
+                    "projected_revenue_busd": round(rev_busd, 2) if rev_busd else None,
+                    "currency": currency,
+                    "thesis_title": doc.get("title"),
+                }, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception as e:
+            logger.error(f"evaluate-company failed ({thesis_id}/{ticker}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el score: {e}"}})
 
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
@@ -793,6 +838,24 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             a["already_in"] = bool(membership.get(a.get("thesis_id"), False))
         return result
 
+    @router.post("/{thesis_id}/evaluate-company")
+    async def evaluate_company(thesis_id: str, req: EvaluateCompanyRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Score preview (job): evaluates the company in this trend without saving it.
+        Returns overall_score + TAM Score so the UI can show both before confirming."""
+        ticker = (req.ticker or "").upper().strip()
+        if not ticker:
+            raise HTTPException(status_code=400, detail="ticker requerido")
+        exists = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1})
+        if not exists:
+            raise HTTPException(status_code=404, detail="Tesis de tendencia no encontrada")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "evaluate_company",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_eval_company_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker))
+        return {"job_id": job_id}
+
     @router.post("/{thesis_id}/add-company")
     async def add_company(thesis_id: str, req: AddCompanyRequest, user: Dict[str, Any] = Depends(auth_required)):
         ticker = (req.ticker or "").upper().strip()
@@ -806,7 +869,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "id": job_id, "user_id": user["user_id"], "kind": "add_company",
             "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        _spawn(_run_addcompany_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker))
+        _spawn(_run_addcompany_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker, req.entry))
         return {"job_id": job_id}
 
     @router.get("/radar/status")
