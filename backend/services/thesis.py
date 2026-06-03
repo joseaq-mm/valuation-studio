@@ -474,15 +474,25 @@ async def run_news_watch(trend_titles: list) -> dict:
 # ---------------------- Flow B: Company → trends ----------------------
 
 INVESTIGATOR_COMPANY_SYS = (
-    "Eres un analista de equity research senior. Recibes resultados REALES de búsqueda web "
-    "reciente sobre una empresa cotizada. Tu objetivo es detectar las MEGATENDENCIAS / temas "
-    "estructurales GANADORES en los que la empresa es —o se está convirtiendo en— un GANADOR: "
-    "temas donde (a) la tendencia es estructuralmente favorable, (b) la empresa hace una APUESTA "
-    "ESTRATÉGICA explícita (producto, inversión, adquisición, alianza) y (c) YA se observa algún "
-    "RESULTADO o tracción (crecimiento de ingresos, clientes, reservas o cuota en esa área). "
-    "Prioriza CALIDAD sobre cantidad: incluye SOLO temas con encaje real respaldado por evidencia "
-    "reciente; pueden ser pocos. Descarta temas meramente tangenciales, genéricos o sin resultado. "
-    "Confirma el TICKER bursátil canónico exacto de la empresa (formato Yahoo Finance). "
+    "Eres un analista de equity research senior. Recibes resultados REALES de búsqueda web reciente "
+    "sobre una empresa cotizada. Tu objetivo es DESCOMPONER su negocio en los SEGMENTOS DE NEGOCIO / "
+    "APUESTAS más GRANULARES que, POR SÍ MISMOS, tengan ENTIDAD como tesis de inversión independiente. "
+    "Cada segmento debe cumplir DOS condiciones: "
+    "(1) ENTIDAD CUALITATIVA: es una apuesta GANADORA de la empresa — tendencia estructuralmente "
+    "favorable + apuesta estratégica explícita (producto, inversión, adquisición, alianza) + "
+    "RESULTADO/tracción observable (crecimiento de ingresos, clientes, reservas o cuota en esa área). "
+    "(2) ENTIDAD CUANTITATIVA: tiene un mercado direccionable (TAM) PROPIO y significativo, suficiente "
+    "para sostener una tesis por sí solo. "
+    "REGLA DE GRANULARIDAD (CLAVE): prefiere SIEMPRE la descomposición MÁS FINA. Si un segmento amplio "
+    "(p.ej. 'Infraestructura de IA', TAM ~850B) puede dividirse en 4-5 sub-segmentos que cada uno cumple "
+    "las dos condiciones (p.ej. cómputo de entrenamiento, redes/interconexión, aceleración de inferencia, "
+    "sistemas/servidores, plataforma de software — cada uno ~150-200B), propón los SUB-SEGMENTOS, NO el "
+    "amplio. Elige el segmento de negocio MÁS PEQUEÑO que aún pueda desarrollarse como tesis propia. NUNCA "
+    "propongas a la vez un segmento y sus sub-segmentos: baja siempre al nivel más fino para que no se "
+    "solapen. "
+    "El NÚMERO de segmentos DEPENDE de la empresa: una gran diversificada puede dar 4-8; una pequeña / "
+    "pure-play quizá solo 1-2 de pocos miles de millones. No fuerces un número fijo. Descarta segmentos "
+    "tangenciales, genéricos o sin tracción/TAM propio. Confirma el TICKER canónico (formato Yahoo Finance). "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
 )
 
@@ -492,15 +502,18 @@ async def run_company_thesis(company: str, sources: list) -> dict:
     inv_user = (
         f"EMPRESA A ANALIZAR (nombre o ticker): {company}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
+        "Descompón el negocio en sus segmentos GANADORES más GRANULARES con entidad propia. "
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "company": {"name": "Nombre oficial", "ticker": "TICKER"},\n'
         '  "summary": "2-3 frases sobre el negocio y, en concreto, sus apuestas estratégicas recientes y la tracción observada",\n'
-        '  "trends": [{"name": "megatendencia ganadora", "fit_description": "la APUESTA ESTRATÉGICA concreta de la empresa en ese tema y el RESULTADO/tracción observado (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol en esa cadena"}]\n'
+        '  "trends": [{"name": "segmento de negocio específico y granular", "fit_description": "la APUESTA ESTRATÉGICA concreta de la empresa en ese segmento y el RESULTADO/tracción observado (evidencia reciente; cómo aumenta su participación)", "value_chain_role": "su rol/posición en la cadena de valor de ese segmento", "tam_busd": 0}]\n'
         "}\n"
-        "Incluye SOLO las tendencias GANADORAS donde la empresa apuesta estratégicamente y se observa algún resultado "
-        "(pueden ser de 1 a 6; prioriza calidad sobre cantidad). Ordénalas por fuerza del encaje/evidencia. "
-        "Para una empresa cotizada real, devuelve AL MENOS 1 tendencia (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
+        "REGLAS:\n"
+        "- 'tam_busd' es el TAM PROPIO del segmento en miles de millones de USD (2027e). Debe ser un mercado significativo por sí mismo.\n"
+        "- Aplica la REGLA DE GRANULARIDAD: baja siempre al sub-segmento más fino que aún tenga entidad como tesis (no incluyas el amplio si lo has descompuesto).\n"
+        "- Incluye SOLO segmentos GANADORES con apuesta estratégica y tracción observable. El número depende de la empresa (1-2 en empresas pequeñas, 4-8 en grandes diversificadas; sin número fijo).\n"
+        "- Ordénalos por fuerza del encaje/evidencia. Para una empresa cotizada real, devuelve AL MENOS 1 segmento (NO dejes la lista vacía salvo que la empresa no exista o no cotice)."
     )
     trends, inv = [], {}
     for attempt in range(2):  # retry once: a strict/transient miss can return zero trends for a real company
@@ -527,36 +540,9 @@ async def run_company_thesis(company: str, sources: list) -> dict:
             "relevance_score": _clamp_score(s.get("relevance_score")),
             "win_probability": _clamp10(s.get("win_probability")),
             "rationale": s.get("rationale"),
-            "tam_busd": _busd(s.get("tam_busd")),
+            "tam_busd": _busd(t.get("tam_busd")),
         })
     merged.sort(key=lambda x: (x["relevance_score"] is None, -(x["relevance_score"] or 0)))
-
-    # Mutually-exclusive TAM: the synthesizer flags trends whose markets OVERLAP (one
-    # is a sub-market of another). We group them so the UI poses the disjunctive
-    # (develop the broad OR the specific, never both) — the company's proposed theses
-    # are TAM-exclusive by construction, no manual parent-child cleanup needed later.
-    names = [m.get("name") for m in merged]
-    overlap_groups = []
-    for g in (syn.get("overlap_groups") or []):
-        members = [_resolve_trend_name(x, names) for x in (g.get("members") or [])]
-        members = [m for m in dict.fromkeys(members) if m]
-        if len(members) >= 2:
-            broadest = _resolve_trend_name(g.get("broadest"), names) or members[0]
-            overlap_groups.append({
-                "note": (g.get("note") or "").strip(),
-                "members": members,
-                "broadest": broadest,
-            })
-    gi_by_name = {}
-    for gi, g in enumerate(overlap_groups):
-        for m in g["members"]:
-            gi_by_name[m.strip().lower()] = gi
-    for m in merged:
-        nm = (m.get("name") or "").strip().lower()
-        gi = gi_by_name.get(nm)
-        m["overlap_group"] = gi
-        if gi is not None:
-            m["is_broadest"] = (overlap_groups[gi]["broadest"].strip().lower() == nm)
 
     overall_relevance = _clamp_score(syn.get("overall_relevance"))
     relevance_unavailable = overall_relevance is None and not any(
@@ -573,7 +559,6 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         "probability_rationale": syn.get("overall_probability_rationale"),
         "trends": merged,
         "overall_relevance": overall_relevance,
-        "overlap_groups": overlap_groups,
         "flags": {"relevance_unavailable": relevance_unavailable},
         "contra": None,
         "sources": sources,
@@ -582,20 +567,14 @@ async def run_company_thesis(company: str, sources: list) -> dict:
 
 
 SYNTHESIZER_COMPANY_SYS = (
-    "Eres un estratega de inversión. Recibes una empresa y una lista de megatendencias GANADORAS en "
-    "las que encaja. Asignas a cada tendencia un score de RELEVANCIA de 0 a 100 que refleja el "
-    "COMPROMISO ESTRATÉGICO de la empresa con ese tema y la TRACCIÓN observada (NO la mera relevancia "
-    "tangencial), y una PROBABILIDAD GANADORA (entero 0 a 10) de que ESA tendencia sea "
-    "estructuralmente ganadora / con momentum, con una justificación breve que explique cómo la "
-    "empresa está AUMENTANDO su participación y la evidencia concreta. También das un score global de "
-    "relevancia temática y estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista temática "
-    "GANADORA se materialice, con una justificación breve. "
-    "ADEMÁS, para cada tendencia estimas su TAM global aproximado en MILES DE MILLONES DE USD (a 2027, "
-    "base TTM) y detectas SOLAPAMIENTOS de mercado entre las tendencias propuestas: cuando el mercado "
-    "de una tendencia está CONTENIDO en el de otra (madre-hija, p.ej. 'Inferencia en la nube' dentro de "
-    "'Centros de datos de IA') o dos se solapan fuertemente, las AGRUPAS para que el usuario desarrolle "
-    "SOLO UNA por grupo y sus TAM no se dupliquen. Sé exigente: agrupa solo solapamientos reales de "
-    "mercado, no temas hermanos distintos. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+    "Eres un estratega de inversión. Recibes una empresa y una lista de SEGMENTOS DE NEGOCIO ganadores "
+    "(granulares, con entidad propia) en los que la empresa apuesta. Asignas a cada segmento un score de "
+    "RELEVANCIA de 0 a 100 que refleja el COMPROMISO ESTRATÉGICO de la empresa con ese segmento y la "
+    "TRACCIÓN observada (NO la mera relevancia tangencial), y una PROBABILIDAD GANADORA (entero 0 a 10) de "
+    "que ese segmento sea estructuralmente ganador / con momentum, con una justificación breve que explique "
+    "cómo la empresa está AUMENTANDO su participación y la evidencia concreta. También das un score global de "
+    "relevancia temática y estimas la PROBABILIDAD (entero 0 a 10) de que la tesis alcista GANADORA se "
+    "materialice, con una justificación breve. Responde SIEMPRE en español y SOLO con un objeto JSON válido."
 )
 
 
@@ -638,18 +617,15 @@ def _align_syn_trends(inv_trends: list, syn_trends: list) -> list:
 async def _synthesize_company_trends(company: str, trends: list) -> dict:
     lst = "\n".join(f"- {t.get('name')}: {t.get('fit_description')}" for t in trends)
     user = (
-        f"EMPRESA: {company}\n\nTENDENCIAS GANADORAS:\n{lst}\n\n"
+        f"EMPRESA: {company}\n\nSEGMENTOS DE NEGOCIO GANADORES:\n{lst}\n\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "overall_relevance": 0-100,\n'
         '  "overall_probability": 0-10,\n'
         '  "overall_probability_rationale": "1-2 frases justificando la probabilidad de la tesis temática ganadora",\n'
-        '  "trends": [{"name": "misma tendencia", "tam_busd": 0, "relevance_score": 0-100, "win_probability": 0-10, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este tema y la evidencia/resultado observado"}],\n'
-        '  "overlap_groups": [{"note": "1 frase: por qué se solapan en mercado y la disyuntiva", "members": ["COPIA EXACTA de los nombres de las tendencias que se solapan"], "broadest": "nombre EXACTO de la tendencia MÁS AMPLIA (la madre que contiene a las demás)"}]\n'
+        '  "trends": [{"name": "mismo segmento", "relevance_score": 0-100, "win_probability": 0-10, "rationale": "1-2 frases: cómo la empresa AUMENTA su participación en este segmento y la evidencia/resultado observado"}]\n'
         "}\n"
-        "REGLAS: 'tam_busd' es un número en miles de millones de USD. Incluye TODAS las tendencias con su mismo nombre. "
-        "Pon tendencias en 'overlap_groups' SOLO si el mercado de una está realmente contenido o se solapa fuertemente con otra; "
-        "si todas son independientes (TAM excluyente), devuelve overlap_groups como lista VACÍA. Una tendencia puede estar en como máximo un grupo."
+        "Incluye TODOS los segmentos con su mismo nombre."
     )
     data = {}
     for attempt in range(2):  # retry once: a transient parse/LLM miss left relevance blank

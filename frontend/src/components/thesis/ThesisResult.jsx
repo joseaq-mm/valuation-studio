@@ -300,58 +300,6 @@ function WinningBadge({ value }) {
     );
 }
 
-/** Bloque 1.2 (disyuntiva) — un grupo de tendencias propuestas cuyos MERCADOS se
- *  solapan (una contiene a la otra). La IA plantea la disyuntiva semántica + numérica:
- *  desarrolla la AMPLIA (madre, mayor TAM) O la ESPECÍFICA (sub-mercado), nunca ambas,
- *  para que los TAM de tus tesis sean excluyentes (sin doble conteo). */
-function DisjunctiveTrendGroup({ group }) {
-    const members = [...(group.members || [])].sort((a, b) => (b.tam_busd || 0) - (a.tam_busd || 0));
-    return (
-        <div className="border-2 border-[#B8860B] bg-[#FBF3E0] p-4 mb-4" data-testid="disjunctive-group">
-            <div className="flex items-start gap-2 mb-3">
-                <GitBranch size={18} className="text-[#B8860B] shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                    <div className="overline text-[#7a5a10]">Mercados solapados · elige una (TAM excluyente)</div>
-                    <p className="text-sm text-[#7a5a10] mt-1 leading-relaxed">
-                        {group.note || "Estas tendencias se solapan: el mercado de una está contenido en el de la otra."}{" "}
-                        Desarrolla <strong>solo una</strong> para que sus TAM no se dupliquen.
-                    </p>
-                </div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-3">
-                {members.map((t, i) => {
-                    const broad = i === 0; // largest TAM = the mother (broadest market)
-                    const slug = `${_norm(t.name).slice(0, 16)}`;
-                    return (
-                        <div key={i} className="border border-[#B8860B]/60 bg-white p-4 flex flex-col" data-testid={`disjunctive-opt-${slug}`}>
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="font-serif text-base font-medium leading-tight">{t.name}</div>
-                                {fmtTam(t.tam_busd) && <span className="font-mono font-bold text-[#1E7D45] text-sm shrink-0">{fmtTam(t.tam_busd)}</span>}
-                            </div>
-                            <span
-                                className="inline-block w-fit text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mt-1.5"
-                                style={broad ? { background: "#052049", color: "#FDF1E6" } : { background: "#FBF3E0", color: "#7a5a10", border: "1px solid #B8860B" }}
-                            >
-                                {broad ? "Amplia · madre" : "Sub-mercado · más específica"}
-                            </span>
-                            {t.fit_description && <p className="text-xs text-[#4A4A4A] mt-2 leading-snug flex-1">{t.fit_description}</p>}
-                            <div className="mt-3 pt-3 border-t border-black/10">
-                                <Link
-                                    to={`/thesis?trend=${encodeURIComponent(t.name || "")}&auto=1`}
-                                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
-                                    data-testid={`disjunctive-generate-${slug}`}
-                                >
-                                    <Sparkles size={13} /> Desarrollar esta <ArrowRight size={12} />
-                                </Link>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
 /** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
  *  an informational card with a single "Generar tesis" action. */
 function NewThesisCard({ t, idx = 0 }) {
@@ -611,27 +559,6 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         return all.filter((t) => create.has(_norm(t.name)));
     }, [thesis?.trends, linkData]);
 
-    // Group the NEW proposals by overlapping market: a disjunctive group (>=2 members
-    // present here) is rendered as "choose one"; the rest are independent cards. The
-    // AI poses the semantic + numeric disjunctive so the proposals are TAM-exclusive.
-    const newTrendGroups = useMemo(() => {
-        const byName = {};
-        newTrends.forEach((t) => { byName[_norm(t.name)] = t; });
-        const usedInGroup = new Set();
-        const disjunctive = [];
-        (thesis?.overlap_groups || []).forEach((g) => {
-            const members = (g.members || []).map((n) => byName[_norm(n)]).filter(Boolean);
-            if (members.length >= 2) {
-                members.forEach((m) => usedInGroup.add(_norm(m.name)));
-                disjunctive.push({ note: g.note, broadest: g.broadest, members });
-            }
-        });
-        const independent = newTrends.filter((t) => !usedInGroup.has(_norm(t.name)));
-        return { disjunctive, independent };
-    }, [newTrends, thesis?.overlap_groups]);
-
-    const hasNewProposals = newTrendGroups.disjunctive.length > 0 || newTrendGroups.independent.length > 0;
-
     // Map a matched thesis to a short "why it fits" (the company-trend fit description
     // / rationale, falling back to the matcher's reason) for the existing-matches rows.
     const trendByName = useMemo(() => {
@@ -793,7 +720,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
 
                     {/* 1.2 — new suggested theses (not similar to the ones above) */}
                     <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="overline text-[#4A4A4A]">Nuevas tesis sugeridas</div>
+                        <div className="overline text-[#4A4A4A]">Segmentos de negocio · nuevas tesis</div>
                         {linkLoading && (
                             <span className="text-[11px] text-[#4A4A4A] flex items-center gap-1" data-testid="trends-dup-checking">
                                 <Loader2 size={11} className="animate-spin" /> Comprobando duplicados…
@@ -802,20 +729,15 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                     {thesis.id && linkLoading && !linkData ? (
                         <div className="text-xs text-[#4A4A4A] flex items-center gap-2 border border-dashed border-black/20 p-4" data-testid="new-trends-loading">
-                            <Loader2 size={13} className="animate-spin" /> Analizando en qué tesis nuevas encaja…
+                            <Loader2 size={13} className="animate-spin" /> Analizando segmentos de negocio…
                         </div>
-                    ) : hasNewProposals ? (
-                        <div data-testid="new-trends-list">
-                            {newTrendGroups.disjunctive.map((g, gi) => <DisjunctiveTrendGroup key={`disj-${gi}`} group={g} />)}
-                            {newTrendGroups.independent.length > 0 && (
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    {newTrendGroups.independent.map((t, i) => <NewThesisCard key={i} idx={i} t={t} />)}
-                                </div>
-                            )}
+                    ) : newTrends.length ? (
+                        <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">
+                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} />)}
                         </div>
                     ) : (
                         <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">
-                            Todas las tendencias en las que encaja {ticker || "la empresa"} ya están cubiertas por tus tesis. No hay tesis nuevas que generar.
+                            Todos los segmentos de negocio de {ticker || "la empresa"} ya están cubiertos por tus tesis. No hay tesis nuevas que generar.
                         </div>
                     )}
                 </>
