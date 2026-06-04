@@ -187,3 +187,28 @@
 - **P2** — Screener nocturno sobre watchlist: notifica solo cuando una empresa cruza de rojo a verde.
 - **P3** — Soporte multimoneda con conversión FX para comparar empresas globales.
 - **P3** — Modo oscuro alternativo.
+
+
+---
+
+## CHANGELOG — Rediseño flujo de tendencias (4 jun 2026)
+
+### Fix previo
+- **Bug split (Empresa→Tesis)**: al desarrollar un split, el matcher reclasificaba el core a `to_add` y el filtro `newTrends` lo eliminaba → desaparecía la nota + el split pendiente. FIX: un core con `split_dev` se muestra SIEMPRE como tarjeta (estado nota) y se excluye del bloque 1.1b. (ThesisResult.jsx)
+
+### Rediseño "Tendencias" (secundario) — confirmado por el usuario
+- **Empresa → Tesis = flujo principal y por defecto** (izquierda, botón negro). Al desarrollar una tesis propuesta (driver/split) se ejecuta DIRECTAMENTE in-place (force:true, sin rellenar el buscador) vía `onDevelop` → `DevelopAction`.
+- **Tendencias → Empresas** (renombrado, antes "Tesis→Empresas"): ahora INFORMATIVO. `POST /api/thesis/explore` → `run_trend_explore` (1 sola llamada LLM, estructural, SIN scores): cadena de valor + ≥1 líder y ≥1 disruptor por eslabón, cada empresa con papel/protagonismo y botón "Generar tesis de {TICKER}". Componente `TendenciaResult.jsx`. Guardar (`/api/thesis/tendencia/save`, type="tendencia") / Descartar (cliente).
+- **Tendencia automática** (antes "Tesis automática"): `POST /api/thesis/auto-trend` {exclude} → `run_auto_trend` descubre UNA tendencia emergente por momentum evitando las ya mostradas/guardadas, y la explora en formato informativo (badge automática + heat). Guardar/Descartar.
+- **Sidebar** (`ThesisSidebar.jsx`): 3 secciones → **Tendencias / Tesis / Empresas**. ELIMINADO el desplegable de jerarquía/madre TAM. Dashboard añade `tendencias`.
+- **Megatendencias → Megatesis** en toda la UI (sidebar, treemap, barra de gestión, modal).
+- **Barra de guardado**: resultado type=company → SOLO "Ver en detalle" (más visible, sin selector). type=trend (tesis desarrollada) → selector de Megatesis + ver detalle.
+- Eliminado el banner de sugerencia de madre (jerarquía TAM) en ThesisResult y la llamada a `_suggest_parent` en el backend.
+- `ThesisDetail.jsx` ahora renderiza `TendenciaResult` para type="tendencia".
+- Fix UX: `TickerAutocomplete` cierra el dropdown en blur (evita interceptar el clic en "Generar").
+- **Testing**: backend por curl (explore/auto-trend/save/dashboard OK) + testing_agent frontend 85% (layout, sidebar 3 secciones sin TAM, explore informativo sin scores, auto-trend+guardar, descartar, regresión splits OK) + verificación E2E Empresa→Tesis (ASML): barra solo "Ver en detalle". iteration_17.json.
+
+### Pendiente (próximos pasos)
+- **P1** — Verificar entrega real de emails (Screener nocturno + Radar semanal) con sesión Google válida (Resend).
+- **P2** — Fusión cuantitativa + cualitativa (master screener: tesis fuerte + buen ratio de valoración).
+- **P3** — PWA/móvil · Suscripción Stripe (4,99€/9,99€) · Refactor de Company.jsx (~1600 líneas) y Thesis.jsx (~640 líneas).

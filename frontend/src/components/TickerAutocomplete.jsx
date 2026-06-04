@@ -61,6 +61,7 @@ export default function TickerAutocomplete({ value, onChange, onPick, onEnter, p
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 onFocus={() => results.length && setOpen(true)}
+                onBlur={() => setTimeout(() => setOpen(false), 120)}
                 onKeyDown={onKey}
                 placeholder={placeholder}
                 disabled={disabled}
