@@ -136,6 +136,9 @@ class GenerateRequest(BaseModel):
     subject: str
     matched_thesis_id: Optional[str] = None  # exclude companies already in this thesis (and its siblings)
     overwrite_thesis_id: Optional[str] = None  # update this saved thesis in place instead of inserting a new one
+    from_company: Optional[str] = None  # company thesis id this trend is being developed FROM (a core/split)
+    core: Optional[str] = None  # the core thesis name this trend was split out of
+    develop_whole: bool = False  # True when developing the whole core (vs a single split)
 
 
 class FolderRequest(BaseModel):
@@ -148,6 +151,13 @@ class AssignFolderRequest(BaseModel):
 
 class AssignParentRequest(BaseModel):
     parent_id: Optional[str] = None
+
+
+class SplitDevelopedRequest(BaseModel):
+    core: str
+    split: Optional[str] = None
+    developed_id: str
+    whole: bool = False
 
 
 class RestoreRequest(BaseModel):
@@ -311,7 +321,23 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"thesis_id": pid, "title": parent.get("title") if parent else None,
                 "reason": res.get("reason")}
 
-    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None, overwrite_thesis_id: Optional[str] = None):
+    async def _run_generate_job(job_id: str, kind: str, subject: str, user_id: Optional[str], matched_thesis_id: Optional[str] = None, overwrite_thesis_id: Optional[str] = None, from_company: Optional[str] = None, core: Optional[str] = None, develop_whole: bool = False):
+        async def _record_split_dev(company_id: str, the_core: Optional[str], split_name: Optional[str], developed_id: str, whole: bool):
+            """Persist (informationally) on the origin company thesis that one of its
+            core theses was developed by a split (or as a whole), so the suggestions
+            page shows a note + the remaining splits as their own cards."""
+            company = await db.theses.find_one({"id": company_id, "user_id": user_id}, {"_id": 0, "id": 1, "split_dev": 1})
+            if not company:
+                return
+            entry = {"core": the_core, "split": None if whole else split_name, "developed_id": developed_id, "whole": bool(whole)}
+            existing = company.get("split_dev") or []
+            existing = [
+                e for e in existing
+                if not (e.get("core") == entry["core"] and bool(e.get("whole")) == entry["whole"] and e.get("split") == entry["split"])
+            ]
+            existing.append(entry)
+            await db.theses.update_one({"id": company_id, "user_id": user_id}, {"$set": {"split_dev": existing}})
+
         try:
             thesis = await asyncio.to_thread(_generate_sync, kind, subject)
 
@@ -407,6 +433,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         parent_sugg = await _suggest_parent(user_id, tid, thesis)
                         if parent_sugg:
                             thesis["parent_suggestion"] = parent_sugg
+                # Developing a trend FROM a company core/split → record it on that company
+                # thesis so its suggestions page shows the note + remaining split cards.
+                if kind == "trend" and from_company and core:
+                    await _record_split_dev(from_company, core, subject, tid, develop_whole)
             else:
                 thesis["id"] = None
             await db.thesis_jobs.update_one(
@@ -543,7 +573,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id, req.overwrite_thesis_id))
+        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id, req.overwrite_thesis_id, req.from_company, req.core, req.develop_whole))
         return {"job_id": job_id}
 
     @router.post("/discover")
@@ -909,6 +939,30 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 raise HTTPException(status_code=400, detail="Relación circular: esa tesis ya es hija de esta")
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"parent_id": pid}})
         return {"ok": True, "parent_id": pid}
+
+    @router.post("/{thesis_id}/split-developed")
+    async def record_split_developed(thesis_id: str, req: SplitDevelopedRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Record (informational, persisted) that a core thesis on a company suggestions
+        page was developed by parts: either a specific split, or the whole core. Lets the
+        page show a note + the remaining (pending) splits as their own cards."""
+        uid = user["user_id"]
+        company = await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0, "id": 1, "split_dev": 1})
+        if not company:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        entry = {
+            "core": req.core,
+            "split": None if req.whole else (req.split or None),
+            "developed_id": req.developed_id,
+            "whole": bool(req.whole),
+        }
+        existing = company.get("split_dev") or []
+        existing = [
+            e for e in existing
+            if not (e.get("core") == entry["core"] and bool(e.get("whole")) == entry["whole"] and e.get("split") == entry["split"])
+        ]
+        existing.append(entry)
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"split_dev": existing}})
+        return {"ok": True, "split_dev": existing}
 
     @router.post("/{thesis_id}/link-suggestions")
     async def link_suggestions(thesis_id: str, refresh: bool = False, user: Dict[str, Any] = Depends(auth_required)):

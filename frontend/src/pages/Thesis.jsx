@@ -142,10 +142,16 @@ export default function Thesis() {
         else if (tr) {
             setMode("trend"); setSubject(tr);
             const matched = searchParams.get("matched");
-            const autoKey = `${tr}|${matched || ""}`;
+            const fromCompany = searchParams.get("from_company");
+            const core = searchParams.get("core");
+            const whole = searchParams.get("whole");
+            const autoKey = `${tr}|${matched || ""}|${fromCompany || ""}|${core || ""}|${whole || ""}`;
             if (auto === "1" && lastAutoRef.current !== autoKey) {
                 lastAutoRef.current = autoKey;
-                generate("trend", tr, matched || null);
+                const recordSplit = fromCompany
+                    ? { companyId: fromCompany, core, split: whole ? null : tr, whole: !!whole }
+                    : null;
+                generate("trend", tr, matched || null, { recordSplit });
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,7 +212,10 @@ export default function Thesis() {
         setLoading(true);
         setResult(null);
         try {
-            const data = await thesisGenerate(t, s, matchedThesisId, opts.overwriteId || null);
+            const extra = opts.recordSplit
+                ? { from_company: opts.recordSplit.companyId, core: opts.recordSplit.core, develop_whole: opts.recordSplit.whole }
+                : {};
+            const data = await thesisGenerate(t, s, matchedThesisId, opts.overwriteId || null, extra);
             setResult(data);
             if (data?.no_changes) toast.info("Sin novedades relevantes: conservamos tu tesis actual.");
             else if (data?.changes?.length) toast.success(`Tesis actualizada · ${data.changes.length} cambio${data.changes.length > 1 ? "s" : ""}`);

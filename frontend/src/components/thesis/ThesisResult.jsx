@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch, ChevronDown } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
@@ -300,15 +300,26 @@ function WinningBadge({ value }) {
     );
 }
 
-/** Bloque 1.2 — a NEW thesis idea (not yet generated, not similar to an existing one):
- *  an informational card with a single "Generar tesis" action. */
-function NewThesisCard({ t, idx = 0 }) {
+/** Bloque 1.2 — a NEW thesis idea (growth driver). May offer an optional split into
+ *  independent sub-parts (whose TAM sum to the core). Once a part (or the whole) is
+ *  developed, the card becomes an informational note + the remaining parts as cards. */
+function NewThesisCard({ t, idx = 0, companyId, dev }) {
     const [showSplits, setShowSplits] = useState(false);
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
-    const trendQuery = encodeURIComponent(t.name || "");
+    const coreName = t.name || "";
+    const ctx = companyId ? `&from_company=${companyId}&core=${encodeURIComponent(coreName)}` : "";
+    const splitLink = (name) => `/thesis?trend=${encodeURIComponent(name || "")}&auto=1${ctx}`;
+    const wholeLink = `/thesis?trend=${encodeURIComponent(coreName)}&auto=1${ctx}${companyId ? "&whole=1" : ""}`;
     const splits = Array.isArray(t.splits) && t.splits.length >= 2 ? t.splits : null;
     const splitSum = splits ? splits.reduce((a, s) => a + (s.tam_busd || 0), 0) : 0;
+
+    const devSplits = dev?.developedSplits || [];
+    const devSplitSet = new Set(devSplits.map((d) => _norm(d.split)));
+    const devSplitId = (name) => devSplits.find((d) => _norm(d.split) === _norm(name))?.developed_id;
+    const pendingSplits = splits ? splits.filter((sp) => !devSplitSet.has(_norm(sp.name))) : [];
+    const wholeDeveloped = !!dev?.whole;
+    const splitDeveloped = devSplits.length > 0;
 
     return (
         <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
@@ -339,62 +350,112 @@ function NewThesisCard({ t, idx = 0 }) {
                     <span className="font-mono font-bold text-[#1E7D45]">{fmtTam(t.tam_busd)}</span>
                 </div>
             )}
-            {t.win_probability != null && (
-                <div className="mt-2.5"><WinningBadge value={t.win_probability} /></div>
-            )}
-            {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
-            {t.value_chain_role && (
-                <div className="mt-2 text-xs text-[#4A4A4A]">
-                    <span className="font-semibold">Rol en la cadena:</span> {t.value_chain_role}
+
+            {/* STATE A — the whole core was developed: informational note, no actions. */}
+            {wholeDeveloped ? (
+                <div className="mt-3 border border-[#1E7D45]/40 bg-[#F0F7F2] p-3 text-sm leading-relaxed" data-testid={`core-whole-note-${(t.name || "").slice(0, 12)}`}>
+                    <span className="font-semibold text-[#1E7D45]">Conjunto desarrollado ✓</span>{" "}
+                    <Link to={`/thesis/${dev.whole.developed_id}`} className="underline font-medium">Ver la tesis</Link>.
+                    {splits && (
+                        <div className="text-[11px] text-[#4A4A4A] mt-1">
+                            Tenía disponibles estos splits: {splits.map((sp) => sp.name).join(" · ")}.
+                        </div>
+                    )}
                 </div>
-            )}
-            {t.rationale && (
-                <div className="mt-3 border-l-2 pl-3" style={{ borderColor: c }}>
-                    <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
-                </div>
-            )}
-            {splits && (
-                <div className="mt-3 border-t border-dashed border-black/15 pt-3">
-                    <button
-                        onClick={() => setShowSplits((v) => !v)}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.1em] font-semibold text-[#052049] hover:underline"
-                        data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
-                    >
-                        <GitBranch size={13} /> {showSplits ? "Ocultar desglose" : `Dividir en ${splits.length} partes`}
-                    </button>
-                    {showSplits && (
-                        <div className="mt-2 space-y-1.5" data-testid={`thesis-splits-${(t.name || "").slice(0, 12)}`}>
-                            <div className="text-[11px] text-[#4A4A4A] leading-snug">
-                                Sub-tesis independientes (sus TAM suman {fmtTam(splitSum) || "≈ el TAM del driver"}). Desarrolla una parte en vez del conjunto:
-                            </div>
-                            {splits.map((sp, i) => (
-                                <div key={i} className="flex items-center justify-between gap-2 border border-black/15 bg-[#FAF6F0] px-2 py-1.5">
+            ) : splitDeveloped ? (
+                /* STATE B — developed by parts: note + pending splits as their own cards. */
+                <div className="mt-3" data-testid={`core-split-note-${(t.name || "").slice(0, 12)}`}>
+                    <div className="border border-[#B8860B] bg-[#FBF3E0] p-3 text-sm leading-relaxed">
+                        <div className="font-semibold text-[#7a5a10] flex items-center gap-1.5 mb-1"><GitBranch size={14} /> Este core se dividió en partes:</div>
+                        <ul className="space-y-0.5">
+                            {splits.map((sp, i) => {
+                                const did = devSplitId(sp.name);
+                                return (
+                                    <li key={i} className="text-[13px]">
+                                        <span className="font-medium">{sp.name}</span>{fmtTam(sp.tam_busd) ? ` (${fmtTam(sp.tam_busd)})` : ""} —{" "}
+                                        {did
+                                            ? <Link to={`/thesis/${did}`} className="text-[#1E7D45] underline font-semibold">tesis generada ✓</Link>
+                                            : <span className="text-[#B32A22] font-semibold">pendiente</span>}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </div>
+                    {pendingSplits.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                            <div className="overline text-[#4A4A4A]">Partes pendientes de desarrollar</div>
+                            {pendingSplits.map((sp, i) => (
+                                <div key={i} className="flex items-center justify-between gap-2 border border-black/20 bg-white px-3 py-2" data-testid={`pending-split-${_norm(sp.name).slice(0, 12)}`}>
                                     <div className="min-w-0">
-                                        <div className="text-sm font-medium leading-tight truncate">{sp.name}</div>
+                                        <div className="text-sm font-medium leading-tight">{sp.name}</div>
                                         {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
                                     </div>
-                                    <Link
-                                        to={`/thesis?trend=${encodeURIComponent(sp.name || "")}&auto=1`}
-                                        className="shrink-0 text-[11px] uppercase tracking-[0.1em] font-semibold border border-black px-2 py-1 hover:bg-black hover:text-[#FDF1E6] transition-colors"
-                                        data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
-                                    >
-                                        Generar
+                                    <Link to={splitLink(sp.name)} className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors" data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}>
+                                        <Sparkles size={12} /> Generar
                                     </Link>
                                 </div>
                             ))}
                         </div>
                     )}
                 </div>
+            ) : (
+                /* STATE C — not yet developed. */
+                <>
+                    {t.win_probability != null && <div className="mt-2.5"><WinningBadge value={t.win_probability} /></div>}
+                    {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
+                    {t.value_chain_role && (
+                        <div className="mt-2 text-xs text-[#4A4A4A]">
+                            <span className="font-semibold">Rol en la cadena:</span> {t.value_chain_role}
+                        </div>
+                    )}
+                    {t.rationale && (
+                        <div className="mt-3 border-l-2 pl-3" style={{ borderColor: c }}>
+                            <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
+                        </div>
+                    )}
+                    {splits && (
+                        <div className="mt-3 border-2 border-[#B8860B] bg-[#FBF3E0] p-3">
+                            <button
+                                onClick={() => setShowSplits((v) => !v)}
+                                className="w-full flex items-center justify-between gap-2 text-left"
+                                data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
+                            >
+                                <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#7a5a10] uppercase tracking-[0.06em]">
+                                    <GitBranch size={15} /> Se puede dividir en {splits.length} partes
+                                </span>
+                                <ChevronDown size={16} className={`text-[#7a5a10] transition-transform ${showSplits ? "rotate-180" : ""}`} />
+                            </button>
+                            <p className="text-[11px] text-[#7a5a10] mt-1 leading-snug">
+                                Recomendado: desarrolla los splits por separado (más granularidad) en vez del conjunto. Sus TAM suman {fmtTam(splitSum) || "≈ el del driver"}.
+                            </p>
+                            {showSplits && (
+                                <div className="mt-2 space-y-1.5" data-testid={`thesis-splits-${(t.name || "").slice(0, 12)}`}>
+                                    {splits.map((sp, i) => (
+                                        <div key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/50 bg-white px-2.5 py-1.5">
+                                            <div className="min-w-0">
+                                                <div className="text-sm font-medium leading-tight">{sp.name}</div>
+                                                {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
+                                            </div>
+                                            <Link to={splitLink(sp.name)} className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors" data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}>
+                                                <Sparkles size={12} /> Generar
+                                            </Link>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div className="mt-auto pt-4 border-t border-black/10">
+                        <Link
+                            to={splits ? wholeLink : `/thesis?trend=${encodeURIComponent(coreName)}&auto=1`}
+                            className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
+                            data-testid={`trend-generate-${slug}`}
+                        >
+                            <Sparkles size={13} /> {splits ? "Generar tesis (conjunto)" : "Generar tesis"} <ArrowRight size={12} />
+                        </Link>
+                    </div>
+                </>
             )}
-            <div className="mt-auto pt-4 border-t border-black/10">
-                <Link
-                    to={`/thesis?trend=${trendQuery}&auto=1`}
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
-                    data-testid={`trend-generate-${slug}`}
-                >
-                    <Sparkles size={13} /> Generar tesis (conjunto) <ArrowRight size={12} />
-                </Link>
-            </div>
         </div>
     );
 }
@@ -607,6 +668,18 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         return all.filter((t) => create.has(_norm(t.name)));
     }, [thesis?.trends, linkData]);
 
+    // Per-core split-development state (which splits / the whole were already developed).
+    const splitDev = useMemo(() => {
+        const byCore = {};
+        (thesis?.split_dev || []).forEach((e) => {
+            const k = _norm(e.core);
+            if (!byCore[k]) byCore[k] = { developedSplits: [], whole: null };
+            if (e.whole) byCore[k].whole = { developed_id: e.developed_id };
+            else byCore[k].developedSplits.push({ split: e.split, developed_id: e.developed_id });
+        });
+        return byCore;
+    }, [thesis?.split_dev]);
+
     // Map a matched thesis to a short "why it fits" (the company-trend fit description
     // / rationale, falling back to the matcher's reason) for the existing-matches rows.
     const trendByName = useMemo(() => {
@@ -781,7 +854,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         </div>
                     ) : newTrends.length ? (
                         <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">
-                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} />)}
+                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} companyId={thesis.id} dev={splitDev[_norm(t.name)]} />)}
                         </div>
                     ) : (
                         <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">
