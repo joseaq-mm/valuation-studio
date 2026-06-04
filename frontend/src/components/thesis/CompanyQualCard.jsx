@@ -74,9 +74,9 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
     return (
         <div className="border border-black bg-white p-5 mb-6" data-testid="company-qual-card">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-                <div className="overline text-[#B32A22]">Tesis cualitativa · tendencias guardadas</div>
+                <div className="overline text-[#B32A22]">Tesis cualitativa · tesis guardadas</div>
                 <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
-                    <Sparkles size={12} /> Buscar más tendencias
+                    <Sparkles size={12} /> Buscar más tesis
                 </Link>
             </div>
 
@@ -84,8 +84,8 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                 <>
                     {/* Column headers */}
                     <div className={`grid ${COLS} gap-x-4 items-end pb-1.5 border-b border-black`}>
-                        <div className="overline text-[#4A4A4A]">Tendencia</div>
-                        <div className="overline text-[#4A4A4A] text-center leading-tight">Score global tendencia</div>
+                        <div className="overline text-[#4A4A4A]">Tesis</div>
+                        <div className="overline text-[#4A4A4A] text-center leading-tight">Score global tesis</div>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">TAM Score</div>
                     </div>
 

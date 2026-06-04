@@ -648,26 +648,6 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
 
     const ticker = thesis?.company?.ticker;
 
-    // 1.1b — existing theses the company fits but isn't a member of yet.
-    // Dedupe by thesis_id (several company trends can map to the same thesis).
-    const existingMatches = useMemo(() => {
-        const seen = new Set();
-        return (linkData?.to_add || []).filter((a) => {
-            if (a.already_in || !a.thesis_id || seen.has(a.thesis_id)) return false;
-            seen.add(a.thesis_id);
-            return true;
-        });
-    }, [linkData]);
-
-    // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
-    // rich trend objects. Fallback to all themes while link data is unavailable.
-    const newTrends = useMemo(() => {
-        const all = thesis?.trends || [];
-        if (!linkData) return all;
-        const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
-        return all.filter((t) => create.has(_norm(t.name)));
-    }, [thesis?.trends, linkData]);
-
     // Per-core split-development state (which splits / the whole were already developed).
     const splitDev = useMemo(() => {
         const byCore = {};
@@ -679,6 +659,35 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         });
         return byCore;
     }, [thesis?.split_dev]);
+
+    // Cores already developed by parts (or whole). Once a core has a split developed,
+    // the matcher reclassifies it into `to_add` (it now matches the developed thesis),
+    // so we must KEEP showing its card (as the split-note state) and NOT also list it
+    // as a generic "matched thesis to add" row — otherwise the note + the remaining
+    // pending split cards vanish.
+    const splitDevCores = useMemo(() => new Set(Object.keys(splitDev)), [splitDev]);
+
+    // 1.1b — existing theses the company fits but isn't a member of yet.
+    // Dedupe by thesis_id (several company trends can map to the same thesis).
+    const existingMatches = useMemo(() => {
+        const seen = new Set();
+        return (linkData?.to_add || []).filter((a) => {
+            if (a.already_in || !a.thesis_id || seen.has(a.thesis_id)) return false;
+            if (splitDevCores.has(_norm(a.trend_name))) return false; // shown as a split-note card instead
+            seen.add(a.thesis_id);
+            return true;
+        });
+    }, [linkData, splitDevCores]);
+
+    // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
+    // rich trend objects. Fallback to all themes while link data is unavailable.
+    // Always include cores that were split-developed so their note + pending parts show.
+    const newTrends = useMemo(() => {
+        const all = thesis?.trends || [];
+        if (!linkData) return all;
+        const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
+        return all.filter((t) => create.has(_norm(t.name)) || splitDevCores.has(_norm(t.name)));
+    }, [thesis?.trends, linkData, splitDevCores]);
 
     // Map a matched thesis to a short "why it fits" (the company-trend fit description
     // / rationale, falling back to the matcher's reason) for the existing-matches rows.
@@ -705,7 +714,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="min-w-0">
                         <div className="overline text-[#B32A22] mb-1">
-                            {isTrend ? "Tendencia → Cadena de valor" : "Empresa → Tendencias"}
+                            {isTrend ? "Tesis → Cadena de valor" : "Empresa → Tesis"}
                         </div>
                         <h1 className="font-serif text-3xl sm:text-4xl font-medium leading-tight">{thesis.title}</h1>
                         {!isTrend && thesis.company?.ticker && (
