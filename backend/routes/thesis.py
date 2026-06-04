@@ -91,6 +91,21 @@ def _spawn(coro):
     task.add_done_callback(_BG_TASKS.discard)
 
 
+def _friendly_err(e) -> str:
+    """Map common LLM-provider failures to a clear Spanish message for the UI."""
+    msg = str(e)
+    low = msg.lower()
+    if "budget has been exceeded" in low or "max budget" in low or "insufficient_quota" in low or "exceeded your current quota" in low:
+        return ("Se ha agotado el saldo de la clave de IA (Emergent LLM Key). "
+                "Recárgalo en Profile → Universal Key → Add Balance (o activa el auto top-up) y vuelve a intentarlo.")
+    if "rate limit" in low or "too many requests" in low or "429" in low:
+        return "El proveedor de IA está saturado ahora mismo (límite de peticiones). Espera unos segundos y vuelve a intentarlo."
+    if "timeout" in low or "timed out" in low:
+        return "La generación tardó demasiado (timeout). Vuelve a intentarlo en un momento."
+    return ""
+
+
+
 def _generate_sync(kind: str, subject: str) -> dict:
     """Run the full (blocking) generation pipeline in a worker thread.
 
@@ -464,7 +479,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.error(f"thesis generation failed ({kind}:{subject}): {e}")
             await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la tesis: {e}"}})
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error generando la tesis: {e}"}})
 
     async def _run_contra_job(job_id: str, thesis_id: str, user_id: str):
         try:
@@ -481,7 +496,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.error(f"contra generation failed ({thesis_id}): {e}")
             await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la contratesis: {e}"}})
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error generando la contratesis: {e}"}})
 
     async def _run_discover_job(job_id: str):
         try:
@@ -509,7 +524,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.error(f"explore failed ({subject}): {e}")
             await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error explorando la tendencia: {e}"}})
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error explorando la tendencia: {e}"}})
 
     async def _run_autotrend_job(job_id: str, exclude):
         try:
@@ -523,7 +538,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.error(f"auto-trend failed: {e}")
             await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la tendencia automática: {e}"}})
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error generando la tendencia automática: {e}"}})
 
     async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str, precomputed: Optional[dict] = None):
         try:
@@ -562,7 +577,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.error(f"add-company failed ({thesis_id}/{ticker}): {e}")
             await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error añadiendo la empresa: {e}"}})
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error añadiendo la empresa: {e}"}})
 
     async def _run_eval_company_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str):
         """Score PREVIEW: evaluate the company inside the trend (LLM) WITHOUT persisting,
