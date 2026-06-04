@@ -300,10 +300,23 @@ function WinningBadge({ value }) {
     );
 }
 
+/** Develop action: executes in-place via onDevelop (no search box) when provided;
+ *  otherwise falls back to a deep-link (e.g. from the saved-thesis detail page). */
+function DevelopAction({ name, core, whole, companyId, onDevelop, linkTo, testid, className, children }) {
+    if (onDevelop) {
+        return (
+            <button type="button" onClick={() => onDevelop({ name, core, whole, companyId })} className={className} data-testid={testid}>
+                {children}
+            </button>
+        );
+    }
+    return <Link to={linkTo} className={className} data-testid={testid}>{children}</Link>;
+}
+
 /** Bloque 1.2 — a NEW thesis idea (growth driver). May offer an optional split into
  *  independent sub-parts (whose TAM sum to the core). Once a part (or the whole) is
  *  developed, the card becomes an informational note + the remaining parts as cards. */
-function NewThesisCard({ t, idx = 0, companyId, dev }) {
+function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
     const [showSplits, setShowSplits] = useState(false);
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
@@ -390,9 +403,14 @@ function NewThesisCard({ t, idx = 0, companyId, dev }) {
                                         <div className="text-sm font-medium leading-tight">{sp.name}</div>
                                         {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
                                     </div>
-                                    <Link to={splitLink(sp.name)} className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors" data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}>
+                                    <DevelopAction
+                                        name={sp.name} core={coreName} whole={false} companyId={companyId} onDevelop={onDevelop}
+                                        linkTo={splitLink(sp.name)}
+                                        className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors"
+                                        testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
+                                    >
                                         <Sparkles size={12} /> Generar
-                                    </Link>
+                                    </DevelopAction>
                                 </div>
                             ))}
                         </div>
@@ -436,9 +454,14 @@ function NewThesisCard({ t, idx = 0, companyId, dev }) {
                                                 <div className="text-sm font-medium leading-tight">{sp.name}</div>
                                                 {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
                                             </div>
-                                            <Link to={splitLink(sp.name)} className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors" data-testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}>
+                                            <DevelopAction
+                                                name={sp.name} core={coreName} whole={false} companyId={companyId} onDevelop={onDevelop}
+                                                linkTo={splitLink(sp.name)}
+                                                className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors"
+                                                testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
+                                            >
                                                 <Sparkles size={12} /> Generar
-                                            </Link>
+                                            </DevelopAction>
                                         </div>
                                     ))}
                                 </div>
@@ -446,13 +469,14 @@ function NewThesisCard({ t, idx = 0, companyId, dev }) {
                         </div>
                     )}
                     <div className="mt-auto pt-4 border-t border-black/10">
-                        <Link
-                            to={splits ? wholeLink : `/thesis?trend=${encodeURIComponent(coreName)}&auto=1`}
+                        <DevelopAction
+                            name={coreName} core={splits ? coreName : null} whole={!!splits} companyId={companyId} onDevelop={onDevelop}
+                            linkTo={splits ? wholeLink : `/thesis?trend=${encodeURIComponent(coreName)}&auto=1`}
                             className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
-                            data-testid={`trend-generate-${slug}`}
+                            testid={`trend-generate-${slug}`}
                         >
                             <Sparkles size={13} /> {splits ? "Generar tesis (conjunto)" : "Generar tesis"} <ArrowRight size={12} />
-                        </Link>
+                        </DevelopAction>
                     </div>
                 </>
             )}
@@ -595,18 +619,14 @@ function MatchedThesisRow({ match, company, fit, onAdded }) {
     );
 }
 
-export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onNest }) {
+export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop }) {
     const [tamScores, setTamScores] = useState(null);
     const [tamLoading, setTamLoading] = useState(false);
     const [linkData, setLinkData] = useState(null);
     const [linkLoading, setLinkLoading] = useState(false);
     const [mutateTick, setMutateTick] = useState(0);
-    const [parentDismissed, setParentDismissed] = useState(false);
 
     const isTrend = thesis?.type === "trend";
-
-    // Reset the "nest under mother" banner dismissal when a new thesis loads.
-    useEffect(() => { setParentDismissed(false); }, [thesis?.id]);
 
     useEffect(() => {
         if (!thesis || thesis.type !== "trend") { setTamScores(null); return; }
@@ -728,7 +748,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     <div className="flex items-start gap-5 shrink-0">
                         {!isTrend && (
                             <HoverTip
-                                text={"Relevancia temática global (0–100): cuán expuesta e impulsada está la empresa por el CONJUNTO de megatendencias en las que encaja.\n\nResume, en un solo número, el peso agregado de los temas estructurales en su tesis alcista."}
+                                text={"Relevancia temática global (0–100): cuán expuesta e impulsada está la empresa por el CONJUNTO de tesis en las que encaja.\n\nResume, en un solo número, el peso agregado de los temas estructurales en su tesis alcista."}
                                 maxWidth={320}
                             >
                                 <div className="cursor-help"><ScoreBadge value={thesis.overall_relevance} label="Relevancia temática global" /></div>
@@ -779,36 +799,6 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             : "otra tesis que encaja"}.{" "}
                         Se {thesis.omitted_companies.length > 1 ? "han" : "ha"} omitido para no duplicar su valor.
                     </span>
-                </div>
-            )}
-
-            {/* TAM hierarchy: this new thesis looks like a sub-segment of a broader one.
-                Offer to nest it (manual confirm) so its TAM isn't double-counted. */}
-            {isTrend && thesis.parent_suggestion && !parentDismissed && (
-                <div className="border border-[#B8860B] bg-[#FBF3E0] px-4 py-3 mb-6" data-testid="parent-suggestion">
-                    <div className="flex items-start gap-2 text-sm text-[#7a5a10] leading-relaxed">
-                        <GitBranch size={16} className="shrink-0 mt-0.5" />
-                        <span>
-                            Esta tesis parece un <strong>sub-segmento</strong> de{" "}
-                            {thesis.parent_suggestion.thesis_id
-                                ? <Link to={`/thesis/${thesis.parent_suggestion.thesis_id}`} className="font-bold underline" data-testid="parent-suggestion-link">{thesis.parent_suggestion.title}</Link>
-                                : <strong>{thesis.parent_suggestion.title}</strong>}.{" "}
-                            {thesis.parent_suggestion.reason}{" "}
-                            Para evitar el <strong>doble conteo del TAM</strong>, puedes anidarla como sub-tesis: su TAM dejará de sumarse al de su megatendencia (contará solo el de la madre).
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-3 flex-wrap">
-                        <button
-                            onClick={() => onNest?.(thesis.parent_suggestion.thesis_id)}
-                            className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors flex items-center gap-1.5"
-                            data-testid="parent-nest-btn"
-                        >
-                            <GitBranch size={13} /> Anidar como sub-tesis
-                        </button>
-                        <button onClick={() => setParentDismissed(true)} className="text-xs text-[#7a5a10] hover:underline" data-testid="parent-dismiss-btn">
-                            Mantener separada
-                        </button>
-                    </div>
                 </div>
             )}
 
@@ -863,7 +853,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         </div>
                     ) : newTrends.length ? (
                         <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">
-                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} companyId={thesis.id} dev={splitDev[_norm(t.name)]} />)}
+                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} companyId={thesis.id} dev={splitDev[_norm(t.name)]} onDevelop={onDevelop} />)}
                         </div>
                     ) : (
                         <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">

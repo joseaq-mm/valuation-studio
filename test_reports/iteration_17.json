@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only testing en /thesis (cookie de sesión sembrada). Verificado: layout (Empresa→Tesis activo en negro a la izquierda; Tendencias→Empresas y Tendencia automática a la derecha), sidebar con 3 secciones (Tendencias/Tesis/Empresas) sin desplegable madre TAM, label 'Megatesis'. Auto-trend genera tendencia informativa con badge AUTOMÁTICA · heat, botones tendencia-save-btn/tendencia-discard-btn presentes, Guardar funciona (tendencia-saved + nueva fila sidebar-tendencia-*). Explore 'Energía solar y almacenamiento' devuelve tendencia-result con cadena de valor y 8 botones tendencia-develop-{TICKER} sin scores numéricos; Descartar limpia el resultado. Regresión de splits OK en /thesis/thesis_test_split2: 1 core-split-note-* y 1 pending-split-*. NO se pudo completar la verificación E2E del flujo Empresa→Tesis (NVDA) ni el desarrollo directo de driver: el ticker NVDA ya estaba sembrado como tesis de empresa, por lo que la app entra en flujo de dedup; además el dropdown del TickerAutocomplete sigue abierto al pulsar el botón. Igualmente, el código de developThesis ya invoca generate('trend', name, null, { force:true, recordSplit }) sin tocar setSubject, por lo que la propuesta sí se ejecuta directamente. Recomendación: reaproximar este caso forzando 'force=true' (Reescribir igualmente) o usando un ticker no sembrado (p.ej. ASML).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Empresa→Tesis (NVDA) end-to-end", "issue": "No completado: NVDA ya está sembrada -> aparece banner dedup-warning; además TickerAutocomplete deja la lista abierta al pulsar thesis-generate-btn (posible intercept). El flujo funcional no se valida sin force. El test pudo continuar con 'Reescribir igualmente' (dedup-rewrite-btn) o con un ticker no guardado.", "affected_selectors": ["thesis-generate-btn", "thesis-input", "dedup-rewrite-btn"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Recomendación (no bloqueante): cerrar el dropdown del TickerAutocomplete al pulsar 'Generar tesis' para evitar que el click se intercepte cuando hay sugerencias visibles.",
+    "Recomendación (no bloqueante): en escenarios con tesis sembrada, el test debe usar dedup-rewrite-btn antes de esperar thesis-result."
+  ],
+  "critical_code_review_comments": [
+    "Thesis.jsx (~640 líneas) sigue grande; podría dividirse extrayendo el bloque del generador y el de gestión de megatesis a subcomponentes.",
+    "developThesis sí ejecuta directo (force:true) sin rellenar el buscador, cumpliendo el requisito (b).",
+    "save-bar oculta el selector de megatesis cuando result.type==='company' (solo 'Ver en detalle') y lo muestra para result.type==='trend' (selector + 'Ver en detalle'), cumpliendo el requisito principal."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "85%"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 (dominio ai-valuation-desk.preview.emergentagent.com), user_id test_profile_user_123.",
+  "seed_data_creation": "Se guardó 1 tendencia (Auto-trend 'Agentes de IA y automatización cognitiva'). El usuario semilla ya tenía 3 tesis + 1 empresa NVDA sembradas.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Para revalidar el desarrollo DIRECTO de un driver (botón trend-generate-*) sin tocar el buscador: usar un ticker que NO esté en el dashboard (evita el banner dedup). Si se usa NVDA, hacer click en dedup-rewrite-btn cuando aparezca antes de esperar thesis-result. La cookie de sesión está OK. Las generaciones LLM tardan ~60-180s.",
+  "rca of the issue": "El flujo Empresa→Tesis con NVDA quedó parcialmente verificado: la tesis NVDA estaba sembrada → al pulsar Generar, la app muestra correctamente el banner pendingDup (dedup-warning) en lugar de regenerar. Adicionalmente, el componente TickerAutocomplete mantiene su dropdown abierto al hacer click en el botón cuando hay sugerencias, lo que puede interceptar el primer click. Mitigación: en pruebas, llenar input + blur (o Tab) o pulsar dedup-rewrite-btn cuando aparezca; en producto, considerar cerrar la lista al pulsar Generar."
+}

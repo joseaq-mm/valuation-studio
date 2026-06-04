@@ -1,48 +1,48 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Flame, ArrowRight, Undo2, Redo2, RefreshCw } from "lucide-react";
+import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Undo2, Redo2, RefreshCw, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisDiscover, thesisGenerateContra, thesisCreateFolder,
-    thesisDeleteFolder, thesisAssignFolder, thesisDelete, thesisRadarStatus,
-    thesisRadarSubscribe, thesisDashboard, thesisRefreshStatus, thesisRefreshSubscribe,
-    thesisRestore, thesisGet, searchTickers, thesisAssignParent,
+    thesisGenerate, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
+    thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
+    thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisDashboard,
+    thesisRefreshStatus, thesisRefreshSubscribe, thesisRestore, thesisGet,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
+import TendenciaResult from "@/components/thesis/TendenciaResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
 import ThesisExplore from "@/components/thesis/ThesisExplore";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 
-const EXAMPLES_TREND = ["Inteligencia artificial y centros de datos", "Transición energética y baterías", "GLP-1 y obesidad", "Defensa europea"];
 const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
+const EXAMPLES_TREND = ["Inteligencia artificial y centros de datos", "Transición energética y baterías", "GLP-1 y obesidad", "Defensa europea"];
 
 export default function Thesis() {
     const { user } = useAuth();
     const [searchParams] = useSearchParams();
-    const [mode, setMode] = useState("trend");
+    const [mode, setMode] = useState("company");          // "company" (default) | "explore"
     const [subject, setSubject] = useState("");
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);        // company / trend generation
+    const [trendLoading, setTrendLoading] = useState(false); // explore / auto-trend
     const [result, setResult] = useState(null);
     const [generatingContra, setGeneratingContra] = useState(false);
-    const [discovering, setDiscovering] = useState(false);
-    const [candidates, setCandidates] = useState(null);
+    const [tendenciaSaving, setTendenciaSaving] = useState(false);
+    const [autoSeen, setAutoSeen] = useState([]);         // trend names already shown (avoid repeats)
 
     const [dash, setDash] = useState(null);
     const [newFolder, setNewFolder] = useState("");
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
-    const [coSugg, setCoSugg] = useState([]);
-    const coSuggRef = useRef(null);
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
 
     const folders = dash?.folders || [];
-
     const _norm = (s) => (s || "").trim().toLowerCase();
+
     const findDup = (type, s) => {
         if (!dash) return null;
         const n = _norm(s);
@@ -57,58 +57,6 @@ export default function Thesis() {
         const up = (s || "").trim().toUpperCase();
         return (dash.company_theses || []).find((c) => (c.ticker || "").toUpperCase() === up || _norm(c.title) === n);
     };
-
-    // Detect whether the TREND search box actually holds an individual COMPANY. Real
-    // trend phrases return no equity quotes from /api/search; a company name/ticker
-    // returns an EQUITY whose name/symbol matches the input. Returns the matched quote.
-    const matchCompany = (input, results) => {
-        const clean = (x) => (x || "").trim().toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ");
-        const q = clean(input);
-        if (!q) return null;
-        for (const r of results || []) {
-            if ((r.type || "").toUpperCase() !== "EQUITY") continue;
-            const sym = clean(r.symbol);
-            const name = clean(r.name);
-            if (sym === q) return r;
-            if (name && (name.startsWith(q) || (q.length >= 4 && name.includes(q)))) return r;
-        }
-        return null;
-    };
-
-    // User picked a company from the trend-search suggestions (or it was detected on
-    // generate): switch to "Empresa → Tesis" and ask to confirm generating its thesis.
-    const selectCompanyFromTrend = (r) => {
-        setMode("company");
-        setSubject(r.symbol);
-        setCoSugg([]);
-        setPendingDup(null);
-        // Generate directly. generate("company") shows the overwrite confirm
-        // (dedup-warning, with the weekly-refresh note) ONLY if this company thesis
-        // already exists; otherwise it starts generating right away (no extra click).
-        generate("company", r.symbol);
-    };
-
-    // Live company suggestions for the TREND search box (so a mistyped company opens a
-    // dropdown; clicking it switches to company mode). Trend phrases return nothing.
-    useEffect(() => {
-        if (mode !== "trend") { setCoSugg([]); return; }
-        const s = subject.trim();
-        if (s.length < 2) { setCoSugg([]); return; }
-        const tid = setTimeout(async () => {
-            try {
-                const res = await searchTickers(s);
-                const items = (res?.results || []).filter((r) => (r.type || "").toUpperCase() === "EQUITY" && r.symbol);
-                setCoSugg(items.slice(0, 6));
-            } catch { setCoSugg([]); }
-        }, 250);
-        return () => clearTimeout(tid);
-    }, [subject, mode]);
-
-    useEffect(() => {
-        const onDoc = (e) => { if (coSuggRef.current && !coSuggRef.current.contains(e.target)) setCoSugg([]); };
-        document.addEventListener("mousedown", onDoc);
-        return () => document.removeEventListener("mousedown", onDoc);
-    }, []);
 
     const reload = useCallback(async () => {
         if (!user) { setDash(null); return; }
@@ -132,26 +80,26 @@ export default function Thesis() {
         }
     };
 
-    // Prefill / auto-generate from a ?company / ?trend deep link.
+    // Prefill (?company) / auto-develop a proposed thesis (?trend&auto=1) from a deep
+    // link. For develop links we DO NOT populate the search box — we run directly.
     const lastAutoRef = useRef(null);
     useEffect(() => {
         const co = searchParams.get("company");
         const tr = searchParams.get("trend");
         const auto = searchParams.get("auto");
         if (co) { setMode("company"); setSubject(co); }
-        else if (tr) {
-            setMode("trend"); setSubject(tr);
+        else if (tr && auto === "1") {
             const matched = searchParams.get("matched");
             const fromCompany = searchParams.get("from_company");
             const core = searchParams.get("core");
             const whole = searchParams.get("whole");
             const autoKey = `${tr}|${matched || ""}|${fromCompany || ""}|${core || ""}|${whole || ""}`;
-            if (auto === "1" && lastAutoRef.current !== autoKey) {
+            if (lastAutoRef.current !== autoKey) {
                 lastAutoRef.current = autoKey;
                 const recordSplit = fromCompany
                     ? { companyId: fromCompany, core, split: whole ? null : tr, whole: !!whole }
                     : null;
-                generate("trend", tr, matched || null, { recordSplit });
+                generate("trend", tr, matched || null, { force: true, recordSplit });
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,25 +129,15 @@ export default function Thesis() {
         }
     };
 
+    // Generate a COMPANY thesis (primary flow) or develop a TREND ("tesis") in place.
     const generate = async (overrideType, overrideSubject, matchedThesisId = null, opts = {}) => {
-        const t = overrideType || mode;
+        const t = overrideType || "company";
         const s = (overrideSubject ?? subject).trim();
-        if (!s) { toast.error("Escribe una tesis o empresa"); return; }
-        // Wrong-type guard: a company typed (full name/ticker) in the TREND search and
-        // submitted without picking a suggestion → auto-switch to company mode + confirm.
-        if (!opts.force && !matchedThesisId && t === "trend") {
-            try {
-                const res = await searchTickers(s);
-                const co = matchCompany(s, res?.results || []);
-                if (co) { selectCompanyFromTrend(co); return; }
-            } catch { /* ignore search failures and continue */ }
-        }
+        if (!s) { toast.error("Escribe una empresa"); return; }
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
             if (dup) {
-                // If the overwrite warning is ALREADY shown for this same item, treat a
-                // click on "Generar tesis" as confirmation (same effect as "Reescribir").
                 if (pendingDup && pendingDup.type === t && pendingDup.subject === s) {
                     opts = { ...opts, overwriteId: dup.id };
                 } else {
@@ -227,21 +165,74 @@ export default function Thesis() {
         }
     };
 
-    const discover = async () => {
-        setDiscovering(true);
-        setCandidates(null);
+    // Develop a proposed thesis (growth driver / split) directly — no search box.
+    const developThesis = ({ name, core, whole, companyId }) => {
+        const recordSplit = (companyId && core) ? { companyId, core, split: whole ? null : name, whole: !!whole } : null;
+        setMode("company");
+        generate("trend", name, null, { force: true, recordSplit });
+    };
+
+    // From an informational trend: generate the Empresa→Tesis of a mentioned company.
+    const developCompanyFromTendencia = (ticker) => {
+        if (!ticker) return;
+        setMode("company");
+        setSubject(ticker);
+        generate("company", ticker);
+    };
+
+    // Informational (structural-only) trend exploration.
+    const runExplore = async () => {
+        const s = subject.trim();
+        if (!s) { toast.error("Escribe una tendencia"); return; }
+        setTrendLoading(true);
+        setResult(null);
+        setPendingDup(null);
         try {
-            const data = await thesisDiscover();
-            setCandidates(data.candidates || []);
-            if (!(data.candidates || []).length) toast.info("No se detectaron tesis claras ahora mismo.");
+            const data = await thesisExplore(s);
+            setResult(data);
+            if (data?.title) setAutoSeen((prev) => Array.from(new Set([...prev, data.title])));
         } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudieron detectar tesis emergentes.");
+            toast.error(e?.response?.data?.detail || "No se pudo explorar la tendencia.");
         } finally {
-            setDiscovering(false);
+            setTrendLoading(false);
         }
     };
 
-    const developCandidate = (name) => { setMode("trend"); setSubject(name); generate("trend", name, null, { force: true }); };
+    // One automatic emerging trend per click, avoiding repeats (shown + saved).
+    const runAutoTrend = async () => {
+        setTrendLoading(true);
+        setResult(null);
+        setPendingDup(null);
+        try {
+            const exclude = Array.from(new Set([
+                ...autoSeen,
+                ...(dash?.tendencias || []).map((t) => t.title),
+            ].filter(Boolean)));
+            const data = await thesisAutoTrend(exclude);
+            setResult(data);
+            if (data?.title) setAutoSeen((prev) => Array.from(new Set([...prev, data.title])));
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo generar la tendencia automática.");
+        } finally {
+            setTrendLoading(false);
+        }
+    };
+
+    const saveTendencia = async () => {
+        if (!user) { toast.error("Inicia sesión para guardar la tendencia"); return; }
+        if (!result || result.type !== "tendencia") return;
+        setTendenciaSaving(true);
+        try {
+            const res = await thesisSaveTendencia(result);
+            setResult({ ...result, id: res.id, saved: true });
+            toast.success("Tendencia guardada");
+            reload();
+        } catch {
+            toast.error("No se pudo guardar la tendencia");
+        } finally {
+            setTendenciaSaving(false);
+        }
+    };
 
     const generateContra = async () => {
         if (!result?.id) { toast.error("Inicia sesión para añadir la contratesis"); return; }
@@ -278,8 +269,6 @@ export default function Thesis() {
             else await thesisDelete(action.doc.id);
         } else if (t === "assign_folder") {
             await thesisAssignFolder(action.id, (direction === "undo" ? action.prev : action.next) || null);
-        } else if (t === "assign_parent") {
-            await thesisAssignParent(action.id, (direction === "undo" ? action.prev : action.next) || null);
         }
     };
 
@@ -313,10 +302,10 @@ export default function Thesis() {
         try {
             const f = await thesisCreateFolder(n);
             setNewFolder("");
-            toast.success("Megatendencia creada");
+            toast.success("Megatesis creada");
             pushAction({ type: "create_folder", folder: { id: f.id, name: f.name, created_at: f.created_at } });
             reload();
-        } catch { toast.error("No se pudo crear la megatendencia"); }
+        } catch { toast.error("No se pudo crear la megatesis"); }
     };
 
     const assign = async (folderId) => {
@@ -324,7 +313,7 @@ export default function Thesis() {
         try {
             await thesisAssignFolder(result.id, folderId || null);
             setResult({ ...result, saved: true, folder_id: folderId || null });
-            toast.success(folderId ? "Guardada en megatendencia" : "Guardada");
+            toast.success(folderId ? "Guardada en megatesis" : "Guardada");
             reload();
         } catch { toast.error("No se pudo guardar"); }
     };
@@ -333,31 +322,10 @@ export default function Thesis() {
         const prev = (dash?.trends || []).find((t) => t.id === id)?.folder_id || null;
         try {
             await thesisAssignFolder(id, folderId || null);
-            toast.success(folderId ? "Movida a la megatendencia" : "Quitada de la megatendencia");
+            toast.success(folderId ? "Movida a la megatesis" : "Quitada de la megatesis");
             pushAction({ type: "assign_folder", id, prev, next: folderId || null });
             reload();
         } catch { toast.error("No se pudo mover la tesis"); }
-    };
-
-    const assignThesisParent = async (id, parentId) => {
-        const prev = (dash?.trends || []).find((t) => t.id === id)?.parent_id || null;
-        try {
-            await thesisAssignParent(id, parentId || null);
-            toast.success(parentId ? "Anidada como sub-tesis" : "Sub-tesis independizada");
-            pushAction({ type: "assign_parent", id, prev, next: parentId || null });
-            reload();
-        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo anidar la tesis"); }
-    };
-
-    // Nest the just-generated thesis under the suggested mother (from the result banner).
-    const nestResultUnderParent = async (parentId) => {
-        if (!result?.id) return;
-        try {
-            await thesisAssignParent(result.id, parentId || null);
-            setResult({ ...result, parent_id: parentId, parent_suggestion: null });
-            toast.success("Tesis anidada · su TAM no se sumará al de la madre");
-            reload();
-        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo anidar la tesis"); }
     };
 
     const deleteFolder = async (folder, fmode) => {
@@ -366,26 +334,28 @@ export default function Thesis() {
             const res = await thesisDeleteFolder(folder.id, fmode);
             if (fmode === "cascade") {
                 pushAction({ type: "delete_folder_cascade", folder: res.folder, theses: res.deleted_theses || [] });
-                toast.success("Megatendencia y sus tesis eliminadas");
+                toast.success("Megatesis y sus tesis eliminadas");
             } else {
                 pushAction({ type: "delete_folder_ungroup", folder: res.folder, detached_ids: res.detached_ids || [] });
-                toast.success("Megatendencia eliminada · tesis desagrupadas");
+                toast.success("Megatesis eliminada · tesis desagrupadas");
             }
             reload();
-        } catch { toast.error("No se pudo eliminar la megatendencia"); }
+        } catch { toast.error("No se pudo eliminar la megatesis"); }
     };
 
     const removeThesis = async (id) => {
         try {
             const doc = await thesisGet(id);
             await thesisDelete(id);
-            toast.success(doc?.type === "company" ? "Empresa eliminada" : "Tesis eliminada");
+            toast.success(doc?.type === "company" ? "Empresa eliminada" : doc?.type === "tendencia" ? "Tendencia eliminada" : "Tesis eliminada");
             pushAction({ type: "delete_thesis", doc });
             reload();
         } catch { toast.error("No se pudo eliminar"); }
     };
 
-    const examples = mode === "trend" ? EXAMPLES_TREND : EXAMPLES_COMPANY;
+    const examples = mode === "company" ? EXAMPLES_COMPANY : EXAMPLES_TREND;
+    const busy = loading || trendLoading;
+    const isTendencia = result?.type === "tendencia";
 
     return (
         <div data-testid="thesis-page">
@@ -398,8 +368,8 @@ export default function Thesis() {
                             <div className="overline text-[#B32A22] mb-1">Thesis Engine · Análisis cualitativo con IA</div>
                             <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">Tesis de inversión</h1>
                             <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">
-                                Mapea megatendencias a su cadena de valor y a las empresas líderes con un score cualitativo —
-                                o parte de una empresa y descubre en qué tesis encaja.
+                                Parte de una empresa y descubre las tesis (drivers de crecimiento) en las que encaja —
+                                o explora una tendencia y su cadena de valor de forma informativa.
                             </p>
                         </div>
                         {user && (
@@ -423,106 +393,96 @@ export default function Thesis() {
                     {/* Generator */}
                     <div className="border border-black bg-white p-5 mb-6" data-testid="thesis-generator">
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                            <div className="flex gap-0 border border-black w-fit">
+                            {/* Primary (left, black by default) */}
+                            <button
+                                onClick={() => { setMode("company"); setSubject(""); setResult(null); setPendingDup(null); }}
+                                className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 border border-black transition-colors ${mode === "company" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
+                                data-testid="mode-company"
+                            >
+                                <Building2 size={14} /> Empresa → Tesis
+                            </button>
+
+                            {/* Secondary trend tools (right) */}
+                            <div className="flex gap-2 flex-wrap">
                                 <button
-                                    onClick={() => { setMode("trend"); setSubject(""); setResult(null); setPendingDup(null); setCoSugg([]); }}
-                                    className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors ${mode === "trend" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
-                                    data-testid="mode-trend"
+                                    onClick={() => { setMode("explore"); setSubject(""); setResult(null); setPendingDup(null); }}
+                                    className={`px-3 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 border border-black/40 transition-colors ${mode === "explore" ? "bg-[#052049] text-[#FDF1E6] border-[#052049]" : "bg-white text-[#4A4A4A] hover:bg-[#F5E4D4]"}`}
+                                    data-testid="mode-explore"
                                 >
-                                    <TrendingUp size={14} /> Tesis → Empresas
+                                    <TrendingUp size={14} /> Tendencias → Empresas
                                 </button>
                                 <button
-                                    onClick={() => { setMode("company"); setSubject(""); setResult(null); setPendingDup(null); setCoSugg([]); }}
-                                    className={`px-4 py-2 text-xs uppercase tracking-[0.12em] font-semibold flex items-center gap-2 transition-colors border-l border-black ${mode === "company" ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
-                                    data-testid="mode-company"
+                                    onClick={runAutoTrend}
+                                    disabled={busy}
+                                    className="px-3 py-2 text-xs uppercase tracking-[0.12em] font-semibold border border-black/40 text-[#4A4A4A] hover:bg-[#F5E4D4] transition-colors flex items-center gap-2 disabled:opacity-60"
+                                    data-testid="auto-trend-btn"
                                 >
-                                    <Building2 size={14} /> Empresa → Tesis
+                                    {trendLoading ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
+                                    Tendencia automática
                                 </button>
                             </div>
-                            <button
-                                onClick={discover}
-                                disabled={discovering || loading}
-                                className="text-xs uppercase tracking-[0.12em] font-semibold border border-[#052049] text-[#052049] px-3 py-2 hover:bg-[#052049] hover:text-[#FDF1E6] transition-colors flex items-center gap-2 disabled:opacity-60"
-                                data-testid="thesis-discover-btn"
-                            >
-                                {discovering ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
-                                {discovering ? "Escaneando…" : "Tesis automática"}
-                            </button>
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
                             {mode === "company" ? (
-                                <div className="flex-1">
-                                    <TickerAutocomplete
-                                        value={subject}
-                                        onChange={setSubject}
-                                        onPick={(r) => setSubject(r.symbol)}
-                                        onEnter={() => !loading && generate()}
-                                        placeholder="Ej.: NVDA, ASML, Inditex…"
-                                        testid="thesis-input"
-                                        disabled={loading}
-                                    />
-                                </div>
+                                <>
+                                    <div className="flex-1">
+                                        <TickerAutocomplete
+                                            value={subject}
+                                            onChange={setSubject}
+                                            onPick={(r) => setSubject(r.symbol)}
+                                            onEnter={() => !loading && generate()}
+                                            placeholder="Ej.: NVDA, ASML, Inditex…"
+                                            testid="thesis-input"
+                                            disabled={loading}
+                                        />
+                                    </div>
+                                    <button onClick={() => generate()} disabled={busy} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
+                                        {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                        {loading ? "Generando…" : "Generar tesis"}
+                                    </button>
+                                </>
                             ) : (
-                                <div className="relative flex-1" ref={coSuggRef}>
+                                <>
                                     <input
                                         value={subject}
                                         onChange={(e) => setSubject(e.target.value)}
-                                        onKeyDown={(e) => e.key === "Enter" && !loading && generate()}
+                                        onKeyDown={(e) => e.key === "Enter" && !trendLoading && runExplore()}
                                         placeholder="Ej.: Inteligencia artificial y centros de datos"
-                                        className="w-full px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
+                                        className="flex-1 px-3 py-2.5 border border-black outline-none font-mono text-sm bg-white"
                                         data-testid="thesis-input"
-                                        disabled={loading}
+                                        disabled={trendLoading}
                                         autoComplete="off"
                                     />
-                                    {coSugg.length > 0 && (
-                                        <div className="absolute left-0 right-0 z-30 bg-white border border-black border-t-0 max-h-64 overflow-y-auto" data-testid="trend-company-suggestions">
-                                            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#4A4A4A] bg-[#FDF1E6] border-b border-black/10">¿Buscas una empresa? Selecciónala para analizarla en Empresa → Tesis</div>
-                                            {coSugg.map((r) => (
-                                                <button
-                                                    key={r.symbol}
-                                                    type="button"
-                                                    onClick={() => selectCompanyFromTrend(r)}
-                                                    className="w-full text-left px-3 py-2 border-b border-black/10 last:border-b-0 hover:bg-[#F5E4D4] transition-colors"
-                                                    data-testid={`trend-company-opt-${r.symbol}`}
-                                                >
-                                                    <div className="font-mono text-sm">{r.symbol} <span className="text-[#4A4A4A] text-[10px]">{r.exchange || ""}</span></div>
-                                                    <div className="text-xs text-[#4A4A4A]">{r.name}</div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                    <button onClick={runExplore} disabled={busy} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-explore-btn">
+                                        {trendLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                        {trendLoading ? "Explorando…" : "Explorar tendencia"}
+                                    </button>
+                                </>
                             )}
-                            <button onClick={() => generate()} disabled={loading} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
-                                {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                                {loading ? "Generando…" : "Generar tesis"}
-                            </button>
                         </div>
 
                         <div className="flex flex-wrap gap-2 mt-3 items-center">
                             <span className="overline text-[#4A4A4A]">Prueba:</span>
                             {examples.map((ex) => (
-                                <button key={ex} onClick={() => setSubject(ex)} disabled={loading}
+                                <button key={ex} onClick={() => setSubject(ex)} disabled={busy}
                                         className="text-xs border border-black/30 px-2 py-1 hover:bg-[#F5E4D4] transition-colors font-mono">
                                     {ex}
                                 </button>
                             ))}
                         </div>
 
-                        {(loading || discovering) && (
+                        {busy && (
                             <div className="mt-4 text-xs text-[#4A4A4A] flex items-center gap-2" data-testid="thesis-loading">
                                 <Loader2 size={13} className="animate-spin" />
-                                {discovering
-                                    ? "Escaneando fuentes en busca de tesis emergentes… ~40s."
+                                {trendLoading
+                                    ? "Explorando la tendencia en la web… esto puede tardar ~40-60s."
                                     : "Buscando en la web e investigando con IA… esto puede tardar ~1-2 minutos."}
                             </div>
                         )}
                     </div>
 
-                    {/* Wrong-type warning: a company typed in the TREND search.
-                        Placed right below the search box, above megatrends. */}
-                    {/* Dedup / overwrite warning: right below the search box, above megatrends. */}
+                    {/* Dedup / overwrite warning (company): right below the search box. */}
                     {pendingDup && (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
@@ -548,89 +508,77 @@ export default function Thesis() {
                         </div>
                     )}
 
-                    {/* Megatendencias management */}
+                    {/* Megatesis management */}
                     {user && (
                         <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
-                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
-                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis en megatendencias. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatendencias</strong>.</p>
+                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatesis</div>
+                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis desarrolladas en megatesis. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatesis</strong>.</p>
                             <div className="flex gap-1 max-w-sm">
                                 <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
                                        onKeyDown={(e) => e.key === "Enter" && createFolder()}
-                                       placeholder="Nueva megatendencia" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
-                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatendencia">
+                                       placeholder="Nueva megatesis" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
+                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatesis">
                                     <FolderPlus size={14} />
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* Discovered candidate trends */}
-                    {candidates && candidates.length > 0 && (
-                        <div className="border border-black bg-[#F5E4D4] p-4 mb-6" data-testid="thesis-candidates">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Radar size={16} className="text-[#052049]" />
-                                <span className="overline text-black">Tesis emergentes detectadas</span>
+                    {/* Save bar — only for theses (company / trend); tendencias save inline. */}
+                    {result && !isTendencia && user && (
+                        result.type === "company" ? (
+                            result.id && (
+                                <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
+                                    <Link to={`/thesis/${result.id}`} className="btn-primary flex items-center gap-1.5 !px-4" data-testid="thesis-view-detail">
+                                        Ver en detalle <ArrowRight size={14} />
+                                    </Link>
+                                </div>
+                            )
+                        ) : (
+                            <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
+                                <span className="overline text-[#4A4A4A]">Guardar en megatesis</span>
+                                <select
+                                    value={result.folder_id || ""}
+                                    onChange={(e) => assign(e.target.value)}
+                                    className="border border-black bg-white px-2 py-1.5 text-sm outline-none"
+                                    data-testid="thesis-folder-select"
+                                >
+                                    <option value="">— Sin megatesis —</option>
+                                    {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                </select>
+                                {result.id && <Link to={`/thesis/${result.id}`} className="text-xs text-[#052049] hover:underline">Ver en detalle →</Link>}
                             </div>
-                            <div className="grid sm:grid-cols-2 gap-3">
-                                {candidates.map((c, i) => (
-                                    <div key={i} className="border border-black bg-white p-3 flex flex-col" data-testid={`candidate-${i}`}>
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <div className="font-serif text-base font-medium leading-tight">{c.name}</div>
-                                                {c.sector && <div className="overline text-[#4A4A4A] mt-0.5">{c.sector}</div>}
-                                            </div>
-                                            <span className="flex items-center gap-1 text-xs font-mono font-bold shrink-0" style={{ color: (c.heat ?? 0) >= 7 ? "#B32A22" : "#B8860B" }} title="Momentum / atención actual">
-                                                <Flame size={13} /> {c.heat ?? "—"}
-                                            </span>
-                                        </div>
-                                        {c.why_now && <p className="text-xs text-[#4A4A4A] mt-2 leading-snug flex-1">{c.why_now}</p>}
-                                        <button
-                                            onClick={() => developCandidate(c.name)}
-                                            disabled={loading}
-                                            className="mt-3 text-xs uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2 py-1.5 hover:bg-[#052049] transition-colors flex items-center justify-center gap-1 disabled:opacity-60"
-                                            data-testid={`candidate-develop-${i}`}
-                                        >
-                                            <Sparkles size={12} /> Desarrollar tesis <ArrowRight size={12} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        )
                     )}
-
-                    {/* Save bar */}
-                    {result && user && (
-                        <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
-                            <span className="overline text-[#4A4A4A]">Guardar en megatendencia</span>
-                            <select
-                                value={result.folder_id || ""}
-                                onChange={(e) => assign(e.target.value)}
-                                className="border border-black bg-white px-2 py-1.5 text-sm outline-none"
-                                data-testid="thesis-folder-select"
-                            >
-                                <option value="">— Sin megatendencia —</option>
-                                {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                            </select>
-                            {result.id && <Link to={`/thesis/${result.id}`} className="text-xs text-[#052049] hover:underline">Ver en detalle →</Link>}
-                        </div>
-                    )}
-                    {result && !user && (
+                    {result && !isTendencia && !user && (
                         <div className="border border-[#B32A22]/40 bg-white p-3 mb-6 text-sm" data-testid="thesis-login-hint">
-                            Inicia sesión con Google (botón <span className="font-semibold">Entrar</span> arriba) para guardar esta tesis en megatendencias.
+                            Inicia sesión con Google (botón <span className="font-semibold">Entrar</span> arriba) para guardar esta tesis.
                         </div>
                     )}
 
                     {/* Result, or the explore dashboard when idle */}
                     {result ? (
-                        <ThesisResult
-                            thesis={result}
-                            canGenerateContra={!!result.id}
-                            onGenerateContra={generateContra}
-                            generatingContra={generatingContra}
-                            onMutated={reload}
-                            onNest={nestResultUnderParent}
-                        />
-                    ) : (user && dash && !loading && (
+                        isTendencia ? (
+                            <TendenciaResult
+                                tendencia={result}
+                                onDevelopCompany={developCompanyFromTendencia}
+                                onSave={saveTendencia}
+                                onDiscard={() => setResult(null)}
+                                saved={!!result.saved}
+                                saving={tendenciaSaving}
+                                canSave={!!user}
+                            />
+                        ) : (
+                            <ThesisResult
+                                thesis={result}
+                                canGenerateContra={!!result.id}
+                                onGenerateContra={generateContra}
+                                generatingContra={generatingContra}
+                                onMutated={reload}
+                                onDevelop={developThesis}
+                            />
+                        )
+                    ) : (user && dash && !busy && (
                         <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} />
                     ))}
                 </div>
@@ -639,16 +587,16 @@ export default function Thesis() {
                 <div className="order-1 lg:order-2">
                     {!user ? (
                         <aside className="border border-black bg-white p-4" data-testid="thesis-sidebar">
-                            <div className="overline text-black mb-2">Mis tesis y empresas</div>
-                            <div className="text-sm text-[#4A4A4A]">Inicia sesión con Google para guardar tus tesis en megatendencias y consultarlas cuando quieras.</div>
+                            <div className="overline text-black mb-2">Tendencias, tesis y empresas</div>
+                            <div className="text-sm text-[#4A4A4A]">Inicia sesión con Google para guardar tus tendencias, tesis y empresas y consultarlas cuando quieras.</div>
                         </aside>
                     ) : (
                         <ThesisSidebar
+                            tendencias={dash?.tendencias || []}
                             trends={dash?.trends || []}
                             companyTheses={dash?.company_theses || []}
                             folders={folders}
                             onAssignFolder={assignThesisFolder}
-                            onAssignParent={assignThesisParent}
                             onRemoveThesis={removeThesis}
                             radarEnabled={radarEnabled}
                             onToggleRadar={toggleRadar}
@@ -659,22 +607,22 @@ export default function Thesis() {
                 </div>
             </div>
 
-            {/* Delete megatendencia confirm modal */}
+            {/* Delete megatesis confirm modal */}
             {folderToDelete && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="delete-folder-modal" onClick={() => setFolderToDelete(null)}>
                     <div className="bg-white border border-black max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
                         <div className="font-serif text-xl font-medium mb-1">Eliminar «{folderToDelete.name}»</div>
                         <p className="text-sm text-[#4A4A4A] mb-4">
-                            Esta megatendencia agrupa <strong>{folderToDelete.trend_count || 0} tesis</strong>. ¿Qué quieres hacer con ellas?
+                            Esta megatesis agrupa <strong>{folderToDelete.trend_count || 0} tesis</strong>. ¿Qué quieres hacer con ellas?
                         </p>
                         <div className="flex flex-col gap-2">
                             <button onClick={() => deleteFolder(folderToDelete, "ungroup")} data-testid="delete-folder-ungroup"
                                     className="text-left text-sm border border-black px-3 py-2 hover:bg-[#F5E4D4] transition-colors">
-                                <span className="font-semibold">Solo desagrupar</span> — mantener las tesis en mi lista (sin megatendencia)
+                                <span className="font-semibold">Solo desagrupar</span> — mantener las tesis en mi lista (sin megatesis)
                             </button>
                             <button onClick={() => deleteFolder(folderToDelete, "cascade")} data-testid="delete-folder-cascade"
                                     className="text-left text-sm border border-[#B32A22] text-[#B32A22] px-3 py-2 hover:bg-[#B32A22] hover:text-white transition-colors">
-                                <span className="font-semibold">Borrar también las tesis</span> — eliminar la megatendencia y su contenido
+                                <span className="font-semibold">Borrar también las tesis</span> — eliminar la megatesis y su contenido
                             </button>
                             <button onClick={() => setFolderToDelete(null)} data-testid="delete-folder-cancel"
                                     className="text-xs text-[#4A4A4A] hover:underline mt-1 self-start">

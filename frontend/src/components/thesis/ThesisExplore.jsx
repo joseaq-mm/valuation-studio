@@ -4,7 +4,7 @@ import { Layers, TrendingUp, Building2, BarChart3, ChevronRight, MousePointerCli
 import { squarify, relColor } from "@/lib/treemap";
 
 const VIEWS = [
-    { id: "megatrends", label: "Megatendencias", icon: Layers },
+    { id: "megatrends", label: "Megatesis", icon: Layers },
     { id: "trends", label: "Tesis", icon: TrendingUp },
     { id: "companies_score", label: "Empresas · score medio", icon: Building2 },
     { id: "companies_tam", label: "Empresas · TAM total", icon: BarChart3 },
@@ -179,7 +179,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                             {it.type === "folder" && onDeleteFolder && it.w > 44 && it.h > 28 && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onDeleteFolder(it); }}
-                                    title="Eliminar megatendencia"
+                                    title="Eliminar megatesis"
                                     className="absolute top-1 right-1 p-1 bg-black/25 hover:bg-black/55 text-[#FDF1E6] transition-colors"
                                     data-testid={`explore-delete-folder-${it.id}`}
                                 >
@@ -192,7 +192,6 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
             </div>
             <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
                 El tamaño de cada cuadrado es proporcional a {view === "megatrends" || view === "trends" ? "su TAM (potencial de mercado)" : view === "companies_score" ? "su score global medio" : "la suma de sus TAM Scores"}, relativo al resto. El color va de verde (alto) a rojo (bajo).
-                {(view === "megatrends" || view === "trends") && <> El TAM de una <strong>sub-tesis</strong> (↳) no se suma al de su megatendencia para evitar el doble conteo.</>}
             </p>
         </div>
     );

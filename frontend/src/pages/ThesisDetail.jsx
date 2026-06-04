@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { thesisGet, thesisGenerateContra } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
+import TendenciaResult from "@/components/thesis/TendenciaResult";
 
 export default function ThesisDetail() {
     const { id } = useParams();
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [thesis, setThesis] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -36,6 +38,8 @@ export default function ThesisDetail() {
         }
     };
 
+    const isTendencia = thesis?.type === "tendencia";
+
     return (
         <div data-testid="thesis-detail-page">
             <Link to="/thesis" className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline mb-4" data-testid="back-to-thesis">
@@ -50,12 +54,21 @@ export default function ThesisDetail() {
                 <div className="border border-[#B32A22]/40 bg-white p-6 text-[#B32A22]" data-testid="thesis-detail-error">{error}</div>
             )}
             {thesis && !loading && (
-                <ThesisResult
-                    thesis={thesis}
-                    canGenerateContra={!!user}
-                    onGenerateContra={generateContra}
-                    generatingContra={generatingContra}
-                />
+                isTendencia ? (
+                    <TendenciaResult
+                        tendencia={thesis}
+                        saved
+                        canSave={false}
+                        onDevelopCompany={(ticker) => ticker && navigate(`/thesis?company=${encodeURIComponent(ticker)}`)}
+                    />
+                ) : (
+                    <ThesisResult
+                        thesis={thesis}
+                        canGenerateContra={!!user}
+                        onGenerateContra={generateContra}
+                        generatingContra={generatingContra}
+                    />
+                )
             )}
         </div>
     );

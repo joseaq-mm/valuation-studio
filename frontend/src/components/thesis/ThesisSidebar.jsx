@@ -1,12 +1,11 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw, GitBranch } from "lucide-react";
+import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw, Radar } from "lucide-react";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
 /** Dropdown for a saved company: lists ONLY the trend theses already generated where
- *  the company actually appears (membership). Each row links to that thesis. The list
- *  reflects live membership, so adding the company to a thesis shows up on reload. */
+ *  the company actually appears (membership). Each row links to that thesis. */
 function CompanyTrendsDropdown({ company }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -57,8 +56,8 @@ function CompanyTrendsDropdown({ company }) {
     );
 }
 
-function TrendRow({ t, folders, trends, onAssignFolder, onAssignParent, onRemove }) {
-    const parent = t.parent_id ? trends.find((x) => x.id === t.parent_id) : null;
+/** A developed thesis (growth driver). Groups into a "megatesis" folder. */
+function TrendRow({ t, folders, onAssignFolder, onRemove }) {
     return (
         <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4] group" data-testid={`sidebar-trend-${t.id}`}>
             <div className="flex items-center gap-1.5">
@@ -70,10 +69,10 @@ function TrendRow({ t, folders, trends, onAssignFolder, onAssignParent, onRemove
                     onChange={(e) => onAssignFolder(t.id, e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     className="flex-1 min-w-0 border border-black/20 bg-white px-1 py-0.5 text-[10px] outline-none cursor-pointer"
-                    title="Asignar a una megatendencia"
+                    title="Asignar a una megatesis"
                     data-testid={`sidebar-trend-folder-${t.id}`}
                 >
-                    <option value="">— Megatendencia —</option>
+                    <option value="">— Megatesis —</option>
                     {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
                 <button onClick={() => onRemove(t.id)} className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0" title="Eliminar tesis">
@@ -83,27 +82,25 @@ function TrendRow({ t, folders, trends, onAssignFolder, onAssignParent, onRemove
             <Link to={`/thesis/${t.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-trend-title-${t.id}`}>
                 {t.title}
             </Link>
-            {/* TAM hierarchy: nest this thesis under a broader 'mother' so its TAM isn't
-                double-counted in the megatrend aggregate. */}
-            <div className="flex items-center gap-1 mt-1">
-                <GitBranch size={10} className="text-[#4A4A4A] shrink-0" title="Sub-tesis de (jerarquía TAM)" />
-                <select
-                    value={t.parent_id || ""}
-                    onChange={(e) => onAssignParent(t.id, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`flex-1 min-w-0 border px-1 py-0.5 text-[10px] outline-none cursor-pointer ${t.is_child ? "border-[#B8860B] bg-[#FBF3E0] text-[#7a5a10]" : "border-black/20 bg-white"}`}
-                    title="Anidar como sub-tesis de otra (su TAM no se sumará al de su megatendencia)"
-                    data-testid={`sidebar-trend-parent-${t.id}`}
-                >
-                    <option value="">— Sin madre (TAM propio) —</option>
-                    {trends.filter((o) => o.id !== t.id).map((o) => <option key={o.id} value={o.id}>↳ sub-tesis de: {o.title}</option>)}
-                </select>
+        </div>
+    );
+}
+
+/** An informational saved trend ('tendencia') — value chain + leaders/disruptors. */
+function TendenciaRow({ t, onRemove }) {
+    return (
+        <div className="border border-black/20 px-2 py-1.5 hover:bg-[#F5E4D4] group" data-testid={`sidebar-tendencia-${t.id}`}>
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-[#B8860B] flex items-center gap-1 shrink-0">
+                    <Radar size={10} /> Tendencia
+                </span>
+                <button onClick={() => onRemove(t.id)} className="ml-auto opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0" title="Eliminar tendencia" data-testid={`sidebar-tendencia-remove-${t.id}`}>
+                    <Trash2 size={12} />
+                </button>
             </div>
-            {parent && (
-                <div className="mt-0.5 text-[10px] text-[#7a5a10] truncate" title={`Su TAM se absorbe en «${parent.title}»`} data-testid={`sidebar-trend-parent-note-${t.id}`}>
-                    ↳ sub-tesis de «{parent.title}» · TAM no sumado
-                </div>
-            )}
+            <Link to={`/thesis/${t.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-tendencia-title-${t.id}`}>
+                {t.title}
+            </Link>
         </div>
     );
 }
@@ -129,27 +126,43 @@ function CompanyRow({ c, onRemove }) {
     );
 }
 
+function Section({ title, count, children }) {
+    if (!count) return null;
+    return (
+        <div className="space-y-1.5">
+            <div className="overline text-[#4A4A4A] pt-1">{title} ({count})</div>
+            {children}
+        </div>
+    );
+}
+
 export default function ThesisSidebar({
-    trends = [], companyTheses = [], folders = [],
-    onAssignFolder, onAssignParent, onRemoveThesis,
+    tendencias = [], trends = [], companyTheses = [], folders = [],
+    onAssignFolder, onRemoveThesis,
     radarEnabled, onToggleRadar,
     refreshEnabled, onToggleRefresh,
 }) {
     const [q, setQ] = useState("");
 
     const items = useMemo(() => {
+        const dn = tendencias.map((t) => ({ kind: "tendencia", key: `d-${t.id}`, search: _norm(t.title), data: t }));
         const ti = trends.map((t) => ({ kind: "trend", key: `t-${t.id}`, search: _norm(t.title), data: t }));
         const ci = companyTheses.map((c) => ({ kind: "company", key: `c-${c.id}`, search: `${_norm(c.title)} ${_norm(c.ticker)}`, data: c }));
-        return [...ti, ...ci];
-    }, [trends, companyTheses]);
+        return [...dn, ...ti, ...ci];
+    }, [tendencias, trends, companyTheses]);
 
     const nq = _norm(q);
     const filtered = nq ? items.filter((it) => it.search.includes(nq)) : items;
 
+    const iconFor = (kind) =>
+        kind === "company" ? <Building2 size={11} className="text-[#052049] shrink-0" />
+            : kind === "tendencia" ? <Radar size={11} className="text-[#B8860B] shrink-0" />
+                : <TrendingUp size={11} className="text-[#B32A22] shrink-0" />;
+
     return (
         <aside className="border border-black bg-white p-4 lg:sticky lg:top-4" data-testid="thesis-sidebar">
             <div className="overline text-black mb-2 flex items-center gap-1">
-                Mis tesis y empresas ({items.length})
+                Tendencias, tesis y empresas ({items.length})
             </div>
 
             {/* Search with live dropdown */}
@@ -158,7 +171,7 @@ export default function ThesisSidebar({
                 <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Buscar tesis o empresa…"
+                    placeholder="Buscar tendencia, tesis o empresa…"
                     className="w-full border border-black/30 pl-7 pr-2 py-1.5 text-xs outline-none focus:border-black"
                     data-testid="sidebar-search"
                 />
@@ -173,9 +186,7 @@ export default function ThesisSidebar({
                                 className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-[#F5E4D4] transition-colors"
                                 data-testid={`sidebar-search-opt-${it.key}`}
                             >
-                                {it.kind === "trend"
-                                    ? <TrendingUp size={11} className="text-[#B32A22] shrink-0" />
-                                    : <Building2 size={11} className="text-[#052049] shrink-0" />}
+                                {iconFor(it.kind)}
                                 <span className="truncate">{it.data.title}</span>
                             </Link>
                         ))}
@@ -183,14 +194,20 @@ export default function ThesisSidebar({
                 )}
             </div>
 
-            <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-0.5" data-testid="sidebar-list">
-                {items.length === 0 && <div className="text-xs text-[#4A4A4A]">Aún no hay tesis ni empresas guardadas.</div>}
-                {trends.map((t) => (
-                    <TrendRow key={`t-${t.id}`} t={t} folders={folders} trends={trends} onAssignFolder={onAssignFolder} onAssignParent={onAssignParent} onRemove={onRemoveThesis} />
-                ))}
-                {companyTheses.map((c) => (
-                    <CompanyRow key={`c-${c.id}`} c={c} onRemove={onRemoveThesis} />
-                ))}
+            <div className="space-y-3 max-h-[60vh] overflow-auto pr-0.5" data-testid="sidebar-list">
+                {items.length === 0 && <div className="text-xs text-[#4A4A4A]">Aún no hay tendencias, tesis ni empresas guardadas.</div>}
+
+                <Section title="Tendencias" count={tendencias.length}>
+                    {tendencias.map((t) => <TendenciaRow key={`d-${t.id}`} t={t} onRemove={onRemoveThesis} />)}
+                </Section>
+
+                <Section title="Tesis" count={trends.length}>
+                    {trends.map((t) => <TrendRow key={`t-${t.id}`} t={t} folders={folders} onAssignFolder={onAssignFolder} onRemove={onRemoveThesis} />)}
+                </Section>
+
+                <Section title="Empresas" count={companyTheses.length}>
+                    {companyTheses.map((c) => <CompanyRow key={`c-${c.id}`} c={c} onRemove={onRemoveThesis} />)}
+                </Section>
             </div>
 
             {/* Weekly trend radar */}
@@ -198,7 +215,7 @@ export default function ThesisSidebar({
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><Bell size={12} /> Radar semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tesis emergente con fuerte momentum.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tendencia emergente con fuerte momentum.</p>
                     </div>
                     <button
                         onClick={onToggleRadar}

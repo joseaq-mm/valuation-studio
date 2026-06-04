@@ -320,6 +320,61 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
     }
 
 
+async def run_trend_explore(trend: str, sources: list) -> dict:
+    """Lightweight STRUCTURAL-ONLY trend exploration (no scoring → cheaper).
+    ONE LLM call: maps the value chain + ≥1 leader and ≥1 disruptor per stage, each
+    company with its role (líder/disruptor) and a short prominence note. Used by the
+    informational 'Tendencias → Empresas' and 'Tendencia automática' flows."""
+    sources_block = _sources_block(sources)
+    inv_user = (
+        f"TENDENCIA / TEMA A ANALIZAR: {trend}\n\n"
+        f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
+        "Devuelve un JSON con esta forma EXACTA:\n"
+        "{\n"
+        '  "title": "título corto de la tendencia",\n'
+        '  "summary": "2-3 frases sobre por qué es una megatendencia relevante para invertir",\n'
+        '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
+        '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|disruptor", "why": "1-2 frases sobre su papel y protagonismo: por qué es líder o disruptor de ese eslabón"}]\n'
+        "}\n"
+        "REGLAS:\n"
+        "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
+        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 'disruptor'.\n"
+        "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
+        "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
+    )
+    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-explore-{datetime.now(timezone.utc).timestamp()}",
+                         INVESTIGATOR_TREND_SYS, inv_user)
+    inv = _extract_json(inv_raw)
+    companies = inv.get("companies") or []
+    if not companies:
+        raise ValueError("No se pudieron identificar empresas para esta tendencia. Prueba a reformularla.")
+    merged = []
+    for c in companies:
+        tk = (c.get("ticker") or "").upper().strip()
+        cat = (c.get("category") or "leader").strip().lower()
+        if cat not in ("leader", "disruptor"):
+            cat = "leader"
+        merged.append({
+            "name": c.get("name"),
+            "ticker": tk or None,
+            "value_chain_role": c.get("value_chain_role"),
+            "category": cat,
+            "why": c.get("why"),
+        })
+    return {
+        "type": "tendencia",
+        "query": trend,
+        "title": inv.get("title") or trend,
+        "summary": inv.get("summary"),
+        "tam": _normalize_tam(inv.get("tam")),
+        "value_chain": _normalize_value_chain(inv.get("value_chain")),
+        "companies": merged,
+        "sources": sources,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 SYNTHESIZER_TREND_SYS = (
     "Eres un gestor de carteras value con criterio cualitativo riguroso. Recibes una "
     "tendencia y una lista de empresas con su rol en la cadena de valor. Para cada empresa "
@@ -378,11 +433,17 @@ DISCOVERER_SYS = (
 )
 
 
-async def run_discover() -> dict:
+async def run_discover(exclude: list = None) -> dict:
     sources = gather_discovery_sources()
     now = datetime.now(timezone.utc).strftime("%Y-%m")
+    exclude = [str(x).strip() for x in (exclude or []) if str(x).strip()]
+    excl_line = (
+        "EVITA proponer estas tendencias (ya mostradas/guardadas), busca temas NUEVOS y distintos: "
+        + "; ".join(exclude[:40]) + ".\n\n"
+    ) if exclude else ""
     user = (
         f"FECHA ACTUAL: {now}\n\n"
+        f"{excl_line}"
         f"SEÑALES RECIENTES DE LA WEB:\n{_sources_block(sources)}\n\n"
         "Identifica entre 4 y 5 megatendencias emergentes de inversión, distintas entre sí, "
         "que merezcan una tesis a fondo. Devuelve un JSON con esta forma EXACTA:\n"
@@ -418,6 +479,37 @@ async def run_discover() -> dict:
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+async def run_auto_trend(exclude: list = None) -> dict:
+    """One-shot automatic trend: discover ONE emerging trend (avoiding the ones in
+    `exclude`, by name) based on current momentum, then build its informational
+    (structural-only) exploration via run_trend_explore. Returns a 'tendencia' dict
+    enriched with the discovery meta (heat / why_now / sector)."""
+    exclude = exclude or []
+    excl_norm = {(_norm_name(x)) for x in exclude}
+    disc = await run_discover(exclude=exclude)
+    candidate = None
+    for c in (disc.get("candidates") or []):
+        if _norm_name(c.get("name")) not in excl_norm:
+            candidate = c
+            break
+    if not candidate:
+        candidate = (disc.get("candidates") or [None])[0]
+    if not candidate or not (candidate.get("name") or "").strip():
+        raise ValueError("No se pudo detectar una tendencia nueva ahora mismo. Inténtalo de nuevo.")
+    name = candidate["name"].strip()
+    sources = gather_sources(name, "trend")
+    result = await run_trend_explore(name, sources)
+    result["heat"] = candidate.get("heat")
+    result["why_now"] = candidate.get("why_now")
+    result["sector"] = candidate.get("sector")
+    result["auto"] = True
+    return result
+
+
+def _norm_name(s) -> str:
+    return (s or "").strip().lower()
 
 
 # ---------------------- Weekly news watch (cheap classifier) ----------------------

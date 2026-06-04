@@ -88,6 +88,12 @@ export const thesisTamScores = (items) =>
     api.post(`/thesis/tam-scores`, { items }).then(r => startAndPoll(r.data));
 export const thesisDiscover = () =>
     api.post(`/thesis/discover`).then(r => startAndPoll(r.data));
+export const thesisExplore = (subject) =>
+    api.post(`/thesis/explore`, { subject }).then(r => startAndPoll(r.data));
+export const thesisAutoTrend = (exclude = []) =>
+    api.post(`/thesis/auto-trend`, { exclude }).then(r => startAndPoll(r.data));
+export const thesisSaveTendencia = (tendencia) =>
+    api.post(`/thesis/tendencia/save`, { tendencia }).then(r => r.data);
 export const thesisGenerateContra = (id) =>
     api.post(`/thesis/${id}/contra`).then(r => startAndPoll(r.data));
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);

@@ -17,6 +17,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
+    run_trend_explore, run_auto_trend,
     match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
     detect_parent_thesis, aggregate_folder_tam,
 )
@@ -114,6 +115,15 @@ def _discover_sync() -> dict:
     return asyncio.run(run_discover())
 
 
+def _explore_sync(subject: str) -> dict:
+    sources = gather_sources(subject, "trend")
+    return asyncio.run(run_trend_explore(subject, sources))
+
+
+def _auto_trend_sync(exclude) -> dict:
+    return asyncio.run(run_auto_trend(exclude or []))
+
+
 def _match_sync(company: str, company_trends: list, existing: list) -> dict:
     return asyncio.run(match_company_to_theses(company, company_trends, existing))
 
@@ -180,7 +190,6 @@ class EvaluateCompanyRequest(BaseModel):
 class RadarSubscribeRequest(BaseModel):
     enabled: bool
 
-
 class TamScoreItem(BaseModel):
     ticker: str
     overall_score: Optional[float] = None
@@ -189,6 +198,18 @@ class TamScoreItem(BaseModel):
 
 class TamScoresRequest(BaseModel):
     items: List[TamScoreItem]
+
+
+class ExploreRequest(BaseModel):
+    subject: str
+
+
+class AutoTrendRequest(BaseModel):
+    exclude: Optional[List[str]] = None
+
+
+class SaveTendenciaRequest(BaseModel):
+    tendencia: Dict[str, Any]
 
 
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
@@ -427,12 +448,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     await _persist_qual_snapshots(user_id, tid, thesis)
                     thesis["id"] = tid
                     thesis["saved"] = False
-                    # TAM hierarchy: offer to nest this new thesis under a broader one
-                    # (manual confirm) so its TAM isn't double-counted in megatrends.
-                    if kind == "trend":
-                        parent_sugg = await _suggest_parent(user_id, tid, thesis)
-                        if parent_sugg:
-                            thesis["parent_suggestion"] = parent_sugg
                 # Developing a trend FROM a company core/split → record it on that company
                 # thesis so its suggestions page shows the note + remaining split cards.
                 if kind == "trend" and from_company and core:
@@ -481,6 +496,34 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             logger.error(f"discover failed: {e}")
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error detectando tendencias: {e}"}})
+
+    async def _run_explore_job(job_id: str, subject: str):
+        try:
+            result = await asyncio.to_thread(_explore_sync, subject)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": result, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except ValueError as e:
+            await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": str(e)}})
+        except Exception as e:
+            logger.error(f"explore failed ({subject}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error explorando la tendencia: {e}"}})
+
+    async def _run_autotrend_job(job_id: str, exclude):
+        try:
+            result = await asyncio.to_thread(_auto_trend_sync, exclude)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": result, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except ValueError as e:
+            await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": str(e)}})
+        except Exception as e:
+            logger.error(f"auto-trend failed: {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": f"Error generando la tendencia automática: {e}"}})
 
     async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str, precomputed: Optional[dict] = None):
         try:
@@ -588,6 +631,68 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         })
         _spawn(_run_discover_job(job_id))
         return {"job_id": job_id}
+
+    @router.post("/explore")
+    async def explore(req: ExploreRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        """Informational (structural-only) trend exploration: value chain + ≥1 leader and
+        ≥1 disruptor per stage, no scoring. Works anonymously (ephemeral result)."""
+        subject = (req.subject or "").strip()
+        if not subject:
+            raise HTTPException(status_code=400, detail="subject requerido")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"] if user else None,
+            "kind": "explore",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_explore_job(job_id, subject))
+        return {"job_id": job_id}
+
+    @router.post("/auto-trend")
+    async def auto_trend(req: AutoTrendRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        """Generate ONE automatic emerging trend (by current momentum), avoiding the
+        names passed in `exclude`. Returns an informational 'tendencia' (no scoring)."""
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id,
+            "user_id": user["user_id"] if user else None,
+            "kind": "auto_trend",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_autotrend_job(job_id, req.exclude or []))
+        return {"job_id": job_id}
+
+    @router.post("/tendencia/save")
+    async def save_tendencia(req: SaveTendenciaRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Persist an informational trend ('tendencia') so it shows in the sidebar.
+        Discard is purely client-side (the ephemeral result is just dropped)."""
+        t = req.tendencia or {}
+        if not (t.get("title") or t.get("query")):
+            raise HTTPException(status_code=400, detail="tendencia inválida")
+        tid = f"thesis_{uuid.uuid4().hex[:12]}"
+        doc = {
+            "id": tid,
+            "user_id": user["user_id"],
+            "type": "tendencia",
+            "saved": True,
+            "folder_id": None,
+            "title": t.get("title") or t.get("query"),
+            "query": t.get("query"),
+            "summary": t.get("summary"),
+            "tam": t.get("tam"),
+            "value_chain": t.get("value_chain") or [],
+            "companies": t.get("companies") or [],
+            "heat": t.get("heat"),
+            "why_now": t.get("why_now"),
+            "sector": t.get("sector"),
+            "sources": t.get("sources") or [],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.theses.insert_one(doc)
+        return {"id": tid, "saved": True}
 
     @router.post("/tam-scores")
     async def tam_scores(req: TamScoresRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
@@ -788,6 +893,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         folders = await db.thesis_folders.find(
             {"user_id": uid}, {"_id": 0}
         ).sort("created_at", -1).to_list(length=200)
+        tendencia_docs = await db.theses.find(
+            {"user_id": uid, "type": "tendencia"},
+            {"_id": 0, "id": 1, "title": 1, "query": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=500)
 
         # Bulk projected-revenue map (USD billions) from the fundamentals cache only.
         tickers = set()
@@ -896,7 +1005,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             })
 
         return {"folders": folder_out, "trends": trends,
-                "companies": companies, "company_theses": company_theses}
+                "companies": companies, "company_theses": company_theses,
+                "tendencias": [
+                    {"id": d.get("id"), "title": d.get("title") or d.get("query"),
+                     "query": d.get("query")}
+                    for d in tendencia_docs
+                ]}
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
