@@ -367,7 +367,7 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
             {/* STATE A — the whole core was developed: informational note, no actions. */}
             {wholeDeveloped ? (
                 <div className="mt-3 border border-[#1E7D45]/40 bg-[#F0F7F2] p-3 text-sm leading-relaxed" data-testid={`core-whole-note-${(t.name || "").slice(0, 12)}`}>
-                    <span className="font-semibold text-[#1E7D45]">Conjunto desarrollado ✓</span>{" "}
+                    <span className="font-semibold text-[#1E7D45]">{splits ? "Conjunto desarrollado ✓" : "Tesis ya desarrollada ✓"}</span>{" "}
                     <Link to={`/thesis/${dev.whole.developed_id}`} className="underline font-medium">Ver la tesis</Link>.
                     {splits && (
                         <div className="text-[11px] text-[#4A4A4A] mt-1">
@@ -470,8 +470,8 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
                     )}
                     <div className="mt-auto pt-4 border-t border-black/10">
                         <DevelopAction
-                            name={coreName} core={splits ? coreName : null} whole={!!splits} companyId={companyId} onDevelop={onDevelop}
-                            linkTo={splits ? wholeLink : `/thesis?trend=${encodeURIComponent(coreName)}&auto=1`}
+                            name={coreName} core={coreName} whole={true} companyId={companyId} onDevelop={onDevelop}
+                            linkTo={wholeLink}
                             className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
                             testid={`trend-generate-${slug}`}
                         >
