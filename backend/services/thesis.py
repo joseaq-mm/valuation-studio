@@ -19,11 +19,85 @@ import os
 import re
 import json
 import logging
+import contextvars
 from datetime import datetime, timezone
 
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
+
+# ---------------------- Model presets (cost/quality switch) ----------------------
+# Three presets selectable at runtime (dev/testing tool). All flows read the ACTIVE
+# preset via _inv_model() / _syn_model(), so switching is a single setting change.
+MODEL_PRESETS = {
+    "minimo_coste": {
+        "label": "Mínimo coste",
+        "investigator": ("gemini", "gemini-2.5-flash-lite"),
+        "synthesizer": ("gemini", "gemini-2.5-flash-lite"),
+        "desc": "Investigación y síntesis con Gemini 2.5 Flash-Lite (el modelo más barato). Para alto volumen; calidad correcta.",
+    },
+    "equilibrado": {
+        "label": "Equilibrado",
+        "investigator": ("gemini", "gemini-3-flash-preview"),
+        "synthesizer": ("anthropic", "claude-haiku-4-5-20251001"),
+        "desc": "Investigación con Gemini 3 Flash + síntesis/scoring con Claude Haiku 4.5. Buen equilibrio coste/calidad.",
+    },
+    "pro": {
+        "label": "Pro",
+        "investigator": ("openai", "gpt-5.2"),
+        "synthesizer": ("anthropic", "claude-sonnet-4-5-20250929"),
+        "desc": "Investigación con GPT-5.2 + síntesis/scoring con Claude Sonnet 4.5. Máxima calidad (config actual).",
+    },
+}
+
+_ACTIVE_PRESET = os.environ.get("THESIS_MODEL_PRESET", "pro")
+if _ACTIVE_PRESET not in MODEL_PRESETS:
+    _ACTIVE_PRESET = "pro"
+
+
+def get_model_preset() -> str:
+    return _ACTIVE_PRESET
+
+
+def set_model_preset(name: str) -> bool:
+    global _ACTIVE_PRESET
+    if name in MODEL_PRESETS:
+        _ACTIVE_PRESET = name
+        return True
+    return False
+
+
+def _inv_model():
+    return MODEL_PRESETS[_ACTIVE_PRESET]["investigator"]
+
+
+def _syn_model():
+    return MODEL_PRESETS[_ACTIVE_PRESET]["synthesizer"]
+
+
+# ---------------------- Cost estimation (EUR) ----------------------
+# € per 1,000,000 tokens (input, output). ESTIMATES — edit freely; refine against
+# the real Universal Key usage once measured. Tokens are estimated from text length.
+PRICE_EUR_PER_MTOK = {
+    ("openai", "gpt-5.2"): (5.0, 15.0),
+    ("anthropic", "claude-sonnet-4-5-20250929"): (3.0, 15.0),
+    ("anthropic", "claude-haiku-4-5-20251001"): (0.8, 4.0),
+    ("gemini", "gemini-3-flash-preview"): (0.3, 2.5),
+    ("gemini", "gemini-2.5-flash-lite"): (0.10, 0.40),
+}
+
+# Per-generation cost accumulator (ContextVar — shared across awaits within one
+# asyncio.run pipeline; the sync wrapper sets a fresh dict and reads it back).
+_cost_acc = contextvars.ContextVar("thesis_cost_acc", default=None)
+
+
+def _est_tokens(text) -> int:
+    return max(1, len(text or "") // 4)
+
+
+def _price(provider, model):
+    return PRICE_EUR_PER_MTOK.get((provider, model), (3.0, 12.0))
+
 
 INVESTIGATOR_MODEL = ("openai", "gpt-5.2")
 SYNTHESIZER_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
@@ -149,7 +223,30 @@ async def _llm(provider, model, session_id, system, user_text) -> str:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     api_key = os.environ["EMERGENT_LLM_KEY"]
     chat = LlmChat(api_key=api_key, session_id=session_id, system_message=system).with_model(provider, model)
-    return await chat.send_message(UserMessage(text=user_text))
+    resp = await chat.send_message(UserMessage(text=user_text))
+    acc = _cost_acc.get()
+    if acc is not None:
+        ti = _est_tokens(system) + _est_tokens(user_text)
+        to = _est_tokens(resp)
+        pin, pout = _price(provider, model)
+        acc["calls"] += 1
+        acc["tokens_in"] += ti
+        acc["tokens_out"] += to
+        acc["cost_eur"] += (ti * pin + to * pout) / 1_000_000
+    return resp
+
+
+def run_costed(coro):
+    """Run an async generation pipeline while accumulating an estimated EUR cost
+    for every _llm call it makes. Returns (result, cost_dict)."""
+    acc = {"calls": 0, "tokens_in": 0, "tokens_out": 0, "cost_eur": 0.0}
+    tok = _cost_acc.set(acc)
+    try:
+        import asyncio
+        result = asyncio.run(coro)
+    finally:
+        _cost_acc.reset(tok)
+    return result, acc
 
 
 def _clamp_score(v):
@@ -271,7 +368,7 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
-    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-inv-trend-{datetime.now(timezone.utc).timestamp()}",
+    inv_raw = await _llm(*_inv_model(), f"thesis-inv-trend-{datetime.now(timezone.utc).timestamp()}",
                          INVESTIGATOR_TREND_SYS, inv_user)
     inv = _extract_json(inv_raw)
     companies = inv.get("companies") or []
@@ -343,7 +440,7 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
-    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-explore-{datetime.now(timezone.utc).timestamp()}",
+    inv_raw = await _llm(*_inv_model(), f"thesis-explore-{datetime.now(timezone.utc).timestamp()}",
                          INVESTIGATOR_TREND_SYS, inv_user)
     inv = _extract_json(inv_raw)
     companies = inv.get("companies") or []
@@ -416,7 +513,7 @@ async def _synthesize_companies(trend: str, summary: str, companies: list) -> di
         "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global). "
         "Incluye TODAS las empresas de la lista, usando exactamente su mismo TICKER."
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-syn-trend-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_syn_model(), f"thesis-syn-trend-{datetime.now(timezone.utc).timestamp()}",
                      SYNTHESIZER_TREND_SYS, user)
     return _extract_json(raw)
 
@@ -457,7 +554,7 @@ async def run_discover(exclude: list = None) -> dict:
         "}\n"
         "Ordena de mayor a menor 'heat'. Evita tendencias genéricas ya muy maduras."
     )
-    raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-discover-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_inv_model(), f"thesis-discover-{datetime.now(timezone.utc).timestamp()}",
                      DISCOVERER_SYS, user)
     data = _extract_json(raw)
     candidates = []
@@ -545,7 +642,7 @@ async def run_news_watch(trend_titles: list) -> dict:
         '"tickers":["TICKERS afectados"]}]}\n'
         "Si no hay nada material esta semana, devuelve {\"important\":[]}."
     )
-    raw = await _llm(*INVESTIGATOR_MODEL, f"news-watch-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_inv_model(), f"news-watch-{datetime.now(timezone.utc).timestamp()}",
                      NEWS_WATCH_SYS, user_text)
     data = _extract_json(raw)
     out = []
@@ -631,7 +728,7 @@ async def _map_growth_drivers(company: str, sources_block: str) -> dict:
     )
     mp = {}
     for attempt in range(2):  # retry once on a transient empty result
-        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-map-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+        raw = await _llm(*_inv_model(), f"thesis-map-{attempt}-{datetime.now(timezone.utc).timestamp()}",
                          GROWTH_DRIVER_MAPPER_SYS, user)
         mp = _extract_json(raw)
         if mp.get("drivers"):
@@ -663,7 +760,7 @@ async def _reconcile_drivers(company: str, drivers: list, sources_block: str) ->
     )
     trends = []
     for attempt in range(2):  # retry once on a transient empty result
-        raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-recon-{attempt}-{datetime.now(timezone.utc).timestamp()}",
+        raw = await _llm(*_inv_model(), f"thesis-recon-{attempt}-{datetime.now(timezone.utc).timestamp()}",
                          DRIVER_RECONCILER_SYS, user)
         data = _extract_json(raw)
         trends = data.get("trends") or []
@@ -832,7 +929,7 @@ async def _synthesize_company_trends(company: str, trends: list) -> dict:
     )
     data = {}
     for attempt in range(2):  # retry once: a transient parse/LLM miss left relevance blank
-        raw = await _llm(*SYNTHESIZER_MODEL,
+        raw = await _llm(*_syn_model(),
                          f"thesis-syn-co-{attempt}-{datetime.now(timezone.utc).timestamp()}",
                          SYNTHESIZER_COMPANY_SYS, user)
         data = _extract_json(raw)
@@ -882,7 +979,7 @@ async def _contra_probability(summary: str) -> dict:
         "y compatible con la tesis alcista). Devuelve un JSON con esta forma EXACTA:\n"
         '{ "probability": 0-10, "probability_rationale": "1-2 frases" }'
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-contra-syn-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_syn_model(), f"thesis-contra-syn-{datetime.now(timezone.utc).timestamp()}",
                      CONTRA_SYNTHESIZER_SYS, user)
     return _extract_json(raw)
 
@@ -904,7 +1001,7 @@ async def run_trend_contra(title: str, summary: str) -> dict:
         "}\n"
         "Incluye entre 3 y 6 empresas cotizadas reales perjudicadas, con su TICKER canónico."
     )
-    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-trend-{datetime.now(timezone.utc).timestamp()}",
+    inv_raw = await _llm(*_inv_model(), f"thesis-contra-inv-trend-{datetime.now(timezone.utc).timestamp()}",
                          CONTRA_INVESTIGATOR_TREND_SYS, inv_user)
     inv = _extract_json(inv_raw)
     summary_contra = inv.get("summary") or ""
@@ -943,7 +1040,7 @@ async def run_company_contra(company: str, summary: str) -> dict:
         "}\n"
         "Incluye entre 2 y 5 tendencias/cambios perjudiciales."
     )
-    inv_raw = await _llm(*INVESTIGATOR_MODEL, f"thesis-contra-inv-co-{datetime.now(timezone.utc).timestamp()}",
+    inv_raw = await _llm(*_inv_model(), f"thesis-contra-inv-co-{datetime.now(timezone.utc).timestamp()}",
                          CONTRA_INVESTIGATOR_COMPANY_SYS, inv_user)
     inv = _extract_json(inv_raw)
     summary_contra = inv.get("summary") or ""
@@ -1018,7 +1115,7 @@ async def match_company_to_theses(company: str, company_trends: list, existing: 
         "Usa SOLO los id que aparecen en la lista para 'to_add'. Si no hay tesis existentes, las tendencias ganadoras van en 'to_create'. "
         "No repitas la misma tendencia en ambas listas. Si ninguna tendencia cumple el criterio ganador/estratégico, devuelve ambas listas VACÍAS."
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-match-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_syn_model(), f"thesis-match-{datetime.now(timezone.utc).timestamp()}",
                      MATCHER_SYS, user)
     data = _extract_json(raw)
     to_add = []
@@ -1063,7 +1160,7 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         "}\n"
         "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global)."
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_syn_model(), f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
                      EVALUATOR_SYS, user)
     d = _extract_json(raw)
     cat = (d.get("category") or "leader").strip().lower()
@@ -1119,7 +1216,7 @@ async def detect_parent_thesis(new_title: str, new_summary: str, new_tam_busd, e
         '"reason": "1 frase: por qué el mercado de la nueva está contenido en el de la madre" }\n'
         "Sé EXIGENTE: responde is_child=false si solo hay solapamiento parcial o son temas hermanos."
     )
-    raw = await _llm(*SYNTHESIZER_MODEL, f"thesis-parent-{datetime.now(timezone.utc).timestamp()}",
+    raw = await _llm(*_syn_model(), f"thesis-parent-{datetime.now(timezone.utc).timestamp()}",
                      PARENT_DETECTOR_SYS, user)
     data = _extract_json(raw)
     pid = data.get("parent_id")

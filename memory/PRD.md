@@ -212,3 +212,14 @@
 - **P1** — Verificar entrega real de emails (Screener nocturno + Radar semanal) con sesión Google válida (Resend).
 - **P2** — Fusión cuantitativa + cualitativa (master screener: tesis fuerte + buen ratio de valoración).
 - **P3** — PWA/móvil · Suscripción Stripe (4,99€/9,99€) · Refactor de Company.jsx (~1600 líneas) y Thesis.jsx (~640 líneas).
+
+## CHANGELOG — Selector de modelos coste/calidad (5 jun 2026, DEV-only)
+- 3 presets conmutables en runtime (services/thesis.py MODEL_PRESETS, leidos por _inv_model()/_syn_model()):
+  - minimo_coste: gemini-2.5-flash-lite (inv+syn)
+  - equilibrado: gemini-3-flash-preview (inv) + claude-haiku-4-5 (syn)
+  - pro: gpt-5.2 (inv) + claude-sonnet-4-5 (syn) [config actual]
+- Estimacion de coste en EUR por tokens (PRICE_EUR_PER_MTOK, editable) acumulada via ContextVar _cost_acc + run_costed(); contadores por preset en app_settings doc id=thesis_usage.
+- Endpoints: GET /api/thesis/models (presets+active+contadores), PUT /api/thesis/models {preset} (auth). Preset persistido en app_settings id=thesis_models, carga perezosa _ensure_preset_loaded().
+- UI: components/thesis/ModelPicker.jsx (data-testid model-picker, model-preset-{key}, model-counter-{key}); tooltip HoverTip con modelos; contadores tesis + EUR. Montado encima del generador en Thesis.jsx, refresco via genCount.
+- GATING: solo visible si REACT_APP_ENABLE_MODEL_PANEL=true (añadido a frontend/.env para PREVIEW). Para PRODUCCION: poner a false / quitar la var en el deployment.
+- Manejo de errores LLM: _friendly_err() traduce budget-exceeded / rate-limit / timeout a mensajes claros en ES en todos los flujos.

@@ -13,6 +13,7 @@ import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
 import ThesisExplore from "@/components/thesis/ThesisExplore";
+import ModelPicker from "@/components/thesis/ModelPicker";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 
 const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
@@ -29,6 +30,7 @@ export default function Thesis() {
     const [generatingContra, setGeneratingContra] = useState(false);
     const [tendenciaSaving, setTendenciaSaving] = useState(false);
     const [autoSeen, setAutoSeen] = useState([]);         // trend names already shown (avoid repeats)
+    const [genCount, setGenCount] = useState(0);          // bump to refresh model usage counters
 
     const [dash, setDash] = useState(null);
     const [newFolder, setNewFolder] = useState("");
@@ -155,6 +157,7 @@ export default function Thesis() {
                 : {};
             const data = await thesisGenerate(t, s, matchedThesisId, opts.overwriteId || null, extra);
             setResult(data);
+            setGenCount((n) => n + 1);
             if (data?.no_changes) toast.info("Sin novedades relevantes: conservamos tu tesis actual.");
             else if (data?.changes?.length) toast.success(`Tesis actualizada · ${data.changes.length} cambio${data.changes.length > 1 ? "s" : ""}`);
             reload();
@@ -190,6 +193,7 @@ export default function Thesis() {
         try {
             const data = await thesisExplore(s);
             setResult(data);
+            setGenCount((n) => n + 1);
             if (data?.title) setAutoSeen((prev) => Array.from(new Set([...prev, data.title])));
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo explorar la tendencia.");
@@ -210,6 +214,7 @@ export default function Thesis() {
             ].filter(Boolean)));
             const data = await thesisAutoTrend(exclude);
             setResult(data);
+            setGenCount((n) => n + 1);
             if (data?.title) setAutoSeen((prev) => Array.from(new Set([...prev, data.title])));
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar la tendencia automática.");
@@ -389,6 +394,9 @@ export default function Thesis() {
                             </div>
                         )}
                     </div>
+
+                    {/* DEV-only model cost/quality switch (hidden in production) */}
+                    <ModelPicker canSwitch={!!user} reloadSignal={genCount} />
 
                     {/* Generator */}
                     <div className="border border-black bg-white p-5 mb-6" data-testid="thesis-generator">

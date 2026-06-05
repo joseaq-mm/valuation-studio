@@ -17,9 +17,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
-    run_trend_explore, run_auto_trend,
+    run_trend_explore, run_auto_trend, run_costed,
     match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
     detect_parent_thesis, aggregate_folder_tam,
+    MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync
 import fx as fx_service
@@ -114,16 +115,22 @@ def _generate_sync(kind: str, subject: str) -> dict:
     async pipeline inside its own event loop in a thread (via asyncio.to_thread).
     """
     sources = gather_sources(subject, kind)
-    if kind == "trend":
-        return asyncio.run(run_trend_thesis(subject, sources))
-    return asyncio.run(run_company_thesis(subject, sources))
+    coro = run_trend_thesis(subject, sources) if kind == "trend" else run_company_thesis(subject, sources)
+    result, cost = run_costed(coro)
+    result["_cost"] = cost
+    return result
 
 
 def _contra_sync(doc: dict) -> dict:
     if doc.get("type") == "company":
         name = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
-        return asyncio.run(run_company_contra(name, doc.get("summary") or ""))
-    return asyncio.run(run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or ""))
+        coro = run_company_contra(name, doc.get("summary") or "")
+    else:
+        coro = run_trend_contra(doc.get("title") or doc.get("query"), doc.get("summary") or "")
+    result, cost = run_costed(coro)
+    if isinstance(result, dict):
+        result["_cost"] = cost
+    return result
 
 
 def _discover_sync() -> dict:
@@ -132,11 +139,15 @@ def _discover_sync() -> dict:
 
 def _explore_sync(subject: str) -> dict:
     sources = gather_sources(subject, "trend")
-    return asyncio.run(run_trend_explore(subject, sources))
+    result, cost = run_costed(run_trend_explore(subject, sources))
+    result["_cost"] = cost
+    return result
 
 
 def _auto_trend_sync(exclude) -> dict:
-    return asyncio.run(run_auto_trend(exclude or []))
+    result, cost = run_costed(run_auto_trend(exclude or []))
+    result["_cost"] = cost
+    return result
 
 
 def _match_sync(company: str, company_trends: list, existing: list) -> dict:
@@ -227,8 +238,43 @@ class SaveTendenciaRequest(BaseModel):
     tendencia: Dict[str, Any]
 
 
+class SetModelRequest(BaseModel):
+    preset: str
+
+
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
     router = APIRouter(prefix="/thesis")
+
+    _preset_loaded = {"done": False}
+
+    async def _ensure_preset_loaded():
+        """Restore the model preset chosen previously (survives restarts). Lazy:
+        runs once on the first relevant request, where an event loop is running."""
+        if _preset_loaded["done"]:
+            return
+        _preset_loaded["done"] = True
+        try:
+            doc = await db.app_settings.find_one({"id": "thesis_models"}, {"_id": 0})
+            if doc and doc.get("preset"):
+                set_model_preset(doc["preset"])
+        except Exception as e:
+            logger.warning(f"could not load model preset: {e}")
+
+    async def _record_usage(cost: Optional[dict], count_thesis: bool = True):
+        """Accumulate per-preset usage counters: # generaciones + € estimados."""
+        preset = get_model_preset()
+        inc: Dict[str, Any] = {}
+        if count_thesis:
+            inc[f"presets.{preset}.theses"] = 1
+        if cost:
+            inc[f"presets.{preset}.cost_eur"] = round(float(cost.get("cost_eur") or 0.0), 6)
+            inc[f"presets.{preset}.calls"] = int(cost.get("calls") or 0)
+        if not inc:
+            return
+        try:
+            await db.app_settings.update_one({"id": "thesis_usage"}, {"$inc": inc}, upsert=True)
+        except Exception as e:
+            logger.warning(f"usage record failed: {e}")
 
     async def _persist_qual_snapshots(user_id: str, thesis_id: str, thesis: Dict[str, Any]):
         """Index every company by canonical TICKER so the qualitative view links
@@ -376,6 +422,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         try:
             thesis = await asyncio.to_thread(_generate_sync, kind, subject)
+            _cost = thesis.pop("_cost", None)
+            await _record_usage(_cost)
 
             # Anti-duplication: when generating "de todas formas" from a card that
             # matched an existing thesis, drop companies already present in that thesis
@@ -488,6 +536,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis no encontrada"}})
                 return
             contra = await asyncio.to_thread(_contra_sync, doc)
+            _cost = contra.pop("_cost", None) if isinstance(contra, dict) else None
+            await _record_usage(_cost, count_thesis=False)
             await db.theses.update_one({"id": thesis_id, "user_id": user_id}, {"$set": {"contra": contra}})
             await db.thesis_jobs.update_one(
                 {"id": job_id},
@@ -515,6 +565,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def _run_explore_job(job_id: str, subject: str):
         try:
             result = await asyncio.to_thread(_explore_sync, subject)
+            _cost = result.pop("_cost", None)
+            await _record_usage(_cost)
             await db.thesis_jobs.update_one(
                 {"id": job_id},
                 {"$set": {"status": "done", "result": result, "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -529,6 +581,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def _run_autotrend_job(job_id: str, exclude):
         try:
             result = await asyncio.to_thread(_auto_trend_sync, exclude)
+            _cost = result.pop("_cost", None)
+            await _record_usage(_cost)
             await db.thesis_jobs.update_one(
                 {"id": job_id},
                 {"$set": {"status": "done", "result": result, "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -616,6 +670,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        await _ensure_preset_loaded()
         kind = req.type.strip().lower()
         subject = (req.subject or "").strip()
         if kind not in ("trend", "company"):
@@ -634,6 +689,36 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id, req.overwrite_thesis_id, req.from_company, req.core, req.develop_whole))
         return {"job_id": job_id}
 
+    @router.get("/models")
+    async def get_models(user: Optional[Dict[str, Any]] = Depends(auth_optional)):
+        """Model presets + active preset + estimated usage counters (dev cost tool)."""
+        await _ensure_preset_loaded()
+        usage = await db.app_settings.find_one({"id": "thesis_usage"}, {"_id": 0}) or {}
+        upresets = usage.get("presets") or {}
+        presets = []
+        for key, p in MODEL_PRESETS.items():
+            u = upresets.get(key) or {}
+            inv = p["investigator"]
+            syn = p["synthesizer"]
+            presets.append({
+                "key": key,
+                "label": p["label"],
+                "desc": p["desc"],
+                "investigator": f"{inv[0]}:{inv[1]}",
+                "synthesizer": f"{syn[0]}:{syn[1]}",
+                "theses": int(u.get("theses") or 0),
+                "cost_eur": round(float(u.get("cost_eur") or 0.0), 4),
+            })
+        return {"active": get_model_preset(), "presets": presets}
+
+    @router.put("/models")
+    async def set_models(req: SetModelRequest, user: Dict[str, Any] = Depends(auth_required)):
+        if not set_model_preset(req.preset):
+            raise HTTPException(status_code=400, detail="preset no válido")
+        await db.app_settings.update_one(
+            {"id": "thesis_models"}, {"$set": {"id": "thesis_models", "preset": req.preset}}, upsert=True)
+        return {"active": get_model_preset()}
+
     @router.post("/discover")
     async def discover(user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         job_id = f"job_{uuid.uuid4().hex[:14]}"
@@ -651,6 +736,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def explore(req: ExploreRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         """Informational (structural-only) trend exploration: value chain + ≥1 leader and
         ≥1 disruptor per stage, no scoring. Works anonymously (ephemeral result)."""
+        await _ensure_preset_loaded()
         subject = (req.subject or "").strip()
         if not subject:
             raise HTTPException(status_code=400, detail="subject requerido")
@@ -669,6 +755,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def auto_trend(req: AutoTrendRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         """Generate ONE automatic emerging trend (by current momentum), avoiding the
         names passed in `exclude`. Returns an informational 'tendencia' (no scoring)."""
+        await _ensure_preset_loaded()
         job_id = f"job_{uuid.uuid4().hex[:14]}"
         await db.thesis_jobs.insert_one({
             "id": job_id,

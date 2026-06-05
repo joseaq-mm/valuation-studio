@@ -94,6 +94,10 @@ export const thesisAutoTrend = (exclude = []) =>
     api.post(`/thesis/auto-trend`, { exclude }).then(r => startAndPoll(r.data));
 export const thesisSaveTendencia = (tendencia) =>
     api.post(`/thesis/tendencia/save`, { tendencia }).then(r => r.data);
+export const thesisModels = () =>
+    api.get(`/thesis/models`).then(r => r.data);
+export const thesisSetModel = (preset) =>
+    api.put(`/thesis/models`, { preset }).then(r => r.data);
 export const thesisGenerateContra = (id) =>
     api.post(`/thesis/${id}/contra`).then(r => startAndPoll(r.data));
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);
