@@ -42,11 +42,11 @@ MODEL_PRESETS = {
         "synthesizer": ("anthropic", "claude-haiku-4-5-20251001"),
         "desc": "Investigación con Gemini 3 Flash + síntesis/scoring con Claude Haiku 4.5. Buen equilibrio coste/calidad.",
     },
-    "gemini": {
-        "label": "Gemini",
-        "investigator": ("gemini", "gemini-3.5-flash"),
-        "synthesizer": ("gemini", "gemini-3.5-flash"),
-        "desc": "Investigación y scoring con Gemini 3.5 Flash (modelo Flash de nueva generación). Si la key aún no lo soporta, hace fallback automático a Gemini 3 Flash.",
+    "equilibrado_plus": {
+        "label": "Equilibrado +",
+        "investigator": ("gemini", "gemini-3-flash-preview"),
+        "synthesizer": ("anthropic", "claude-sonnet-4-5-20250929"),
+        "desc": "Investigación con Gemini 3 Flash (igual que Equilibrado) + síntesis/scoring con Claude Sonnet 4.5. Más calidad de razonamiento que Equilibrado, manteniendo barata la investigación.",
     },
     "pro": {
         "label": "Pro",
@@ -58,9 +58,7 @@ MODEL_PRESETS = {
 
 # If a (provider, model) errors (e.g. the Universal Key has not catalogued it yet),
 # transparently retry once with the mapped fallback so a generation never breaks.
-MODEL_FALLBACK = {
-    ("gemini", "gemini-3.5-flash"): ("gemini", "gemini-3-flash-preview"),
-}
+MODEL_FALLBACK = {}
 
 _ACTIVE_PRESET = os.environ.get("THESIS_MODEL_PRESET", "pro")
 if _ACTIVE_PRESET not in MODEL_PRESETS:
@@ -95,7 +93,6 @@ PRICE_EUR_PER_MTOK = {
     ("anthropic", "claude-sonnet-4-5-20250929"): (3.0, 15.0),
     ("anthropic", "claude-haiku-4-5-20251001"): (0.8, 4.0),
     ("gemini", "gemini-3-flash-preview"): (0.3, 2.5),
-    ("gemini", "gemini-3.5-flash"): (0.4, 3.0),
     ("gemini", "gemini-2.5-flash-lite"): (0.10, 0.40),
 }
 
