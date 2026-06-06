@@ -351,8 +351,17 @@ INVESTIGATOR_TREND_SYS = (
     "información, NO inventar. Identifica empresas COTIZADAS con su TICKER bursátil canónico "
     "exacto tal como aparece en Yahoo Finance (ej. NVDA, ASML.AS, TSM, 005930.KS). "
     "Si una empresa no cotiza o no estás seguro del ticker, no la incluyas. "
-    "Clasificas cada empresa como 'leader' (líder establecido que ya domina su eslabón) o "
-    "'disruptor' (retador / líder del cambio que podría redefinir el eslabón). "
+    "Clasificas cada empresa en UNA de estas tres categorías:\n"
+    "- 'leader': líder establecido que ya domina ese eslabón.\n"
+    "- 'competitor': retador / alternativa que compite con el líder en el MISMO eslabón "
+    "(mismos clientes o mismo problema) con un enfoque comparable. ES LA CATEGORÍA POR DEFECTO "
+    "para cualquier empresa no líder.\n"
+    "- 'disruptor': RESÉRVALO SOLO para quien cumpla AL MENOS UNO de estos criterios: "
+    "(1) compite mediante un CAMBIO DE PARADIGMA muy grande frente al líder (ej. Tesla con el coche "
+    "eléctrico frente a la combustión); (2) representa una APUESTA ARRIESGADA que, de materializarse, "
+    "pondría en PELIGRO REAL al líder; (3) resuelve el mismo problema / mismos clientes pero con un "
+    "ENFOQUE RADICALMENTE DISTINTO y con EVIDENCIAS de ser superior (ej. Iovance con terapia TIL, "
+    "Moderna con vacunas de ARNm contra el cáncer). Si dudas entre 'competitor' y 'disruptor', usa 'competitor'. "
     "Estimas el TAM (mercado total direccionable) en MILES DE MILLONES DE USD proyectado a 2027 "
     "(base TTM): un TAM global de la tendencia y un TAM por cada eslabón de la cadena de valor. "
     "Responde SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
@@ -370,11 +379,11 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         '  "summary": "2-3 frases sobre por qué es una megatendencia relevante para invertir",\n'
         '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
         '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|disruptor", "why": "1-2 frases sobre por qué es líder o disruptor de ese eslabón"}]\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|competitor|disruptor", "why": "1-2 frases sobre su papel; si es disruptor, explica cuál de los criterios cumple"}]\n'
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
-        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 'disruptor'.\n"
+        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 NO-líder ('competitor' o 'disruptor').\n"
         "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
@@ -394,9 +403,9 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         tk = (c.get("ticker") or "").upper().strip()
         s = score_by_ticker.get(tk) or (syn_list[idx] if idx < len(syn_list) else {})
         scores = {d: _clamp_score((s.get("scores") or {}).get(d)) for d in SCORE_DIMENSIONS}
-        cat = (c.get("category") or "leader").strip().lower()
-        if cat not in ("leader", "disruptor"):
-            cat = "leader"
+        cat = (c.get("category") or "competitor").strip().lower()
+        if cat not in ("leader", "competitor", "disruptor"):
+            cat = "competitor"
         merged.append({
             "name": c.get("name"),
             "ticker": tk,
@@ -442,11 +451,11 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         '  "summary": "2-3 frases sobre por qué es una megatendencia relevante para invertir",\n'
         '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
         '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|disruptor", "why": "1-2 frases sobre su papel y protagonismo: por qué es líder o disruptor de ese eslabón"}]\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|competitor|disruptor", "why": "1-2 frases sobre su papel y protagonismo; si es disruptor, indica qué criterio cumple"}]\n'
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
-        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 'disruptor'.\n"
+        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 NO-líder ('competitor' o 'disruptor').\n"
         "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
@@ -459,9 +468,9 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
     merged = []
     for c in companies:
         tk = (c.get("ticker") or "").upper().strip()
-        cat = (c.get("category") or "leader").strip().lower()
-        if cat not in ("leader", "disruptor"):
-            cat = "leader"
+        cat = (c.get("category") or "competitor").strip().lower()
+        if cat not in ("leader", "competitor", "disruptor"):
+            cat = "competitor"
         merged.append({
             "name": c.get("name"),
             "ticker": tk or None,
@@ -1161,21 +1170,23 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         "{\n"
         '  "name": "Nombre", "ticker": "TICKER",\n'
         '  "value_chain_role": "uno de los eslabones (o el más cercano)",\n'
-        '  "category": "leader|disruptor",\n'
+        '  "category": "leader|competitor|disruptor",\n'
         '  "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
         '  "trend_exposure": 0-100,\n'
         '  "overall_score": 0-100,\n'
         '  "thesis": "2-3 frases sobre su encaje en la tendencia",\n'
         '  "key_risks": "1-2 riesgos clave"\n'
         "}\n"
-        "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global)."
+        "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global). "
+        "Usa 'disruptor' SOLO si supone un cambio de paradigma frente al líder, una apuesta arriesgada que "
+        "amenaza al líder, o un enfoque radicalmente distinto con evidencias de ser superior; si no, usa 'competitor'."
     )
     raw = await _llm(*_syn_model(), f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
                      EVALUATOR_SYS, user)
     d = _extract_json(raw)
-    cat = (d.get("category") or "leader").strip().lower()
-    if cat not in ("leader", "disruptor"):
-        cat = "leader"
+    cat = (d.get("category") or "competitor").strip().lower()
+    if cat not in ("leader", "competitor", "disruptor"):
+        cat = "competitor"
     return {
         "name": d.get("name") or company_name,
         "ticker": (d.get("ticker") or company_ticker).upper().strip(),

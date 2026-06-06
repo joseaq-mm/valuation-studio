@@ -223,3 +223,10 @@
 - UI: components/thesis/ModelPicker.jsx (data-testid model-picker, model-preset-{key}, model-counter-{key}); tooltip HoverTip con modelos; contadores tesis + EUR. Montado encima del generador en Thesis.jsx, refresco via genCount.
 - GATING: solo visible si REACT_APP_ENABLE_MODEL_PANEL=true (añadido a frontend/.env para PREVIEW). Para PRODUCCION: poner a false / quitar la var en el deployment.
 - Manejo de errores LLM: _friendly_err() traduce budget-exceeded / rate-limit / timeout a mensajes claros en ES en todos los flujos.
+
+## CHANGELOG — Competidor vs Disruptor (6 jun 2026)
+- Columna derecha de cadena de valor renombrada "Competidores / disruptores". Tercera categoria de empresa: leader|competitor|disruptor.
+- Backend services/thesis.py: INVESTIGATOR_TREND_SYS define los 3 criterios para reservar "disruptor" (cambio de paradigma vs lider / apuesta arriesgada que amenaza al lider / enfoque radicalmente distinto con evidencia de superioridad; ej. Tesla, Iovance-TIL, Moderna). Por defecto no-lider = "competitor". Esquemas JSON y normalizacion (trend, explore, eval) aceptan competitor; invalido->competitor.
+- Frontend ThesisResult.jsx + TendenciaResult.jsx: helper catBadge() (Lider azul / Competidor gris / Disruptor rojo); agrupacion izquierda=leader, derecha=no-leader (competitor+disruptor); cabeceras y textos vacios actualizados.
+- Opcion (a): tesis EXISTENTES conservan su category actual (sus no-lideres siguen como "disruptor" hasta regenerar). El matiz competidor/disruptor aplica a generaciones nuevas.
+- Nota toolchain: la regla eslint react-hooks/set-state-in-effect NO existe en CRA/react-scripts; NO usar comentarios disable de esa regla (rompen la compilacion). Los efectos de fetch en ThesisResult.jsx se refactorizaron a IIFE async para evitar setState sincrono en el cuerpo del efecto.

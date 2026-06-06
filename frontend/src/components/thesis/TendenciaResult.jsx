@@ -5,6 +5,14 @@ import HoverTip from "@/components/HoverTip";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
+// 'disruptor' is reserved for genuine paradigm-shift / risky bets that threaten the
+// leader / radically-superior approaches; any other non-leader is a 'competitor'.
+function catBadge(category) {
+    if (category === "disruptor") return { txt: "Disruptor", cls: "bg-[#B32A22] text-white" };
+    if (category === "leader") return { txt: "Líder", cls: "bg-[#052049] text-[#FDF1E6]" };
+    return { txt: "Competidor", cls: "bg-[#4A4A4A] text-white" };
+}
+
 // TAM expressed in USD billions. Show $B, or $T when ≥1000.
 function fmtTam(busd) {
     if (busd == null || isNaN(busd)) return null;
@@ -29,16 +37,16 @@ function TamBadge({ busd, label, note }) {
 
 /** Informational company card (no scores): role + prominence + "Generar tesis". */
 function CompanyCard({ c, onDevelopCompany }) {
-    const isDisruptor = c.category === "disruptor";
+    const badge = catBadge(c.category);
     return (
         <div className="border border-black bg-white p-4" data-testid={`tendencia-company-${c.ticker || _norm(c.name).slice(0, 10)}`}>
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <span
-                        className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${isDisruptor ? "bg-[#B32A22] text-white" : "bg-[#052049] text-[#FDF1E6]"}`}
+                        className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${badge.cls}`}
                         data-testid={`tendencia-category-${c.ticker || _norm(c.name).slice(0, 10)}`}
                     >
-                        {isDisruptor ? "Disruptor" : "Líder"}
+                        {badge.txt}
                     </span>
                     <div className="font-serif text-lg font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-0.5">{c.value_chain_role}</div>
@@ -87,11 +95,11 @@ function StageRow({ stage, leaders, disruptors, onDevelopCompany }) {
                     </div>
                 </div>
                 <div>
-                    <div className="overline text-[#B32A22] mb-2">Disruptores / líderes del cambio</div>
+                    <div className="overline text-[#B32A22] mb-2">Competidores / disruptores</div>
                     <div className="space-y-4">
                         {disruptors.length
                             ? disruptors.map((c, i) => <CompanyCard key={i} c={c} onDevelopCompany={onDevelopCompany} />)
-                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin disruptor identificado en este eslabón.</div>}
+                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin competidores identificados en este eslabón.</div>}
                     </div>
                 </div>
             </div>
@@ -109,16 +117,16 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
         inStage.forEach((c) => used.add(c.ticker || c.name));
         return {
             stage: s,
-            leaders: inStage.filter((c) => c.category !== "disruptor"),
-            disruptors: inStage.filter((c) => c.category === "disruptor"),
+            leaders: inStage.filter((c) => c.category === "leader"),
+            disruptors: inStage.filter((c) => c.category !== "leader"),
         };
     });
     const leftover = companies.filter((c) => !used.has(c.ticker || c.name));
     if (leftover.length) {
         groups.push({
             stage: { stage: stages.length ? "Otros" : "Empresas", description: "", tam_busd: null },
-            leaders: leftover.filter((c) => c.category !== "disruptor"),
-            disruptors: leftover.filter((c) => c.category === "disruptor"),
+            leaders: leftover.filter((c) => c.category === "leader"),
+            disruptors: leftover.filter((c) => c.category !== "leader"),
         });
     }
 
@@ -177,7 +185,7 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
 
             {/* Value chain (leaders vs disruptors, informational) */}
             <div className="flex items-baseline justify-between gap-2 mb-3">
-                <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. disruptores</div>
+                <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. competidores/disruptores</div>
                 <div className="overline text-[#9CA3AF] hidden sm:block">Genera una tesis desde cualquier empresa</div>
             </div>
             {groups.map((g, i) => (

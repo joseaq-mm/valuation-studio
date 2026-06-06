@@ -167,17 +167,26 @@ function ScoreStatRight({ value, label, testid, tip }) {
     return tip ? <HoverTip text={tip} maxWidth={320}><div className="cursor-help">{row}</div></HoverTip> : row;
 }
 
+// Competitive role badge. 'disruptor' is reserved for genuine paradigm-shift / risky
+// bets that threaten the leader / radically-superior approaches; every other non-leader
+// is a 'competitor'.
+function catBadge(category) {
+    if (category === "disruptor") return { txt: "Disruptor", cls: "bg-[#B32A22] text-white" };
+    if (category === "leader") return { txt: "Líder", cls: "bg-[#052049] text-[#FDF1E6]" };
+    return { txt: "Competidor", cls: "bg-[#4A4A4A] text-white" };
+}
+
 function CompanyCard({ c, tamData, tamLoading }) {
-    const isDisruptor = c.category === "disruptor";
+    const badge = catBadge(c.category);
     return (
         <div className="border border-black bg-white p-5" data-testid={`thesis-company-${c.ticker}`}>
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                     <span
-                        className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${isDisruptor ? "bg-[#B32A22] text-white" : "bg-[#052049] text-[#FDF1E6]"}`}
+                        className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${badge.cls}`}
                         data-testid={`category-${c.ticker}`}
                     >
-                        {isDisruptor ? "Disruptor" : "Líder"}
+                        {badge.txt}
                     </span>
                     <div className="font-serif text-xl font-medium leading-tight">{c.name}</div>
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
@@ -241,11 +250,11 @@ function StageRow({ group, tamScores, tamLoading }) {
                     </div>
                 </div>
                 <div>
-                    <div className="overline text-[#B32A22] mb-2">Disruptores / líderes del cambio</div>
+                    <div className="overline text-[#B32A22] mb-2">Competidores / disruptores</div>
                     <div className="space-y-4">
                         {disruptors.length
                             ? disruptors.map((c, i) => <CompanyCard key={i} c={c} tamData={tamScores ? tamScores[c.ticker] : undefined} tamLoading={tamLoading} />)
-                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin disruptor identificado en este eslabón.</div>}
+                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin competidores identificados en este eslabón.</div>}
                     </div>
                 </div>
             </div>
@@ -261,16 +270,16 @@ function CompaniesByStage({ valueChain, companies, tamScores, tamLoading }) {
         inStage.forEach((c) => used.add(c.ticker));
         return {
             stage: s,
-            leaders: inStage.filter((c) => c.category !== "disruptor"),
-            disruptors: inStage.filter((c) => c.category === "disruptor"),
+            leaders: inStage.filter((c) => c.category === "leader"),
+            disruptors: inStage.filter((c) => c.category !== "leader"),
         };
     });
     const leftover = (companies || []).filter((c) => !used.has(c.ticker));
     if (leftover.length) {
         groups.push({
             stage: { stage: stages.length ? "Otros" : "Empresas", description: "", tam_busd: null },
-            leaders: leftover.filter((c) => c.category !== "disruptor"),
-            disruptors: leftover.filter((c) => c.category === "disruptor"),
+            leaders: leftover.filter((c) => c.category === "leader"),
+            disruptors: leftover.filter((c) => c.category !== "leader"),
         });
     }
     return <>{groups.map((g, i) => <StageRow key={i} group={g} tamScores={tamScores} tamLoading={tamLoading} />)}</>;
@@ -629,25 +638,28 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     const isTrend = thesis?.type === "trend";
 
     useEffect(() => {
-        if (!thesis || thesis.type !== "trend") { setTamScores(null); return; }
-        const stages = thesis.value_chain || [];
-        const tamByRole = {};
-        stages.forEach((s) => { tamByRole[_norm(s.stage)] = s.tam_busd; });
-        const items = (thesis.companies || [])
-            .filter((c) => c.ticker)
-            .map((c) => ({
-                ticker: c.ticker,
-                overall_score: c.overall_score,
-                stage_tam_busd: tamByRole[_norm(c.value_chain_role)] ?? null,
-            }));
-        if (!items.length) { setTamScores(null); return; }
         let alive = true;
-        setTamLoading(true);
-        setTamScores(null);
-        thesisTamScores(items)
-            .then((res) => { if (alive) setTamScores(res?.scores || {}); })
-            .catch(() => { if (alive) setTamScores({}); })
-            .finally(() => { if (alive) setTamLoading(false); });
+        const run = async () => {
+            if (!thesis || thesis.type !== "trend") { if (alive) setTamScores(null); return; }
+            const stages = thesis.value_chain || [];
+            const tamByRole = {};
+            stages.forEach((s) => { tamByRole[_norm(s.stage)] = s.tam_busd; });
+            const items = (thesis.companies || [])
+                .filter((c) => c.ticker)
+                .map((c) => ({
+                    ticker: c.ticker,
+                    overall_score: c.overall_score,
+                    stage_tam_busd: tamByRole[_norm(c.value_chain_role)] ?? null,
+                }));
+            if (!items.length) { if (alive) setTamScores(null); return; }
+            if (alive) { setTamLoading(true); setTamScores(null); }
+            try {
+                const res = await thesisTamScores(items);
+                if (alive) setTamScores(res?.scores || {});
+            } catch { if (alive) setTamScores({}); }
+            finally { if (alive) setTamLoading(false); }
+        };
+        run();
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [thesis?.id, thesis?.generated_at, thesis?.type]);
@@ -655,13 +667,17 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     // Company mode: classify the company's themes against the user's saved trend
     // theses → matches (existing) vs. to_create (genuinely new). Re-run on add.
     useEffect(() => {
-        if (!thesis || thesis.type !== "company" || !thesis.id) { setLinkData(null); return; }
         let alive = true;
-        setLinkLoading(true);
-        thesisLinkSuggestions(thesis.id)
-            .then((d) => { if (alive) setLinkData(d); })
-            .catch(() => { if (alive) setLinkData(null); })
-            .finally(() => { if (alive) setLinkLoading(false); });
+        const run = async () => {
+            if (!thesis || thesis.type !== "company" || !thesis.id) { if (alive) setLinkData(null); return; }
+            if (alive) setLinkLoading(true);
+            try {
+                const d = await thesisLinkSuggestions(thesis.id);
+                if (alive) setLinkData(d);
+            } catch { if (alive) setLinkData(null); }
+            finally { if (alive) setLinkLoading(false); }
+        };
+        run();
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [thesis?.id, thesis?.type, mutateTick]);
@@ -816,7 +832,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             {isTrend ? (
                 <>
                     <div className="flex items-baseline justify-between gap-2 mb-3">
-                        <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. disruptores</div>
+                        <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. competidores/disruptores</div>
                         <div className="overline text-[#9CA3AF] hidden sm:block">TAM 2027e por eslabón</div>
                     </div>
                     <CompaniesByStage valueChain={thesis.value_chain} companies={thesis.companies} tamScores={tamScores} tamLoading={tamLoading} />
