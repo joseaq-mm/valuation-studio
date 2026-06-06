@@ -140,7 +140,7 @@ function TamScoreBadge({ data, loading, ticker }) {
     if (!isLoading && txt == null) return null;
     const color = isLoading ? "#9CA3AF" : tamColor(v);
     const note =
-        "TAM Score = (Score global tendencia / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
+        "TAM Score = (Score global tesis / 100 × TAM del eslabón 2027e) / Ingresos proyectados 2027 de la empresa.\n\n" +
         (data ? `TAM del eslabón: $${data.stage_tam_busd} B · Ingresos 2027e: $${data.projected_revenue_busd} B (USD).\n\n` : "") +
         ">1 = el mercado direccionable (ponderado por calidad) supera el tamaño proyectado de la empresa → amplio recorrido. " +
         "<1 = la empresa ya es grande respecto al TAM del eslabón.";
@@ -183,7 +183,7 @@ function CompanyCard({ c, tamData, tamLoading }) {
                     <div className="overline text-[#4A4A4A] mt-1">{c.value_chain_role}</div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                    <ScoreStatRight value={c.overall_score} label={<>Score global<br />tendencia</>} testid={`overall-${c.ticker}`} tip={SCORE_GLOBAL_TIP} />
+                    <ScoreStatRight value={c.overall_score} label={<>Score global<br />tesis</>} testid={`overall-${c.ticker}`} tip={SCORE_GLOBAL_TIP} />
                     <TamScoreBadge data={tamData} loading={tamLoading} ticker={c.ticker} />
                 </div>
             </div>
@@ -586,11 +586,11 @@ function MatchedThesisRow({ match, company, fit, onAdded }) {
                     <div className="flex items-center gap-5">
                         <HoverTip text={SCORE_GLOBAL_TIP} maxWidth={320}>
                             <div className="flex items-center gap-2 cursor-help">
-                                <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tendencia</span>
+                                <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tesis</span>
                                 <ValueBox text={preview.overall_score ?? "—"} color={scoreColor(preview.overall_score)} testid={`preview-overall-${match.thesis_id}`} />
                             </div>
                         </HoverTip>
-                        <HoverTip text="TAM Score que tendría la empresa en esta tesis: (Score global tendencia / 100 × TAM del eslabón) / Ingresos proyectados 2027 (USD). >1 = amplio recorrido." maxWidth={300}>
+                        <HoverTip text="TAM Score que tendría la empresa en esta tesis: (Score global tesis / 100 × TAM del eslabón) / Ingresos proyectados 2027 (USD). >1 = amplio recorrido." maxWidth={300}>
                             <div className="flex items-center gap-2 cursor-help">
                                 <span className="overline text-[#4A4A4A] leading-tight text-right">TAM<br />Score</span>
                                 <ValueBox text={fmtTamScore(preview.tam_score) ?? "—"} color={tamColor(preview.tam_score)} testid={`preview-tam-${match.thesis_id}`} />

@@ -115,7 +115,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                             <div><strong>Suma</strong> · potencial total</div>
                         </div>
                         <div className="flex justify-center">
-                            <HoverTip text="Media de todos los 'Score global tendencia': una idea de la calidad general de la empresa a través de las tendencias en las que encaja." maxWidth={300}>
+                            <HoverTip text="Media de todos los 'Score global tesis': una idea de la calidad general de la empresa a través de las tesis en las que encaja." maxWidth={300}>
                                 <div className="cursor-help"><ValueBox text={profile.avg_overall_score ?? "—"} color={scoreColor(profile.avg_overall_score)} testid="qual-avg-overall" /></div>
                             </HoverTip>
                         </div>
