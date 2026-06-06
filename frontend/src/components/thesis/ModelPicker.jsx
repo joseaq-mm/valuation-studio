@@ -44,7 +44,7 @@ export default function ModelPicker({ canSwitch = true, reloadSignal = 0 }) {
             <p className="text-[11px] text-[#7a5a10] mb-3 leading-snug">
                 Cambia el coste/calidad de las generaciones. Pasa el cursor sobre cada botón para ver qué modelos actúan. Contadores = generaciones hechas y € estimados con ese preset.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="model-picker-options">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="model-picker-options">
                 {data.presets.map((p) => {
                     const active = p.key === data.active;
                     return (

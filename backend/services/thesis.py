@@ -42,12 +42,24 @@ MODEL_PRESETS = {
         "synthesizer": ("anthropic", "claude-haiku-4-5-20251001"),
         "desc": "Investigación con Gemini 3 Flash + síntesis/scoring con Claude Haiku 4.5. Buen equilibrio coste/calidad.",
     },
+    "gemini": {
+        "label": "Gemini",
+        "investigator": ("gemini", "gemini-3.5-flash"),
+        "synthesizer": ("gemini", "gemini-3.5-flash"),
+        "desc": "Investigación y scoring con Gemini 3.5 Flash (modelo Flash de nueva generación). Si la key aún no lo soporta, hace fallback automático a Gemini 3 Flash.",
+    },
     "pro": {
         "label": "Pro",
         "investigator": ("openai", "gpt-5.2"),
         "synthesizer": ("anthropic", "claude-sonnet-4-5-20250929"),
         "desc": "Investigación con GPT-5.2 + síntesis/scoring con Claude Sonnet 4.5. Máxima calidad (config actual).",
     },
+}
+
+# If a (provider, model) errors (e.g. the Universal Key has not catalogued it yet),
+# transparently retry once with the mapped fallback so a generation never breaks.
+MODEL_FALLBACK = {
+    ("gemini", "gemini-3.5-flash"): ("gemini", "gemini-3-flash-preview"),
 }
 
 _ACTIVE_PRESET = os.environ.get("THESIS_MODEL_PRESET", "pro")
@@ -83,6 +95,7 @@ PRICE_EUR_PER_MTOK = {
     ("anthropic", "claude-sonnet-4-5-20250929"): (3.0, 15.0),
     ("anthropic", "claude-haiku-4-5-20251001"): (0.8, 4.0),
     ("gemini", "gemini-3-flash-preview"): (0.3, 2.5),
+    ("gemini", "gemini-3.5-flash"): (0.4, 3.0),
     ("gemini", "gemini-2.5-flash-lite"): (0.10, 0.40),
 }
 
@@ -222,13 +235,27 @@ def _extract_json(text: str) -> dict:
 async def _llm(provider, model, session_id, system, user_text) -> str:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     api_key = os.environ["EMERGENT_LLM_KEY"]
-    chat = LlmChat(api_key=api_key, session_id=session_id, system_message=system).with_model(provider, model)
-    resp = await chat.send_message(UserMessage(text=user_text))
+
+    async def _send(prov, mod):
+        chat = LlmChat(api_key=api_key, session_id=session_id, system_message=system).with_model(prov, mod)
+        return await chat.send_message(UserMessage(text=user_text))
+
+    used_provider, used_model = provider, model
+    try:
+        resp = await _send(provider, model)
+    except Exception as e:
+        fb = MODEL_FALLBACK.get((provider, model))
+        if not fb:
+            raise
+        logger.warning(f"LLM {provider}:{model} failed ({e}); falling back to {fb[0]}:{fb[1]}")
+        used_provider, used_model = fb
+        resp = await _send(*fb)
+
     acc = _cost_acc.get()
     if acc is not None:
         ti = _est_tokens(system) + _est_tokens(user_text)
         to = _est_tokens(resp)
-        pin, pout = _price(provider, model)
+        pin, pout = _price(used_provider, used_model)
         acc["calls"] += 1
         acc["tokens_in"] += ti
         acc["tokens_out"] += to
