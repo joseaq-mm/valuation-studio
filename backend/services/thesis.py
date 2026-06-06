@@ -266,6 +266,16 @@ def _clamp10(v):
     return max(0, min(10, round(v)))
 
 
+def _mean_score(scores: dict):
+    """Overall score = simple mean of the present sub-scores (competitive position,
+    sector momentum, management quality, financial resilience). Deterministic, so the
+    displayed 'Score global' always matches the average of its four sub-scores."""
+    vals = [scores.get(d) for d in SCORE_DIMENSIONS if scores.get(d) is not None]
+    if not vals:
+        return None
+    return round(sum(vals) / len(vals))
+
+
 def aggregate_folder_tam(trends):
     """Sum the global TAM of the trends inside a megatrend (folder), EXCLUDING any
     trend that is a nested CHILD (sub-thesis) so a sub-segment's market is never
@@ -395,7 +405,7 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
             "why": c.get("why"),
             "scores": scores,
             "trend_exposure": _clamp_score(s.get("trend_exposure")),
-            "overall_score": _clamp_score(s.get("overall_score")),
+            "overall_score": _mean_score(scores),
             "thesis": s.get("thesis"),
             "key_risks": s.get("key_risks"),
         })
@@ -1173,7 +1183,7 @@ async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain
         "category": cat,
         "scores": {dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS},
         "trend_exposure": _clamp_score(d.get("trend_exposure")),
-        "overall_score": _clamp_score(d.get("overall_score")),
+        "overall_score": _mean_score({dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS}),
         "thesis": d.get("thesis"),
         "key_risks": d.get("key_risks"),
         "added_manually": True,

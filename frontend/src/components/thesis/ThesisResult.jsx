@@ -280,7 +280,7 @@ const RELEVANCE_TIP =
     "Relevancia (0–100): cuánto pesa esta tendencia en la tesis de inversión de la empresa — qué tan central es este tema para su caso alcista.\n\nNo mide la calidad de la empresa, sino el encaje/peso del tema. Es relativa entre las tendencias en las que encaja: ≥75 (verde) = motor central del negocio; <50 (rojo) = encaje marginal o secundario.";
 
 const SCORE_GLOBAL_TIP =
-    "Score global tendencia (0–100): la calidad y el atractivo de la empresa DENTRO de esta tendencia, ponderado por su exposición al tema (a menor exposición, menor score).\n\nResume sus cuatro sub-scores: posición competitiva, momentum del sector, calidad del management y resiliencia financiera. Mayor = mejor.";
+    "Score global tesis (0–100): es la MEDIA de los cuatro sub-scores de la empresa en esta tesis —posición competitiva, momentum del sector, calidad del management y resiliencia financiera—.\n\nMayor = mejor.";
 
 const WINNING_TIP =
     "Tendencia ganadora (0–10): probabilidad de que esta tendencia sea estructuralmente GANADORA / con momentum (no cuánto pesa para la empresa, sino la fuerza del tema en sí).\n\n≥7 alto momentum · 4–6 medio · <4 bajo. Útil para priorizar qué apuestas desarrollar primero.";
