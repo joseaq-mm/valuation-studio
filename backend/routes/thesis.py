@@ -35,6 +35,15 @@ def _fmt_val(v):
     return v if v is not None else "—"
 
 
+def prune_stale_split_dev(split_dev, alive_ids):
+    """Keep only split_dev entries whose developed thesis still exists. When a
+    developed (sub)thesis is deleted, its entry is dropped here so the origin
+    company suggestions page shows that core/split as 'pendiente' again (and it
+    can be regenerated). Idempotent and order-preserving."""
+    alive = set(alive_ids or [])
+    return [e for e in (split_dev or []) if e.get("developed_id") in alive]
+
+
 def _score_far(a, b, tol):
     """True if two scores differ by more than `tol` (or one is missing and not both)."""
     if a is None and b is None:
@@ -1133,6 +1142,23 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
+        # Self-heal: drop split_dev entries whose developed thesis no longer exists
+        # (e.g. the user deleted that developed sub-thesis), so this company's
+        # suggestions page shows the core/split as "pendiente" again and it can be
+        # regenerated. Restoring the deleted thesis (Undo) brings the entry back.
+        if doc.get("type") == "company" and doc.get("split_dev"):
+            dev_ids = [e.get("developed_id") for e in doc["split_dev"] if e.get("developed_id")]
+            if dev_ids:
+                alive_docs = await db.theses.find(
+                    {"id": {"$in": dev_ids}, "user_id": user["user_id"]}, {"_id": 0, "id": 1}
+                ).to_list(length=500)
+                pruned = prune_stale_split_dev(doc["split_dev"], {d["id"] for d in alive_docs})
+                if len(pruned) != len(doc["split_dev"]):
+                    doc["split_dev"] = pruned
+                    await db.theses.update_one(
+                        {"id": thesis_id, "user_id": user["user_id"]},
+                        {"$set": {"split_dev": pruned}},
+                    )
         return doc
 
     @router.put("/{thesis_id}/folder")
