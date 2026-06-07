@@ -392,10 +392,16 @@ INVESTIGATOR_TREND_SYS = (
 )
 
 
-async def run_trend_thesis(trend: str, sources: list) -> dict:
+async def run_trend_thesis(trend: str, sources: list, origin_company: str = None) -> dict:
     sources_block = _sources_block(sources)
+    origin_line = (
+        f"EMPRESA DE ORIGEN DE ESTA TESIS: {origin_company}. Esta tesis se ha desarrollado a partir de "
+        f"esta empresa, así que DEBE figurar en 'companies' con su ticker canónico, ubicada en el eslabón "
+        f"que corresponda a su ACTIVIDAD REAL, salvo que objetivamente no participe en esta tendencia.\n\n"
+    ) if origin_company else ""
     inv_user = (
         f"TENDENCIA / TEMA A ANALIZAR: {trend}\n\n"
+        f"{origin_line}"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
@@ -407,8 +413,11 @@ async def run_trend_thesis(trend: str, sources: list) -> dict:
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
-        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 NO-líder ('competitor' o 'disruptor').\n"
-        "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
+        "- En la mayoría de eslabones intenta incluir AL MENOS 1 'leader' y AL MENOS 1 NO-líder ('competitor' o "
+        "'disruptor'), PERO solo con empresas cotizadas REALES cuya actividad PRINCIPAL encaje de verdad en ese "
+        "eslabón. NUNCA coloques una empresa en un eslabón que no corresponde a su actividad real solo para "
+        "rellenarlo: es preferible dejar un eslabón sin no-líder (o sin líder) que ubicar mal a una empresa.\n"
+        "- 'value_chain_role' debe reflejar la ACTIVIDAD REAL de la empresa y coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
     inv_raw = await _llm(*_inv_model(), f"thesis-inv-trend-{datetime.now(timezone.utc).timestamp()}",
@@ -479,8 +488,11 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
-        "- Para CADA eslabón de value_chain debe haber AL MENOS 1 empresa 'leader' Y AL MENOS 1 NO-líder ('competitor' o 'disruptor').\n"
-        "- 'value_chain_role' de cada empresa debe coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
+        "- En la mayoría de eslabones intenta incluir AL MENOS 1 'leader' y AL MENOS 1 NO-líder ('competitor' o "
+        "'disruptor'), PERO solo con empresas cotizadas REALES cuya actividad PRINCIPAL encaje de verdad en ese "
+        "eslabón. NUNCA coloques una empresa en un eslabón que no corresponde a su actividad real solo para "
+        "rellenarlo: es preferible dejar un eslabón sin no-líder (o sin líder) que ubicar mal a una empresa.\n"
+        "- 'value_chain_role' debe reflejar la ACTIVIDAD REAL de la empresa y coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
         "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
     )
     inv_raw = await _llm(*_inv_model(), f"thesis-explore-{datetime.now(timezone.utc).timestamp()}",

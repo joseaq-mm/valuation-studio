@@ -107,7 +107,7 @@ def _friendly_err(e) -> str:
 
 
 
-def _generate_sync(kind: str, subject: str) -> dict:
+def _generate_sync(kind: str, subject: str, origin_company: Optional[str] = None) -> dict:
     """Run the full (blocking) generation pipeline in a worker thread.
 
     emergentintegrations' LLM calls are synchronous and would otherwise block the
@@ -115,7 +115,7 @@ def _generate_sync(kind: str, subject: str) -> dict:
     async pipeline inside its own event loop in a thread (via asyncio.to_thread).
     """
     sources = gather_sources(subject, kind)
-    coro = run_trend_thesis(subject, sources) if kind == "trend" else run_company_thesis(subject, sources)
+    coro = run_trend_thesis(subject, sources, origin_company) if kind == "trend" else run_company_thesis(subject, sources)
     result, cost = run_costed(coro)
     result["_cost"] = cost
     return result
@@ -421,7 +421,21 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.theses.update_one({"id": company_id, "user_id": user_id}, {"$set": {"split_dev": existing}})
 
         try:
-            thesis = await asyncio.to_thread(_generate_sync, kind, subject)
+            # When developing a trend FROM a company core/split, pass the origin
+            # company into the investigator prompt so it is included in its own thesis.
+            origin_company = None
+            if kind == "trend" and from_company and user_id:
+                oc = await db.theses.find_one(
+                    {"id": from_company, "user_id": user_id, "type": "company"},
+                    {"_id": 0, "company": 1},
+                )
+                if oc:
+                    c = oc.get("company") or {}
+                    nm = (c.get("name") or "").strip()
+                    tk = (c.get("ticker") or "").strip()
+                    if nm:
+                        origin_company = f"{nm} ({tk})" if tk else nm
+            thesis = await asyncio.to_thread(_generate_sync, kind, subject, origin_company)
             _cost = thesis.pop("_cost", None)
             await _record_usage(_cost)
 
