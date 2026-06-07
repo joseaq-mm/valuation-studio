@@ -43,7 +43,7 @@ function CompanyTrendsDropdown({ company }) {
                             key={i}
                             onClick={() => goTo(ft)}
                             className="w-full text-left px-2 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[#F5E4D4] transition-colors text-[#1E7D45]"
-                            title="La empresa ya está incluida — clic para abrir"
+                            title={`Ya incluida en: ${ft.name} — clic para abrir`}
                             data-testid={`company-trend-opt-${company.ticker}-${i}`}
                         >
                             <Check size={11} className="shrink-0" />
@@ -79,7 +79,7 @@ function TrendRow({ t, folders, onAssignFolder, onRemove }) {
                     <Trash2 size={12} />
                 </button>
             </div>
-            <Link to={`/thesis/${t.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-trend-title-${t.id}`}>
+            <Link to={`/thesis/${t.id}`} title={t.title} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-trend-title-${t.id}`}>
                 {t.title}
             </Link>
         </div>
@@ -98,7 +98,7 @@ function TendenciaRow({ t, onRemove }) {
                     <Trash2 size={12} />
                 </button>
             </div>
-            <Link to={`/thesis/${t.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-tendencia-title-${t.id}`}>
+            <Link to={`/thesis/${t.id}`} title={t.title} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-tendencia-title-${t.id}`}>
                 {t.title}
             </Link>
         </div>
@@ -119,7 +119,7 @@ function CompanyRow({ c, onRemove }) {
                     <Trash2 size={12} />
                 </button>
             </div>
-            <Link to={`/thesis/${c.id}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
+            <Link to={`/thesis/${c.id}`} title={`${c.title || c.ticker}${c.ticker ? ` · ${c.ticker}` : ""}`} className="block mt-1.5 text-sm font-medium leading-tight truncate hover:underline" data-testid={`sidebar-company-title-${c.ticker}`}>
                 {c.title || c.ticker} {c.ticker && <span className="font-mono text-[11px] text-[#4A4A4A]">{c.ticker}</span>}
             </Link>
         </div>
@@ -187,7 +187,7 @@ export default function ThesisSidebar({
                                 data-testid={`sidebar-search-opt-${it.key}`}
                             >
                                 {iconFor(it.kind)}
-                                <span className="truncate">{it.data.title}</span>
+                                <span className="truncate" title={it.data.title}>{it.data.title}</span>
                             </Link>
                         ))}
                     </div>
