@@ -330,6 +330,33 @@ def compute_tam_score(overall_score, stage_tam_busd, revenue_busd):
     except (TypeError, ValueError):
         return None
 
+def stage_tam_for_role(role, value_chain):
+    """Resolve the stage TAM (USD billions) for a company's value_chain_role.
+
+    1. Exact match against a single stage → that stage's TAM.
+    2. Multi-stage role (e.g. "Diagnóstico…; Terapias orales…", where each stage
+       name appears inside the role string) → SUM the matched stages' TAM. The
+       per-stage TAMs are mutually exclusive, so a company present in several
+       links has an addressable market equal to their sum (no double counting).
+    Returns a float (USD billions) or None when nothing matches.
+    """
+    nrole = (role or "").strip().lower()
+    if not nrole:
+        return None
+    matched = []
+    for s in (value_chain or []):
+        st = (s.get("stage") or "").strip().lower()
+        if not st:
+            continue
+        if st == nrole:
+            return s.get("tam_busd")  # clean single-stage match
+        if st in nrole:               # stage name embedded in a multi-stage role
+            matched.append(s.get("tam_busd"))
+    vals = [m for m in matched if m is not None]
+    return round(sum(vals), 1) if vals else None
+
+
+
 
 def _busd(v):
     """Coerce a TAM value to a non-negative number of USD billions (or None)."""

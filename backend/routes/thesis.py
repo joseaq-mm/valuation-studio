@@ -19,6 +19,7 @@ from services.thesis import (
     run_trend_contra, run_company_contra, run_discover,
     run_trend_explore, run_auto_trend, run_costed,
     match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
+    stage_tam_for_role,
     detect_parent_thesis, aggregate_folder_tam,
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
@@ -666,12 +667,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
                 return
             entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
-            role = (entry.get("value_chain_role") or "").strip().lower()
-            stage_tam = None
-            for s in (doc.get("value_chain") or []):
-                if (s.get("stage") or "").strip().lower() == role:
-                    stage_tam = s.get("tam_busd")
-                    break
+            stage_tam = stage_tam_for_role(entry.get("value_chain_role"), doc.get("value_chain"))
             rev_busd, currency = await _projected_revenue_usd_busd(ticker)
             tam_score = compute_tam_score(entry.get("overall_score"), stage_tam, rev_busd)
             await db.thesis_jobs.update_one(
@@ -954,12 +950,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 continue
             overall = comp.get("overall_score")
             role = comp.get("value_chain_role")
-            nrole = (role or "").strip().lower()
-            stage_tam = None
-            for s in (t.get("value_chain") or []):
-                if (s.get("stage") or "").strip().lower() == nrole:
-                    stage_tam = s.get("tam_busd")
-                    break
+            stage_tam = stage_tam_for_role(role, t.get("value_chain"))
             rows.append({
                 "thesis_id": t.get("id"),
                 "thesis_title": t.get("title"),
@@ -1049,15 +1040,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         comp_agg: Dict[str, Dict[str, Any]] = {}
         trend_id_set = {t.get("id") for t in trend_docs}
         for t in trend_docs:
-            stage_tam: Dict[str, Any] = {}
-            for s in (t.get("value_chain") or []):
-                stage_tam[(s.get("stage") or "").strip().lower()] = s.get("tam_busd")
+            vc = t.get("value_chain") or []
             clist = []
             for c in (t.get("companies") or []):
                 tk = (c.get("ticker") or "").upper().strip()
                 overall = c.get("overall_score")
-                role = (c.get("value_chain_role") or "").strip().lower()
-                tam_score = compute_tam_score(overall, stage_tam.get(role), rev_map.get(tk))
+                tam_score = compute_tam_score(overall, stage_tam_for_role(c.get("value_chain_role"), vc), rev_map.get(tk))
                 clist.append({
                     "ticker": tk or None, "name": c.get("name"), "overall_score": overall,
                     "value_chain_role": c.get("value_chain_role"),
