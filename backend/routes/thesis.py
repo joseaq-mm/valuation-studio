@@ -19,7 +19,7 @@ from services.thesis import (
     run_trend_contra, run_company_contra, run_discover,
     run_trend_explore, run_auto_trend, run_costed,
     match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
-    stage_tam_for_role,
+    stage_tam_for_role, effective_stage_tam,
     detect_parent_thesis, aggregate_folder_tam,
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
@@ -685,7 +685,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
                 return
             entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
-            stage_tam = stage_tam_for_role(entry.get("value_chain_role"), doc.get("value_chain"))
+            stage_tam = effective_stage_tam(entry, doc.get("value_chain"))
             rev_busd, currency = await _projected_revenue_usd_busd(ticker)
             tam_score = compute_tam_score(entry.get("overall_score"), stage_tam, rev_busd)
             await db.thesis_jobs.update_one(
@@ -968,7 +968,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 continue
             overall = comp.get("overall_score")
             role = comp.get("value_chain_role")
-            stage_tam = stage_tam_for_role(role, t.get("value_chain"))
+            stage_tam = effective_stage_tam(comp, t.get("value_chain"))
             rows.append({
                 "thesis_id": t.get("id"),
                 "thesis_title": t.get("title"),
@@ -1063,7 +1063,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             for c in (t.get("companies") or []):
                 tk = (c.get("ticker") or "").upper().strip()
                 overall = c.get("overall_score")
-                tam_score = compute_tam_score(overall, stage_tam_for_role(c.get("value_chain_role"), vc), rev_map.get(tk))
+                tam_score = compute_tam_score(overall, effective_stage_tam(c, vc), rev_map.get(tk))
                 clist.append({
                     "ticker": tk or None, "name": c.get("name"), "overall_score": overall,
                     "value_chain_role": c.get("value_chain_role"),
@@ -1332,8 +1332,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         ticker = ((co.get("company") or {}).get("ticker") or "").upper().strip()
         if not ticker:
             raise HTTPException(status_code=400, detail="La empresa no tiene ticker")
-        src = await db.theses.find_one({"id": req.source_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1, "companies": 1})
-        tgt = await db.theses.find_one({"id": req.target_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1})
+        src = await db.theses.find_one({"id": req.source_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1})
+        tgt = await db.theses.find_one({"id": req.target_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1, "companies": 1})
         if not src or not tgt:
             raise HTTPException(status_code=404, detail="No se encontró la tesis origen o destino")
         merges = co.get("thesis_merges") or []
@@ -1348,10 +1348,24 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if removed is None:
             raise HTTPException(status_code=400, detail="La empresa no está en la tesis origen")
         await db.theses.update_one({"id": req.source_thesis_id, "user_id": uid}, {"$set": {"companies": kept}})
+
+        # TAM absorption: credit the company's addressable market in the SOURCE thesis
+        # to its entry in the TARGET thesis (per-company, so only this company's TAM
+        # Score grows). Conserves the company's total potential across theses.
+        absorbed = stage_tam_for_role(removed.get("value_chain_role"), src.get("value_chain")) or 0
+        if absorbed:
+            tcomps = tgt.get("companies") or []
+            for c in tcomps:
+                if (c.get("ticker") or "").upper().strip() == ticker:
+                    c["absorbed_tam_busd"] = round((c.get("absorbed_tam_busd") or 0) + absorbed, 1)
+                    break
+            await db.theses.update_one({"id": req.target_thesis_id, "user_id": uid}, {"$set": {"companies": tcomps}})
+
         merges.append({
             "source_thesis_id": src["id"], "source_title": src.get("title"),
             "target_thesis_id": tgt["id"], "target_title": tgt.get("title"),
             "removed_entry": removed,
+            "absorbed_tam_busd": absorbed,
         })
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
@@ -1376,6 +1390,24 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 comps = [c for c in (sdoc.get("companies") or []) if (c.get("ticker") or "").upper().strip() != tk]
                 comps.append(entry)
                 await db.theses.update_one({"id": req.source_thesis_id, "user_id": uid}, {"$set": {"companies": comps}})
+
+        # Reverse the TAM absorption on the target thesis (subtract what was credited).
+        absorbed = m.get("absorbed_tam_busd") or 0
+        target_id = m.get("target_thesis_id")
+        if absorbed and target_id:
+            tk = ((entry or {}).get("ticker") or "").upper().strip()
+            tdoc = await db.theses.find_one({"id": target_id, "user_id": uid}, {"_id": 0, "id": 1, "companies": 1})
+            if tdoc:
+                tcomps = tdoc.get("companies") or []
+                for c in tcomps:
+                    if (c.get("ticker") or "").upper().strip() == tk:
+                        newv = round((c.get("absorbed_tam_busd") or 0) - absorbed, 1)
+                        if newv > 0:
+                            c["absorbed_tam_busd"] = newv
+                        else:
+                            c.pop("absorbed_tam_busd", None)
+                        break
+                await db.theses.update_one({"id": target_id, "user_id": uid}, {"$set": {"companies": tcomps}})
         merges = [x for x in merges if x.get("source_thesis_id") != req.source_thesis_id]
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})

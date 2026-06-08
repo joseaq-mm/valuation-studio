@@ -356,6 +356,19 @@ def stage_tam_for_role(role, value_chain):
     return round(sum(vals), 1) if vals else None
 
 
+def effective_stage_tam(comp, value_chain):
+    """Addressable-market TAM (USD billions) for a company in a thesis, used as the
+    numerator basis of its TAM Score. It is the stage TAM matching its role PLUS any
+    `absorbed_tam_busd` folded into this company by a Fase B merge (so a merged-away
+    thesis's market is credited to the surviving thesis for THIS company only).
+    Returns a float or None when there is nothing to score."""
+    base = stage_tam_for_role(comp.get("value_chain_role"), value_chain)
+    absorbed = comp.get("absorbed_tam_busd") or 0
+    if base is None and not absorbed:
+        return None
+    return round((base or 0) + absorbed, 1)
+
+
 
 
 def _busd(v):
