@@ -186,6 +186,7 @@ class GenerateRequest(BaseModel):
     from_company: Optional[str] = None  # company thesis id this trend is being developed FROM (a core/split)
     core: Optional[str] = None  # the core thesis name this trend was split out of
     develop_whole: bool = False  # True when developing the whole core (vs a single split)
+    queue: bool = False  # if a generation is already running, queue this one instead of rejecting
 
 
 class FolderRequest(BaseModel):
@@ -620,6 +621,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             logger.error(f"thesis generation failed ({kind}:{subject}): {e}")
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error generando la tesis: {e}"}})
+        finally:
+            # Generation finished (and saved) → start the next queued one, if any.
+            try:
+                await _start_next_queued(user_id)
+            except Exception as e:
+                logger.error(f"dequeue next generation failed: {e}")
 
     async def _run_contra_job(job_id: str, thesis_id: str, user_id: str):
         try:
@@ -766,15 +773,33 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=400, detail="subject requerido")
 
         job_id = f"job_{uuid.uuid4().hex[:14]}"
-        await db.thesis_jobs.insert_one({
-            "id": job_id,
-            "user_id": user["user_id"] if user else None,
-            "kind": "generate",
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        _spawn(_run_generate_job(job_id, kind, subject, user["user_id"] if user else None, req.matched_thesis_id, req.overwrite_thesis_id, req.from_company, req.core, req.develop_whole))
-        return {"job_id": job_id}
+        uid = user["user_id"] if user else None
+        params = {
+            "kind": kind, "subject": subject,
+            "matched_thesis_id": req.matched_thesis_id,
+            "overwrite_thesis_id": req.overwrite_thesis_id,
+            "from_company": req.from_company, "core": req.core,
+            "develop_whole": req.develop_whole,
+        }
+        base = {"id": job_id, "user_id": uid, "kind": "generate",
+                "created_at": datetime.now(timezone.utc).isoformat(), "params": params}
+        # Serial generations: never run two at once for the same user.
+        if uid:
+            active = await db.thesis_jobs.find_one(
+                {"user_id": uid, "kind": "generate", "status": {"$in": ["processing", "queued"]}},
+                sort=[("created_at", 1)],
+            )
+            if active:
+                if not req.queue:
+                    ap = active.get("params") or {}
+                    return {"status": "busy", "active": {"subject": ap.get("subject"), "kind": ap.get("kind")}}
+                await db.thesis_jobs.insert_one({**base, "status": "queued"})
+                position = await db.thesis_jobs.count_documents(
+                    {"user_id": uid, "kind": "generate", "status": "queued"})
+                return {"job_id": job_id, "status": "queued", "position": position}
+        await db.thesis_jobs.insert_one({**base, "status": "processing"})
+        _spawn(_run_generate_job(job_id, kind, subject, uid, req.matched_thesis_id, req.overwrite_thesis_id, req.from_company, req.core, req.develop_whole))
+        return {"job_id": job_id, "status": "processing"}
 
     @router.get("/models")
     async def get_models(user: Optional[Dict[str, Any]] = Depends(auth_optional)):

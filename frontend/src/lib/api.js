@@ -58,12 +58,14 @@ export const fxRates = () => api.get(`/fx/rates`).then(r => r.data);
 // POST returns a job_id immediately and we poll until it is done.
 export const thesisJob = (jobId) => api.get(`/thesis/job/${jobId}`).then(r => r.data);
 
-async function pollThesisJob(jobId, { intervalMs = 3000, timeoutMs = 300000 } = {}) {
-    const start = Date.now();
+async function pollThesisJob(jobId, { intervalMs = 3000, timeoutMs = 300000, onStatus } = {}) {
+    let start = Date.now();
     while (Date.now() - start < timeoutMs) {
         await new Promise((r) => setTimeout(r, intervalMs));
         let job;
         try { job = await thesisJob(jobId); } catch { continue; } // transient — keep polling
+        if (onStatus) onStatus(job.status);
+        if (job.status === "queued") { start = Date.now(); continue; } // waiting in line — don't time out
         if (job.status === "done") return job.result;
         if (job.status === "error") {
             const e = new Error(job.error || "error");
@@ -76,14 +78,19 @@ async function pollThesisJob(jobId, { intervalMs = 3000, timeoutMs = 300000 } = 
     throw e;
 }
 
-function startAndPoll(data) {
-    if (data && data.job_id) return pollThesisJob(data.job_id);
+function startAndPoll(data, onStatus) {
+    if (data && data.status === "busy") {
+        const e = new Error("busy");
+        e.busy = data.active || {};
+        throw e;
+    }
+    if (data && data.job_id) return pollThesisJob(data.job_id, { onStatus });
     if (data && data.result) return data.result; // e.g. contra already existed
     return data;
 }
 
-export const thesisGenerate = (type, subject, matchedThesisId = null, overwriteThesisId = null, extra = {}) =>
-    api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId, overwrite_thesis_id: overwriteThesisId, ...extra }).then(r => startAndPoll(r.data));
+export const thesisGenerate = (type, subject, matchedThesisId = null, overwriteThesisId = null, extra = {}, onStatus = null) =>
+    api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId, overwrite_thesis_id: overwriteThesisId, ...extra }).then(r => startAndPoll(r.data, onStatus));
 export const thesisTamScores = (items) =>
     api.post(`/thesis/tam-scores`, { items }).then(r => startAndPoll(r.data));
 export const thesisDiscover = () =>

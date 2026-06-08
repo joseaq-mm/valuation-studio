@@ -476,6 +476,15 @@ async def _scheduled_thesis_refresh_run():
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
+    # Orphaned generation jobs (killed by a previous restart) would otherwise block the
+    # user's serial queue forever — clear them on startup.
+    try:
+        await db.thesis_jobs.update_many(
+            {"kind": "generate", "status": {"$in": ["processing", "queued"]}},
+            {"$set": {"status": "error", "error": "Interrumpido por reinicio del servidor."}},
+        )
+    except Exception as e:
+        logger.warning(f"orphan generate-job cleanup failed: {e}")
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))

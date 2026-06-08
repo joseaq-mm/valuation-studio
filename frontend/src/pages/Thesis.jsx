@@ -43,6 +43,8 @@ export default function Thesis() {
     const [folderToDelete, setFolderToDelete] = useState(null);
     const [companyToDelete, setCompanyToDelete] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [genStatus, setGenStatus] = useState(null);   // "processing" | "queued" while generating
+    const [queueAsk, setQueueAsk] = useState(null);      // { active, retry } when a generation is already running
 
     const folders = dash?.folders || [];
     const _norm = (s) => (s || "").trim().toLowerCase();
@@ -156,20 +158,49 @@ export default function Thesis() {
         setPendingDup(null);
         setLoading(true);
         setResult(null);
+        setGenStatus("processing");
+        const extra = opts.recordSplit
+            ? { from_company: opts.recordSplit.companyId, core: opts.recordSplit.core, develop_whole: opts.recordSplit.whole }
+            : {};
+        const overwriteId = opts.overwriteId || null;
         try {
-            const extra = opts.recordSplit
-                ? { from_company: opts.recordSplit.companyId, core: opts.recordSplit.core, develop_whole: opts.recordSplit.whole }
-                : {};
-            const data = await thesisGenerate(t, s, matchedThesisId, opts.overwriteId || null, extra);
+            const data = await thesisGenerate(t, s, matchedThesisId, overwriteId, { ...extra, queue: opts.queue || false }, setGenStatus);
             setResult(data);
             setGenCount((n) => n + 1);
             if (data?.no_changes) toast.info("Sin novedades relevantes: conservamos tu tesis actual.");
             else if (data?.changes?.length) toast.success(`Tesis actualizada · ${data.changes.length} cambio${data.changes.length > 1 ? "s" : ""}`);
             reload();
         } catch (e) {
+            // A generation is already running → offer to queue this one (FIFO).
+            if (e?.busy) {
+                setQueueAsk({ active: e.busy, retry: { t, s, matchedThesisId, overwriteId, extra } });
+            } else {
+                toast.error(e?.response?.data?.detail || "No se pudo generar la tesis. Inténtalo de nuevo.");
+            }
+        } finally {
+            setLoading(false);
+            setGenStatus(null);
+        }
+    };
+
+    // User accepted to queue the generation behind the one already running.
+    const confirmQueue = async () => {
+        const q = queueAsk;
+        setQueueAsk(null);
+        if (!q) return;
+        setLoading(true);
+        setResult(null);
+        setGenStatus("queued");
+        try {
+            const data = await thesisGenerate(q.retry.t, q.retry.s, q.retry.matchedThesisId, q.retry.overwriteId, { ...q.retry.extra, queue: true }, setGenStatus);
+            setResult(data);
+            setGenCount((n) => n + 1);
+            reload();
+        } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar la tesis. Inténtalo de nuevo.");
         } finally {
             setLoading(false);
+            setGenStatus(null);
         }
     };
 
@@ -467,7 +498,7 @@ export default function Thesis() {
                                     </div>
                                     <button onClick={() => generate()} disabled={busy} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
                                         {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                                        {loading ? "Generando…" : "Generar tesis"}
+                                        {loading ? (genStatus === "queued" ? "En cola…" : "Generando…") : "Generar tesis"}
                                     </button>
                                 </>
                             ) : (
@@ -503,9 +534,11 @@ export default function Thesis() {
                         {busy && (
                             <div className="mt-4 text-xs text-[#4A4A4A] flex items-center gap-2" data-testid="thesis-loading">
                                 <Loader2 size={13} className="animate-spin" />
-                                {trendLoading
-                                    ? "Explorando la tendencia en la web… esto puede tardar ~40-60s."
-                                    : "Buscando en la web e investigando con IA… esto puede tardar ~1-2 minutos."}
+                                {genStatus === "queued"
+                                    ? "En cola: esperando a que termine la generación en curso. Empezará automáticamente al finalizar la anterior."
+                                    : trendLoading
+                                        ? "Explorando la tendencia en la web… esto puede tardar ~40-60s."
+                                        : "Buscando en la web e investigando con IA… esto puede tardar ~1-2 minutos."}
                             </div>
                         )}
                     </div>
@@ -662,6 +695,28 @@ export default function Thesis() {
                     </div>
                 </div>
             )}
+            {/* Generation already running → ask to queue (no parallel generations) */}
+            {queueAsk && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="queue-modal" onClick={() => setQueueAsk(null)}>
+                    <div className="bg-white border border-black max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
+                        <div className="font-serif text-xl font-medium mb-1">Ya hay una generación en curso</div>
+                        <p className="text-sm text-[#4A4A4A] mb-4">
+                            Se está generando «<strong>{queueAsk.active?.subject}</strong>». No se pueden generar dos tesis a la vez. ¿Quieres <strong>dejar esta en cola</strong> y que empiece automáticamente al terminar la anterior?
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <button onClick={confirmQueue} data-testid="queue-confirm"
+                                    className="text-sm uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-3 py-2 hover:bg-[#222] transition-colors">
+                                Dejar en cola
+                            </button>
+                            <button onClick={() => setQueueAsk(null)} data-testid="queue-cancel"
+                                    className="text-xs text-[#4A4A4A] hover:underline">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Delete company (start from 0) confirm modal */}
             {companyToDelete && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="delete-company-modal" onClick={() => setCompanyToDelete(null)}>

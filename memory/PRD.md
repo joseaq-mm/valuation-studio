@@ -256,3 +256,25 @@ Objetivo del usuario: simplificar código, evitar bugs, llevar al refresco sin l
 ### Tests
 - `tests/test_tam_freeze.py` (2 tests, congelado + revenue ausente). Suite: 61 passed (excluye `test_portfolio_alerts.py` que requiere servidor live).
 - Verificado e2e por curl: refresh/run (all + ticker), profile con TAM congelado, cascada de borrado, job semanal admin.
+
+## CHANGELOG — Cola serial de generación (8 jun 2026)
+Objetivo: nunca dos generaciones de tesis en paralelo (coherencia de TAM + control de gasto LLM).
+
+### Backend (routes/thesis.py + server.py)
+- `GenerateRequest.queue: bool` nuevo. `POST /thesis/generate` ahora serializa POR USUARIO:
+  - Si hay una generación `processing`/`queued` y `queue=false` → devuelve `{status:"busy", active:{subject,kind}}` (NO crea job).
+  - Si `queue=true` → crea job `status:"queued"` con `params` y devuelve `{job_id, status:"queued", position}`.
+  - Si libre → `status:"processing"` y arranca. (Anónimos: sin cola, arrancan directo.)
+- `_run_generate_job` añade `finally` → `_start_next_queued(user_id)`: al terminar (y guardarse), arranca el `queued` más antiguo (FIFO, ilimitado). Estados: `processing`/`queued`/`done`/`error`.
+- `server.py` startup: limpia jobs `generate` huérfanos (`processing`/`queued` → `error`) para no bloquear la cola tras un reinicio.
+
+### Frontend (api.js + Thesis.jsx)
+- `startAndPoll` detecta `status:"busy"` → lanza error con `e.busy`. `pollThesisJob` acepta `onStatus` y NO expira mientras `queued` (resetea la ventana).
+- `Thesis.jsx`: al recibir busy muestra modal `queue-modal` ("Ya hay una generación en curso… ¿dejar en cola?"). `confirmQueue` re-lanza con `queue:true`. Indicador "En cola…" en botón y mensaje. Cancela si no encola.
+- Develop desde ThesisDetail navega a /thesis (misma lógica). Contra-tesis es otro `kind`, no se serializa.
+
+### Tests
+- `tests/test_gen_queue.py` (FIFO). Suite: 62 passed. Validado por API (curl): busy + queued (sin gastar LLM; jobs de prueba limpiados).
+
+## PENDIENTE DE DECISIÓN DEL USUARIO (no construir hasta su OK)
+- **Fusión determinista (P1):** el desplegable de fusión ofrece un mismo tema en dos grupos ("suma TAM" = propuesta hermana vs "no suma" = tesis guardada que ya lo cubre). Si un nombre cae en AMBOS grupos, hoy gana "suma" (`isCovered=false` en ThesisResult.jsx ~L535) aunque se elija "no suma" → la etiqueta contradice la acción. Raíz: exclusividad mutua garantizada SOLO dentro de una generación, no en la costura nueva↔guardada. Fix propuesto (a decidir): deduplicar para que un tema esté en un solo grupo, o auto-decidir sumar/cubierta con `detect_parent_thesis`. El usuario dijo que responderá qué hacer.
