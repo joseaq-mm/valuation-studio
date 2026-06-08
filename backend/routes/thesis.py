@@ -232,6 +232,10 @@ class RefreshRunRequest(BaseModel):
     thesis_id: Optional[str] = None   # refresh this thesis (trend) or company thesis
     ticker: Optional[str] = None      # refresh this company across all its theses
 
+class SetPlanRequest(BaseModel):
+    core: str            # driver name
+    plan: str            # "whole" | "split"
+
 class TamScoreItem(BaseModel):
     ticker: str
     overall_score: Optional[float] = None
@@ -789,6 +793,48 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el score: {e}"}})
 
+    async def _enqueue_generation(uid, kind, subject, *, matched_thesis_id=None,
+                                  overwrite_thesis_id=None, from_company=None, core=None,
+                                  develop_whole=False, allow_queue=True):
+        """Create a generation job respecting the serial queue (one at a time per user).
+        Returns (job_id, status, active). If busy and allow_queue is False → (None, 'busy', active)."""
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        params = {
+            "kind": kind, "subject": subject,
+            "matched_thesis_id": matched_thesis_id, "overwrite_thesis_id": overwrite_thesis_id,
+            "from_company": from_company, "core": core, "develop_whole": develop_whole,
+        }
+        base = {"id": job_id, "user_id": uid, "kind": "generate",
+                "created_at": datetime.now(timezone.utc).isoformat(), "params": params}
+        if uid:
+            active = await db.thesis_jobs.find_one(
+                {"user_id": uid, "kind": "generate", "status": {"$in": ["processing", "queued"]}},
+                sort=[("created_at", 1)],
+            )
+            if active:
+                if not allow_queue:
+                    ap = active.get("params") or {}
+                    return None, "busy", {"subject": ap.get("subject"), "kind": ap.get("kind")}
+                await db.thesis_jobs.insert_one({**base, "status": "queued"})
+                return job_id, "queued", None
+        await db.thesis_jobs.insert_one({**base, "status": "processing"})
+        _spawn(_run_generate_job(job_id, kind, subject, uid, matched_thesis_id, overwrite_thesis_id, from_company, core, develop_whole))
+        return job_id, "processing", None
+
+    async def _company_locked(uid, thesis_id, split_dev=None):
+        """Planning is locked once a plan is executed: any developed thesis (split_dev)
+        or an in-flight generation launched from this company."""
+        if split_dev is None:
+            d = await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0, "split_dev": 1})
+            split_dev = (d or {}).get("split_dev")
+        if split_dev:
+            return True
+        inflight = await db.thesis_jobs.find_one({
+            "user_id": uid, "kind": "generate", "status": {"$in": ["processing", "queued"]},
+            "params.from_company": thesis_id,
+        })
+        return bool(inflight)
+
     @router.post("/generate")
     async def generate(req: GenerateRequest, user: Optional[Dict[str, Any]] = Depends(auth_optional)):
         await _ensure_preset_loaded()
@@ -798,35 +844,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=400, detail="type debe ser 'trend' o 'company'")
         if not subject:
             raise HTTPException(status_code=400, detail="subject requerido")
-
-        job_id = f"job_{uuid.uuid4().hex[:14]}"
         uid = user["user_id"] if user else None
-        params = {
-            "kind": kind, "subject": subject,
-            "matched_thesis_id": req.matched_thesis_id,
-            "overwrite_thesis_id": req.overwrite_thesis_id,
-            "from_company": req.from_company, "core": req.core,
-            "develop_whole": req.develop_whole,
-        }
-        base = {"id": job_id, "user_id": uid, "kind": "generate",
-                "created_at": datetime.now(timezone.utc).isoformat(), "params": params}
-        # Serial generations: never run two at once for the same user.
-        if uid:
-            active = await db.thesis_jobs.find_one(
-                {"user_id": uid, "kind": "generate", "status": {"$in": ["processing", "queued"]}},
-                sort=[("created_at", 1)],
-            )
-            if active:
-                if not req.queue:
-                    ap = active.get("params") or {}
-                    return {"status": "busy", "active": {"subject": ap.get("subject"), "kind": ap.get("kind")}}
-                await db.thesis_jobs.insert_one({**base, "status": "queued"})
-                position = await db.thesis_jobs.count_documents(
-                    {"user_id": uid, "kind": "generate", "status": "queued"})
-                return {"job_id": job_id, "status": "queued", "position": position}
-        await db.thesis_jobs.insert_one({**base, "status": "processing"})
-        _spawn(_run_generate_job(job_id, kind, subject, uid, req.matched_thesis_id, req.overwrite_thesis_id, req.from_company, req.core, req.develop_whole))
-        return {"job_id": job_id, "status": "processing"}
+        job_id, status, active = await _enqueue_generation(
+            uid, kind, subject, matched_thesis_id=req.matched_thesis_id,
+            overwrite_thesis_id=req.overwrite_thesis_id, from_company=req.from_company,
+            core=req.core, develop_whole=req.develop_whole, allow_queue=req.queue)
+        if status == "busy":
+            return {"status": "busy", "active": active}
+        out = {"job_id": job_id, "status": status}
+        if status == "queued":
+            out["position"] = await db.thesis_jobs.count_documents(
+                {"user_id": uid, "kind": "generate", "status": "queued"})
+        return out
 
     @router.get("/models")
     async def get_models(user: Optional[Dict[str, Any]] = Depends(auth_optional)):
@@ -1281,19 +1310,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     doc["companies"] = fresh["companies"]
             except Exception as e:
                 logger.warning(f"tam backfill on read failed ({thesis_id}): {e}")
-        # Planning phase: a company's drivers can be merged/split ONLY before any of
-        # its theses are generated. Locked once a develop is launched (in-flight job)
-        # or any developed thesis exists; reopens when all are deleted.
+        # Planning is editable (merge/split markers) only before the plan is executed.
         if doc.get("type") == "company":
-            locked = bool(doc.get("split_dev"))
-            if not locked:
-                inflight = await db.thesis_jobs.find_one({
-                    "user_id": user["user_id"], "kind": "generate",
-                    "status": {"$in": ["processing", "queued"]},
-                    "params.from_company": thesis_id,
-                })
-                locked = bool(inflight)
-            doc["planning_locked"] = locked
+            doc["planning_locked"] = await _company_locked(user["user_id"], thesis_id, doc.get("split_dev"))
         return doc
 
     @router.put("/{thesis_id}/folder")
@@ -1355,6 +1374,63 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"split_dev": existing}})
         return {"ok": True, "split_dev": existing}
 
+    @router.post("/{thesis_id}/plan")
+    async def set_plan(thesis_id: str, req: SetPlanRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Planning phase: mark a driver to be generated as the whole ('whole') or as all
+        its partitions ('split'). Pure metadata — no generation, no LLM. Returns the
+        updated company thesis."""
+        uid = user["user_id"]
+        nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        if await _company_locked(uid, thesis_id, doc.get("split_dev")):
+            raise HTTPException(status_code=409, detail="La planificación está cerrada (ya ejecutaste el plan).")
+        plan = (req.plan or "").strip().lower()
+        if plan not in ("whole", "split"):
+            raise HTTPException(status_code=400, detail="plan debe ser 'whole' o 'split'")
+        trends = doc.get("trends") or []
+        drv = next((t for t in trends if nrm(t.get("name")) == nrm(req.core)), None)
+        if not drv:
+            raise HTTPException(status_code=404, detail="Driver no encontrado")
+        if plan == "split" and not (drv.get("splits") or []):
+            raise HTTPException(status_code=400, detail="Este driver no se puede partir")
+        drv["plan"] = plan
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
+
+    @router.post("/{thesis_id}/generate-plan")
+    async def generate_plan(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Execute the plan: enqueue a generation for every driver (not merged away),
+        according to its marker ('whole' → 1 thesis; 'split' → all partitions). All are
+        queued (serial), each anchored to its frozen partition slice. Locks planning."""
+        uid = user["user_id"]
+        nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        if await _company_locked(uid, thesis_id, doc.get("split_dev")):
+            raise HTTPException(status_code=409, detail="El plan ya se ejecutó.")
+        count, first = 0, None
+        for drv in (doc.get("trends") or []):
+            if drv.get("merged_into"):
+                continue  # folded into another driver → its TAM travels there
+            name = drv.get("name")
+            if (drv.get("plan") == "split") and (drv.get("splits") or []):
+                for sp in drv["splits"]:
+                    jid, _st, _a = await _enqueue_generation(
+                        uid, "trend", sp.get("name"), from_company=thesis_id, core=name, develop_whole=False)
+                    count += 1
+                    first = first or jid
+            else:
+                jid, _st, _a = await _enqueue_generation(
+                    uid, "trend", name, from_company=thesis_id, core=name, develop_whole=True)
+                count += 1
+                first = first or jid
+        if count == 0:
+            raise HTTPException(status_code=400, detail="No hay drivers que generar.")
+        return {"ok": True, "count": count, "first_job_id": first}
+
     @router.post("/{thesis_id}/merge")
     async def merge_thesis(thesis_id: str, req: MergeThesisRequest, user: Dict[str, Any] = Depends(auth_required)):
         """Manually fold a minor/complementary proposed thesis (source) into another
@@ -1368,6 +1444,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        if await _company_locked(uid, thesis_id, doc.get("split_dev")):
+            raise HTTPException(status_code=409, detail="La planificación está cerrada (ya ejecutaste el plan).")
         trends = doc.get("trends") or []
         nsrc, ntgt = nrm(req.source), nrm(req.target)
         if nsrc == ntgt:
