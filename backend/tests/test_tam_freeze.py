@@ -72,3 +72,38 @@ def test_recompute_handles_missing_revenue():
     c = asyncio.run(_missing_revenue())
     assert c["tam_score"] is None
     assert c["projected_revenue_busd"] is None
+
+
+async def _allocated_origin():
+    """Origin company uses the inherited partition slice; another company in the same
+    thesis uses the value-chain stage TAM."""
+    cli, db = _db()
+    try:
+        await db.fundamentals.update_one(
+            {"ticker": "ORIG"}, {"$set": {"ticker": "ORIG", "data": {"currency": "USD",
+                "auto_projections": {"revenue_2y": 50e9}}}}, upsert=True)
+        await db.fundamentals.update_one(
+            {"ticker": "OTHR"}, {"$set": {"ticker": "OTHR", "data": {"currency": "USD",
+                "auto_projections": {"revenue_2y": 50e9}}}}, upsert=True)
+        await db.theses.update_one({"id": "alloc_trend"}, {"$set": {
+            "id": "alloc_trend", "user_id": UID, "type": "trend", "title": "Alloc T",
+            "origin_ticker": "ORIG", "allocated_tam_busd": 40,   # slice → score = 0.8*40/50 = 0.64
+            "value_chain": [{"stage": "Core", "tam_busd": 200}],  # chain TAM (used by OTHR)
+            "companies": [
+                {"ticker": "ORIG", "name": "Origin", "overall_score": 80, "value_chain_role": "Core"},
+                {"ticker": "OTHR", "name": "Other", "overall_score": 80, "value_chain_role": "Core"},
+            ]}}, upsert=True)
+        await recompute_and_store_tam(db, UID, ["alloc_trend"])
+        doc = await db.theses.find_one({"id": "alloc_trend"}, {"_id": 0, "companies": 1})
+        by = {c["ticker"]: c for c in doc["companies"]}
+        return by["ORIG"]["tam_score"], by["OTHR"]["tam_score"]
+    finally:
+        await db.theses.delete_many({"user_id": UID})
+        await db.fundamentals.delete_many({"ticker": {"$in": ["ORIG", "OTHR"]}})
+        cli.close()
+
+
+def test_origin_uses_allocated_slice_others_use_chain():
+    orig, othr = asyncio.run(_allocated_origin())
+    assert orig == 0.64          # 0.8 * 40 / 50  (partition slice)
+    assert othr == 3.2           # 0.8 * 200 / 50 (value-chain stage TAM)

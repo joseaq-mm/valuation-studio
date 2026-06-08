@@ -78,7 +78,8 @@ async def recompute_and_store_tam(db, uid: str, thesis_ids: Optional[list] = Non
     if thesis_ids is not None:
         q["id"] = {"$in": list(thesis_ids)}
     docs = await db.theses.find(
-        q, {"_id": 0, "id": 1, "companies": 1, "value_chain": 1, "tam": 1}
+        q, {"_id": 0, "id": 1, "companies": 1, "value_chain": 1, "tam": 1,
+            "origin_ticker": 1, "allocated_tam_busd": 1}
     ).to_list(length=2000)
     tickers = set()
     for d in docs:
@@ -91,14 +92,21 @@ async def recompute_and_store_tam(db, uid: str, thesis_ids: Optional[list] = Non
     for d in docs:
         vc = d.get("value_chain") or []
         gtam = (d.get("tam") or {}).get("global_busd")
+        otk = (d.get("origin_ticker") or "").upper().strip()
+        alloc = d.get("allocated_tam_busd")
         comps = d.get("companies") or []
         if not comps:
             continue
         for c in comps:
             tk = (c.get("ticker") or "").upper().strip()
             rev = rev_map.get(tk)
-            c["tam_score"] = compute_tam_score(
-                c.get("overall_score"), effective_stage_tam(c, vc, gtam), rev)
+            # Origin company → inherited partition slice (mutually exclusive, conserved).
+            # Other companies → the value-chain stage TAM.
+            if otk and tk == otk and alloc is not None:
+                stage = alloc
+            else:
+                stage = effective_stage_tam(c, vc, gtam)
+            c["tam_score"] = compute_tam_score(c.get("overall_score"), stage, rev)
             c["projected_revenue_busd"] = round(rev, 2) if rev else None
         await db.theses.update_one({"id": d["id"], "user_id": uid}, {"$set": {"companies": comps}})
         updated += 1

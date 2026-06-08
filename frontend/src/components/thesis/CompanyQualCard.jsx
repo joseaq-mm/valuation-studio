@@ -96,7 +96,10 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
 
     const rows = profile?.trend_rows || [];
     const reverse = profile?.reverse;
-    const canMerge = !!(companyId && onMerged && rows.length > 1);
+    // Phase B merge removed: fusionar/partir happen ONLY in the planning phase
+    // (before generating), so the TAM partition stays conserved. Existing merges can
+    // still be reverted via the list below.
+    const canMerge = false;
 
     // Logged in but the company is not part of any saved thesis → CTA to generate.
     if (!rows.length && !reverse && !(thesisMerges || []).length) {

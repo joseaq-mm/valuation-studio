@@ -91,6 +91,10 @@ function startAndPoll(data, onStatus) {
 
 export const thesisGenerate = (type, subject, matchedThesisId = null, overwriteThesisId = null, extra = {}, onStatus = null) =>
     api.post(`/thesis/generate`, { type, subject, matched_thesis_id: matchedThesisId, overwrite_thesis_id: overwriteThesisId, ...extra }).then(r => startAndPoll(r.data, onStatus));
+// Batch develop: fire generations without polling (used by "Generar todas las particiones").
+export const thesisGenerateRaw = (type, subject, extra = {}) =>
+    api.post(`/thesis/generate`, { type, subject, ...extra }).then(r => r.data);
+export const thesisPollJob = (jobId, onStatus = null) => pollThesisJob(jobId, { onStatus });
 export const thesisTamScores = (items) =>
     api.post(`/thesis/tam-scores`, { items }).then(r => startAndPoll(r.data));
 export const thesisDiscover = () =>

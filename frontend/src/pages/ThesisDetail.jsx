@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { thesisGet, thesisGenerateContra, thesisRefreshRun } from "@/lib/api";
+import { thesisGet, thesisGenerateContra, thesisRefreshRun, thesisGenerateRaw, thesisPollJob } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -41,6 +41,26 @@ export default function ThesisDetail() {
 
     const isTendencia = thesis?.type === "tendencia";
 
+    // "Generar todas las particiones": enqueue all splits (1st starts, rest queue),
+    // then open the resulting thesis. Keeps the TAM partition conserved.
+    const developAllPartitions = async ({ splits, core, companyId }) => {
+        if (!splits?.length || !companyId) return;
+        let lastJob = null;
+        for (const sp of splits) {
+            const r = await thesisGenerateRaw("trend", sp.name, { from_company: companyId, core, develop_whole: false, queue: true });
+            if (r?.job_id) lastJob = r.job_id;
+        }
+        if (!lastJob) return;
+        toast.promise(
+            thesisPollJob(lastJob).then((data) => { if (data?.id) navigate(`/thesis/${data.id}`); return data; }),
+            {
+                loading: `Generando ${splits.length} particiones (1ª en marcha, resto en cola)…`,
+                success: "Particiones generadas",
+                error: (e) => e?.response?.data?.detail || "No se pudieron generar las particiones.",
+            }
+        );
+    };
+
     const refresh = async () => {
         const res = await thesisRefreshRun({ thesis_id: id });
         if (res?.thesis) setThesis(res.thesis);
@@ -77,6 +97,7 @@ export default function ThesisDetail() {
                         canGenerateContra={!!user}
                         onGenerateContra={generateContra}
                         generatingContra={generatingContra}
+                        onDevelopAll={developAllPartitions}
                         onThesisUpdate={(d) => setThesis(d)}
                     />
                 )

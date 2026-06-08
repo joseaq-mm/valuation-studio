@@ -458,10 +458,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             # When developing a trend FROM a company core/split, pass the origin
             # company into the investigator prompt so it is included in its own thesis.
             origin_company = None
+            alloc_tam = None        # the partition slice this developed thesis inherits
+            origin_ticker = None    # the origin company's ticker (its score uses alloc_tam)
             if kind == "trend" and from_company and user_id:
                 oc = await db.theses.find_one(
                     {"id": from_company, "user_id": user_id, "type": "company"},
-                    {"_id": 0, "company": 1},
+                    {"_id": 0, "company": 1, "trends": 1},
                 )
                 if oc:
                     c = oc.get("company") or {}
@@ -469,6 +471,25 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     tk = (c.get("ticker") or "").strip()
                     if nm:
                         origin_company = f"{nm} ({tk})" if tk else nm
+                    origin_ticker = (tk or "").upper() or None
+                    # Resolve the inherited TAM slice from the company partition (driver
+                    # is authoritative; split TAMs are normalized to sum to it).
+                    def _nrm(x):
+                        return (x or "").strip().lower()
+                    driver = next((t for t in (oc.get("trends") or []) if _nrm(t.get("name")) == _nrm(core)), None)
+                    if driver is not None:
+                        dtam = driver.get("tam_busd")
+                        if develop_whole or not (driver.get("splits") or []):
+                            alloc_tam = dtam
+                        else:
+                            splits = driver.get("splits") or []
+                            ssum = sum((s.get("tam_busd") or 0) for s in splits)
+                            sp = next((s for s in splits if _nrm(s.get("name")) == _nrm(subject)), None)
+                            sp_tam = (sp or {}).get("tam_busd")
+                            if sp_tam is not None and dtam and ssum:
+                                alloc_tam = round(float(sp_tam) * float(dtam) / float(ssum), 1)
+                            else:
+                                alloc_tam = sp_tam
 
             # Option A — regeneration-aware reconciliation: when rewriting a company
             # thesis (or updating a matched one), feed the company's already-saved trend
@@ -498,6 +519,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             thesis = await asyncio.to_thread(_generate_sync, kind, subject, origin_company, existing_theses)
             _cost = thesis.pop("_cost", None)
             await _record_usage(_cost)
+            # Anchor the developed thesis to the company partition slice (Option A):
+            # the origin company's TAM Score will use this, not the re-estimated chain.
+            if kind == "trend" and origin_ticker:
+                thesis["origin_ticker"] = origin_ticker
+                if alloc_tam is not None:
+                    thesis["allocated_tam_busd"] = alloc_tam
 
             # Anti-duplication: when generating "de todas formas" from a card that
             # matched an existing thesis, drop companies already present in that thesis
@@ -1254,6 +1281,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     doc["companies"] = fresh["companies"]
             except Exception as e:
                 logger.warning(f"tam backfill on read failed ({thesis_id}): {e}")
+        # Planning phase: a company's drivers can be merged/split ONLY before any of
+        # its theses are generated. Locked once a develop is launched (in-flight job)
+        # or any developed thesis exists; reopens when all are deleted.
+        if doc.get("type") == "company":
+            locked = bool(doc.get("split_dev"))
+            if not locked:
+                inflight = await db.thesis_jobs.find_one({
+                    "user_id": user["user_id"], "kind": "generate",
+                    "status": {"$in": ["processing", "queued"]},
+                    "params.from_company": thesis_id,
+                })
+                locked = bool(inflight)
+            doc["planning_locked"] = locked
         return doc
 
     @router.put("/{thesis_id}/folder")

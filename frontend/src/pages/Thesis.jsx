@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Undo2, Redo2, RefreshCw, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
+    thesisGenerate, thesisGenerateRaw, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
     thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisDashboard,
     thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet,
@@ -209,6 +209,34 @@ export default function Thesis() {
         const recordSplit = (companyId && core) ? { companyId, core, split: whole ? null : name, whole: !!whole } : null;
         setMode("company");
         generate("trend", name, null, { force: true, recordSplit });
+    };
+
+    // "Generar todas las particiones": enqueue ALL splits of a driver (1st starts, rest
+    // queue) — keeps the TAM partition conserved (splits sum to the driver).
+    const developAllPartitions = async ({ splits, core, companyId }) => {
+        if (!splits?.length || !companyId) return;
+        setLoading(true);
+        setResult(null);
+        setGenStatus("processing");
+        try {
+            let lastJob = null;
+            for (const sp of splits) {
+                const r = await thesisGenerateRaw("trend", sp.name, { from_company: companyId, core, develop_whole: false, queue: true });
+                if (r?.job_id) lastJob = r.job_id;
+            }
+            toast.info(`Generando ${splits.length} particiones: la 1ª en marcha, el resto en cola.`);
+            if (lastJob) {
+                const data = await thesisPollJob(lastJob, setGenStatus);
+                setResult(data);
+            }
+            setGenCount((n) => n + 1);
+            reload();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudieron generar las particiones.");
+        } finally {
+            setLoading(false);
+            setGenStatus(null);
+        }
     };
 
     // From an informational trend: generate the Empresa→Tesis of a mentioned company.
@@ -637,6 +665,7 @@ export default function Thesis() {
                                 generatingContra={generatingContra}
                                 onMutated={reload}
                                 onDevelop={developThesis}
+                                onDevelopAll={developAllPartitions}
                                 onThesisUpdate={(d) => setResult(d)}
                             />
                         )

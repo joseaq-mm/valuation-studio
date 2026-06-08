@@ -278,3 +278,27 @@ Objetivo: nunca dos generaciones de tesis en paralelo (coherencia de TAM + contr
 
 ## PENDIENTE DE DECISIÓN DEL USUARIO (no construir hasta su OK)
 - **Fusión determinista (P1):** el desplegable de fusión ofrece un mismo tema en dos grupos ("suma TAM" = propuesta hermana vs "no suma" = tesis guardada que ya lo cubre). Si un nombre cae en AMBOS grupos, hoy gana "suma" (`isCovered=false` en ThesisResult.jsx ~L535) aunque se elija "no suma" → la etiqueta contradice la acción. Raíz: exclusividad mutua garantizada SOLO dentro de una generación, no en la costura nueva↔guardada. Fix propuesto (a decidir): deduplicar para que un tema esté en un solo grupo, o auto-decidir sumar/cubierta con `detect_parent_thesis`. El usuario dijo que responderá qué hacer.
+
+## CHANGELOG — Opción A: Partición autoridad + planificación/bloqueo (8 jun 2026)
+Objetivo: TAM mutuamente excluyentes y conservados en CUALQUIER estado (sin generar / generadas / mixto); fusión suma, partición reparte; coherencia de tam_score en todas las páginas.
+
+### Motor de conservación (backend)
+- Tesis desarrollada lleva `origin_ticker` + `allocated_tam_busd` (el trozo heredado de la partición de la empresa). Se calcula al desarrollar en `_run_generate_job` (driver entero → `driver.tam_busd`; split → `split.tam_busd` NORMALIZADO para que los splits sumen al driver; el driver manda).
+- `recompute_and_store_tam` (thesis_refresh.py): para la empresa de ORIGEN usa `allocated_tam_busd`; el resto de empresas usan el TAM del eslabón. Score-TAM congelado y coherente.
+- `backfill_allocated_tam.py`: ancla tesis ya guardadas desde `split_dev` (idempotente). Ejecutado.
+
+### Fase de planificación + bloqueo
+- `get_thesis` devuelve `planning_locked` para fichas de empresa: locked si hay `split_dev` o un job de generación en vuelo (`params.from_company`). Reabre al borrar todas las tesis / reescribir desde 0.
+- Frontend (ThesisResult): aviso `planning-notice` encima de los drivers; al bloquearse, `planning-locked-notice`. Bloqueado → se ocultan fusión y "generar todas las particiones" (solo queda "Generar conjunto").
+
+### Fusión/partición solo en planificación
+- Fusión restringida a drivers hermanos (siempre SUMA); eliminado el grupo "ya cubierta (no suma)" y con él el bug de etiqueta/acción.
+- "Partir" = dos opciones: "Generar tesis (conjunto)" o "Generar todas las particiones" (lote: 1ª arranca, resto en cola vía `thesisGenerateRaw` + `queue:true`). Implementado en Thesis.jsx (`developAllPartitions`) y ThesisDetail.jsx (toast.promise + navigate).
+- Quitada la fusión POST-generación (Fase B) de CompanyQualCard (`canMerge=false`); se mantiene revertir merges existentes.
+
+### Tests
+- `tests/test_tam_freeze.py`: +test origin usa trozo (0.64) vs otra empresa usa eslabón (3.2). Suite: 63 passed.
+- Verificado en UI (sin gastar LLM, caché de matcher precargada): aviso de planificación, splits con leyenda del TAM del conjunto, botones conjunto/particiones/fusionar.
+
+### Decisiones del usuario (cerradas)
+1a lock al lanzar 1ª gen, reabre al borrar/reescribir · 2a fusión solo hermanos (quitar cubierta) · 3a particiones encolan todas · 4a quitar Fase B · 5a el driver manda (normalizar splits).
