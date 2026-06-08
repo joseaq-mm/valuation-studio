@@ -141,7 +141,9 @@ export const thesisRadarStatus = () => api.get(`/thesis/radar/status`).then(r =>
 export const thesisRadarSubscribe = (enabled) =>
     api.post(`/thesis/radar/subscribe`, { enabled }).then(r => r.data);
 
-// Weekly thesis refresh + news watch (email)
+// Weekly thesis refresh (data + TAM). Manual run shares the same logic.
 export const thesisRefreshStatus = () => api.get(`/thesis/refresh/status`).then(r => r.data);
 export const thesisRefreshSubscribe = (enabled) =>
     api.post(`/thesis/refresh/subscribe`, { enabled }).then(r => r.data);
+export const thesisRefreshRun = ({ thesis_id = null, ticker = null } = {}) =>
+    api.post(`/thesis/refresh/run`, { thesis_id, ticker }).then(r => r.data);

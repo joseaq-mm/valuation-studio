@@ -229,6 +229,8 @@ const ratioHealth = (key, v) => {
 export default function Company() {
     const { ticker } = useParams();
     const [data, setData] = useState(null);
+    const { user } = useAuth();
+    const [qualRefreshKey, setQualRefreshKey] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
@@ -366,6 +368,11 @@ export default function Company() {
             saveToWatchlist(ticker, null); // resets entry to mode=auto, no overrides
         }
         await load(true, true); // refresh from Yahoo + ignore overrides
+        // Refresh also recomputes the frozen TAM Scores across the company's theses so
+        // the fresh fundamentals travel both ways (company ↔ theses).
+        if (user) {
+            try { await thesisRefreshRun({ ticker }); setQualRefreshKey((k) => k + 1); } catch { /* ignore */ }
+        }
         setRefreshing(false);
         setConfirmRefresh(false);
         toast.success("Datos restaurados desde Yahoo");
@@ -809,7 +816,7 @@ export default function Company() {
             </div>
 
             {/* Qualitative thesis bridge (Thesis Engine ↔ quant dashboard) */}
-            <CompanyQualCard ticker={data.ticker} />
+            <CompanyQualCard ticker={data.ticker} refreshKey={qualRefreshKey} />
 
             {/* Hero KPIs - Ratio Compra & Venta */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-black mb-6" data-testid="hero-kpis">

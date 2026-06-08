@@ -7,13 +7,14 @@ import {
     thesisGenerate, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
     thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisDashboard,
-    thesisRefreshStatus, thesisRefreshSubscribe, thesisRestore, thesisGet,
+    thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
 import ThesisSidebar from "@/components/thesis/ThesisSidebar";
 import ThesisExplore from "@/components/thesis/ThesisExplore";
 import ModelPicker from "@/components/thesis/ModelPicker";
+import RefreshButton from "@/components/RefreshButton";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 
 const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
@@ -40,6 +41,7 @@ export default function Thesis() {
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
+    const [companyToDelete, setCompanyToDelete] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
 
     const folders = dash?.folders || [];
@@ -75,8 +77,11 @@ export default function Thesis() {
     const manualRefresh = async () => {
         setRefreshing(true);
         try {
+            await thesisRefreshRun();          // refresh ALL the user's data (fundamentals + TAM)
             await reload();
             toast.success("Datos actualizados");
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo refrescar.");
         } finally {
             setRefreshing(false);
         }
@@ -351,9 +356,24 @@ export default function Thesis() {
     const removeThesis = async (id) => {
         try {
             const doc = await thesisGet(id);
+            // Deleting a COMPANY = start from 0 → confirm first (cascades its developed
+            // theses; not undoable). Trends/tendencias keep the undoable quick-delete.
+            if (doc?.type === "company") { setCompanyToDelete(doc); return; }
             await thesisDelete(id);
-            toast.success(doc?.type === "company" ? "Empresa eliminada" : doc?.type === "tendencia" ? "Tendencia eliminada" : "Tesis eliminada");
+            toast.success(doc?.type === "tendencia" ? "Tendencia eliminada" : "Tesis eliminada");
             pushAction({ type: "delete_thesis", doc });
+            reload();
+        } catch { toast.error("No se pudo eliminar"); }
+    };
+
+    const confirmDeleteCompany = async () => {
+        const doc = companyToDelete;
+        setCompanyToDelete(null);
+        if (!doc) return;
+        try {
+            await thesisDelete(doc.id);   // backend cascades the developed trend theses
+            toast.success("Empresa y sus tesis generadas eliminadas");
+            if (result?.id === doc.id) setResult(null);
             reload();
         } catch { toast.error("No se pudo eliminar"); }
     };
@@ -387,7 +407,7 @@ export default function Thesis() {
                                         className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                     <Redo2 size={16} />
                                 </button>
-                                <button onClick={manualRefresh} disabled={refreshing} title="Actualizar datos" data-testid="refresh-data-btn"
+                                <button onClick={manualRefresh} disabled={refreshing} title="Refrescar: actualiza precios, fundamentales y TAM de todas tus empresas y tesis al instante (los datos viajan entre empresa y tesis)." data-testid="refresh-data-btn"
                                         className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                     <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
                                 </button>
@@ -496,7 +516,7 @@ export default function Thesis() {
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
                                 Ya tienes esta {pendingDup.type === "trend" ? "tesis" : "empresa"} guardada:{" "}
                                 <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá</strong> el resultado actual.
+                                El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá desde cero</strong> el resultado actual {pendingDup.type === "trend" ? "" : <>y se <strong>borrarán las tesis generadas previamente a partir de esta empresa</strong></>}.
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                                 <button
@@ -639,6 +659,30 @@ export default function Thesis() {
                             </button>
                         </div>
                         <p className="text-[11px] text-[#4A4A4A] mt-3">Podrás revertirlo con el botón <strong>Deshacer</strong> de arriba.</p>
+                    </div>
+                </div>
+            )}
+            {/* Delete company (start from 0) confirm modal */}
+            {companyToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="delete-company-modal" onClick={() => setCompanyToDelete(null)}>
+                    <div className="bg-white border border-black max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
+                        <div className="font-serif text-xl font-medium mb-1">Eliminar «{companyToDelete.title || companyToDelete.company?.ticker}»</div>
+                        <p className="text-sm text-[#4A4A4A] mb-2">
+                            Esto borra la empresa <strong>y todas las tesis de tendencia que generaste a partir de ella</strong> (se parte de cero).
+                        </p>
+                        <p className="text-sm text-[#4A4A4A] mb-4">
+                            En las empresas que compartían esas tesis, su <strong>TAM Score</strong> de esas líneas desaparecerá y el tema volverá a aparecer como <strong>pendiente de generar</strong>. Para volver a tener esta empresa tendrás que <strong>buscarla y generar las tesis de nuevo</strong>. No se puede deshacer.
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <button onClick={confirmDeleteCompany} data-testid="delete-company-confirm"
+                                    className="text-sm uppercase tracking-[0.1em] font-semibold bg-[#B32A22] text-white px-3 py-2 hover:bg-[#8f211b] transition-colors">
+                                Eliminar y partir de 0
+                            </button>
+                            <button onClick={() => setCompanyToDelete(null)} data-testid="delete-company-cancel"
+                                    className="text-xs text-[#4A4A4A] hover:underline">
+                                Cancelar
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

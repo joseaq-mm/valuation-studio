@@ -230,3 +230,29 @@
 - Frontend ThesisResult.jsx + TendenciaResult.jsx: helper catBadge() (Lider azul / Competidor gris / Disruptor rojo); agrupacion izquierda=leader, derecha=no-leader (competitor+disruptor); cabeceras y textos vacios actualizados.
 - Opcion (a): tesis EXISTENTES conservan su category actual (sus no-lideres siguen como "disruptor" hasta regenerar). El matiz competidor/disruptor aplica a generaciones nuevas.
 - Nota toolchain: la regla eslint react-hooks/set-state-in-effect NO existe en CRA/react-scripts; NO usar comentarios disable de esa regla (rompen la compilacion). Los efectos de fetch en ThesisResult.jsx se refactorizaron a IIFE async para evitar setState sincrono en el cuerpo del efecto.
+
+## CHANGELOG — Refresco unificado + TAM congelado + cascada (8 jun 2026)
+Objetivo del usuario: simplificar código, evitar bugs, llevar al refresco sin llamadas LLM recurrentes y mantener coherencia de TAM dentro de fichas y entre fichas↔tesis.
+
+### TAM Score CONGELADO (fin de los saltos 53→56)
+- `thesis_refresh.recompute_and_store_tam(db, uid, thesis_ids=None)`: calcula y PERSISTE `companies[].tam_score` y `companies[].projected_revenue_busd` (USD B) en cada tesis de tendencia. Matemática pura sobre la caché `db.fundamentals` (sin LLM, sin yfinance).
+- Lecturas leen el valor almacenado (fallback a cálculo desde caché si falta): dashboard, `company/{ticker}/profile`, y `GET /thesis/{id}` (backfill en lectura para tesis antiguas).
+- `ThesisResult.jsx` ya NO llama a `/thesis/tam-scores` en vivo: lee `c.tam_score` del doc → estable y coherente con la ficha de empresa. (endpoint tam-scores se mantiene pero sin uso en frontend).
+- Se recalcula+persiste tras: generar tendencia, add-company, merge/unmerge/merge-thesis/unmerge-thesis, y refresco.
+
+### Refresco unificado (manual + semanal), SIN noticias/email/LLM
+- `thesis_refresh.refresh_user_data(db, uid, tickers)`: re-fetch fundamentales de los tickers + recompute_and_store_tam(all) + stamp `users.thesis_refresh.last_refresh_at`. Lógica compartida por manual y semanal.
+- `run_thesis_refresh` reescrito: por usuario suscrito, corre solo si han pasado ≥7 días desde `last_refresh_at` (manual o semanal). Eliminada toda la vigilancia de noticias, "profundizar" (LLM) y email de noticias.
+- Nuevo `POST /api/thesis/refresh/run` body `{thesis_id?, ticker?}` (auth): scope tesis (todas sus empresas), empresa (esa empresa en todas sus tesis) o todo. Devuelve la tesis refrescada si es trend.
+- `GET /api/thesis/refresh/status` devuelve también `last_refresh_at`.
+- Frontend: `RefreshButton.jsx` compartido (icono + tooltip `REFRESH_LEGEND`). Botón en ThesisDetail (`thesis-detail-refresh`), botón "Refrescar datos" del dashboard (`refresh-data-btn`→`thesisRefreshRun()`), y la ficha de empresa (`doRefresh` también llama `thesisRefreshRun({ticker})` + bump `qualRefreshKey`). Leyenda semanal del sidebar reescrita (sin noticias).
+
+### Borrado/Reescritura = partir de 0 (cascada, opción a)
+- `DELETE /api/thesis/{id}`: si type=="company", borra también las tesis de tendencia desarrolladas a partir de ella (`split_dev[].developed_id`), enteras. Devuelve `deleted_ids`.
+- Reescritura de empresa en `_run_generate_job` (overwrite): borra las developed previas, limpia `split_dev` y `link_matches`.
+- Propagación a otras empresas (p.ej. MSFT/AMD): su línea de TAM desaparece (perfil lee pertenencia viva → baja la Suma TAM) y el tema vuelve a "pendiente de generar".
+- Frontend: modal de confirmación `delete-company-modal` (sin deshacer, opción 2a) en Thesis.jsx; aviso de reescritura ampliado ("…y borrará las tesis generadas previamente a partir de esta empresa").
+
+### Tests
+- `tests/test_tam_freeze.py` (2 tests, congelado + revenue ausente). Suite: 61 passed (excluye `test_portfolio_alerts.py` que requiere servidor live).
+- Verificado e2e por curl: refresh/run (all + ticker), profile con TAM congelado, cascada de borrado, job semanal admin.

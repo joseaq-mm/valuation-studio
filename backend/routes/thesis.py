@@ -24,6 +24,7 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync
+from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
 
 logger = logging.getLogger(__name__)
@@ -225,6 +226,10 @@ class EvaluateCompanyRequest(BaseModel):
 
 class RadarSubscribeRequest(BaseModel):
     enabled: bool
+
+class RefreshRunRequest(BaseModel):
+    thesis_id: Optional[str] = None   # refresh this thesis (trend) or company thesis
+    ticker: Optional[str] = None      # refresh this company across all its theses
 
 class TamScoreItem(BaseModel):
     ticker: str
@@ -554,6 +559,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                                       "updated_at": datetime.now(timezone.utc).isoformat()}},
                         )
                         return
+                    # Rewrite a COMPANY thesis = "start from 0": delete every trend
+                    # thesis previously developed FROM it and clear its split_dev +
+                    # stale link cache, so the new generation starts clean.
+                    if existing.get("type") == "company":
+                        old_dev = [e.get("developed_id") for e in (existing.get("split_dev") or []) if e.get("developed_id")]
+                        if old_dev:
+                            await db.theses.delete_many({"id": {"$in": old_dev}, "user_id": user_id})
+                        thesis["split_dev"] = []
+                        thesis["link_matches"] = None
                     await db.theses.update_one(
                         {"id": tid, "user_id": user_id},
                         {"$set": {**thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -583,6 +597,16 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 # thesis so its suggestions page shows the note + remaining split cards.
                 if kind == "trend" and from_company and core:
                     await _record_split_dev(from_company, core, subject, tid, develop_whole)
+                # Freeze the TAM Score: compute + store it now (from the cache) so it is
+                # stable on every render and coherent with the company files.
+                if kind == "trend":
+                    try:
+                        await recompute_and_store_tam(db, user_id, [tid])
+                        fresh = await db.theses.find_one({"id": tid, "user_id": user_id}, {"_id": 0, "companies": 1})
+                        if fresh and fresh.get("companies") is not None:
+                            thesis["companies"] = fresh["companies"]
+                    except Exception as e:
+                        logger.warning(f"tam freeze after generate failed ({tid}): {e}")
             else:
                 thesis["id"] = None
             await db.thesis_jobs.update_one(
@@ -678,7 +702,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             companies = [c for c in companies if (c.get("ticker") or "").upper() != tk]  # de-dupe
             companies.append(entry)
             await db.theses.update_one({"id": thesis_id, "user_id": user_id}, {"$set": {"companies": companies}})
-            # Index by ticker for the qualitative bridge.
+            await recompute_and_store_tam(db, user_id, [thesis_id])
             await db.qual_snapshots.update_one(
                 {"user_id": user_id, "ticker": tk},
                 {"$set": {
@@ -995,12 +1019,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             overall = comp.get("overall_score")
             role = comp.get("value_chain_role")
             stage_tam = effective_stage_tam(comp, t.get("value_chain"), (t.get("tam") or {}).get("global_busd"))
+            stored = comp.get("tam_score")
             rows.append({
                 "thesis_id": t.get("id"),
                 "thesis_title": t.get("title"),
                 "overall_score": overall,
                 "value_chain_role": role,
-                "tam_score": compute_tam_score(overall, stage_tam, rev_busd),
+                "tam_score": stored if stored is not None else compute_tam_score(overall, stage_tam, rev_busd),
             })
         rows.sort(key=lambda r: (r["overall_score"] is None, -(r["overall_score"] or 0)))
 
@@ -1090,7 +1115,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             for c in (t.get("companies") or []):
                 tk = (c.get("ticker") or "").upper().strip()
                 overall = c.get("overall_score")
-                tam_score = compute_tam_score(overall, effective_stage_tam(c, vc, gtam), rev_map.get(tk))
+                tam_score = c.get("tam_score") if c.get("tam_score") is not None else compute_tam_score(overall, effective_stage_tam(c, vc, gtam), rev_map.get(tk))
                 clist.append({
                     "ticker": tk or None, "name": c.get("name"), "overall_score": overall,
                     "value_chain_role": c.get("value_chain_role"),
@@ -1192,6 +1217,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         {"id": thesis_id, "user_id": user["user_id"]},
                         {"$set": {"split_dev": pruned}},
                     )
+        # Backfill the frozen TAM Score for older trend theses generated before it was
+        # stored, so they show values without needing a manual refresh (cache-only).
+        if doc.get("type") == "trend" and any(
+            c.get("tam_score") is None for c in (doc.get("companies") or []) if c.get("ticker")
+        ):
+            try:
+                await recompute_and_store_tam(db, user["user_id"], [thesis_id])
+                fresh = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0, "companies": 1})
+                if fresh and fresh.get("companies") is not None:
+                    doc["companies"] = fresh["companies"]
+            except Exception as e:
+                logger.warning(f"tam backfill on read failed ({thesis_id}): {e}")
         return doc
 
     @router.put("/{thesis_id}/folder")
@@ -1323,6 +1360,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 else:
                     t.pop("covered", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/unmerge")
@@ -1357,6 +1395,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 t.pop("merged_removed", None)
                 t.pop("covered", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/merge-thesis")
@@ -1412,6 +1451,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "absorbed_tam_busd": absorbed,
         })
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
+        await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/unmerge-thesis")
@@ -1454,6 +1494,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 await db.theses.update_one({"id": target_id, "user_id": uid}, {"$set": {"companies": tcomps}})
         merges = [x for x in merges if x.get("source_thesis_id") != req.source_thesis_id]
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
+        await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/link-suggestions")
@@ -1573,7 +1614,55 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     @router.get("/refresh/status")
     async def refresh_status(user: Dict[str, Any] = Depends(auth_required)):
         u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "thesis_refresh": 1})
-        return {"enabled": bool(((u or {}).get("thesis_refresh") or {}).get("enabled"))}
+        tr = (u or {}).get("thesis_refresh") or {}
+        return {"enabled": bool(tr.get("enabled")), "last_refresh_at": tr.get("last_refresh_at")}
+
+    @router.post("/refresh/run")
+    async def refresh_run(req: RefreshRunRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Manual data refresh (no LLM): re-fetch fundamentals for the scoped tickers
+        and recompute the frozen TAM Scores across all the user's trend theses, so the
+        fresh data flows both ways (company ↔ theses). Scope:
+        - thesis_id (trend): refresh all its companies + the whole thesis.
+        - thesis_id (company) or ticker: refresh that company across every thesis it
+          belongs to (each link and company).
+        - neither: refresh everything the user has."""
+        uid = user["user_id"]
+        tickers: set = set()
+        primary = None  # a trend thesis id to return refreshed
+        if req.thesis_id:
+            doc = await db.theses.find_one({"id": req.thesis_id, "user_id": uid}, {"_id": 0, "type": 1, "companies": 1, "company": 1})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Tesis no encontrada")
+            if doc.get("type") == "trend":
+                primary = req.thesis_id
+                tickers = {(c.get("ticker") or "").upper().strip() for c in (doc.get("companies") or []) if c.get("ticker")}
+            else:
+                tk = ((doc.get("company") or {}).get("ticker") or "").upper().strip()
+                if tk:
+                    req.ticker = tk
+        if req.ticker:
+            tk = req.ticker.upper().strip()
+            related = await db.theses.find(
+                {"user_id": uid, "type": "trend", "companies.ticker": tk}, {"_id": 0, "companies": 1}
+            ).to_list(length=500)
+            tickers.add(tk)
+            for d in related:
+                for c in (d.get("companies") or []):
+                    t = (c.get("ticker") or "").upper().strip()
+                    if t:
+                        tickers.add(t)
+        if not req.thesis_id and not req.ticker:
+            allt = await db.theses.find({"user_id": uid, "type": "trend"}, {"_id": 0, "companies": 1}).to_list(length=2000)
+            for d in allt:
+                for c in (d.get("companies") or []):
+                    t = (c.get("ticker") or "").upper().strip()
+                    if t:
+                        tickers.add(t)
+        res = await refresh_user_data(db, uid, tickers)
+        out = {"ok": True, "tickers_refreshed": res["tickers_refreshed"], "last_refresh_at": res["last_refresh_at"]}
+        if primary:
+            out["thesis"] = await db.theses.find_one({"id": primary, "user_id": uid}, {"_id": 0})
+        return out
 
     @router.post("/refresh/subscribe")
     async def refresh_subscribe(req: RadarSubscribeRequest, user: Dict[str, Any] = Depends(auth_required)):
@@ -1605,10 +1694,22 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.delete("/{thesis_id}")
     async def delete_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
-        res = await db.theses.delete_one({"id": thesis_id, "user_id": user["user_id"]})
-        if res.deleted_count == 0:
+        uid = user["user_id"]
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
+        if not doc:
             raise HTTPException(status_code=404, detail="Tesis no encontrada")
-        return {"ok": True}
+        deleted_ids = [thesis_id]
+        # Deleting a COMPANY thesis = "start from 0": also delete every trend thesis
+        # that was developed FROM this company (its split_dev → developed_id). Other
+        # companies in those theses lose that line (their sum TAM drops accordingly)
+        # and the theme reverts to "pendiente de generar" in their files.
+        if doc.get("type") == "company":
+            dev_ids = [e.get("developed_id") for e in (doc.get("split_dev") or []) if e.get("developed_id")]
+            if dev_ids:
+                await db.theses.delete_many({"id": {"$in": dev_ids}, "user_id": uid})
+                deleted_ids += dev_ids
+        await db.theses.delete_one({"id": thesis_id, "user_id": uid})
+        return {"ok": True, "deleted_ids": deleted_ids}
 
     return router
 

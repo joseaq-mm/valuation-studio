@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { thesisGet, thesisGenerateContra } from "@/lib/api";
+import { thesisGet, thesisGenerateContra, thesisRefreshRun } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
+import RefreshButton from "@/components/RefreshButton";
 
 export default function ThesisDetail() {
     const { id } = useParams();
@@ -40,11 +41,20 @@ export default function ThesisDetail() {
 
     const isTendencia = thesis?.type === "tendencia";
 
+    const refresh = async () => {
+        const res = await thesisRefreshRun({ thesis_id: id });
+        if (res?.thesis) setThesis(res.thesis);
+        else { const d = await thesisGet(id); setThesis(d); }
+    };
+
     return (
         <div data-testid="thesis-detail-page">
-            <Link to="/thesis" className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline mb-4" data-testid="back-to-thesis">
-                <ArrowLeft size={14} /> Volver a Tesis
-            </Link>
+            <div className="flex items-center justify-between gap-3 mb-4">
+                <Link to="/thesis" className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline" data-testid="back-to-thesis">
+                    <ArrowLeft size={14} /> Volver a Tesis
+                </Link>
+                {user && thesis && !isTendencia && <RefreshButton onRefresh={refresh} testid="thesis-detail-refresh" />}
+            </div>
             {loading && (
                 <div className="flex items-center gap-2 text-[#4A4A4A] py-10" data-testid="thesis-detail-loading">
                     <Loader2 size={16} className="animate-spin" /> Cargando tesis…

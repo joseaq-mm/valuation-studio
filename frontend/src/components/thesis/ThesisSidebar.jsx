@@ -229,12 +229,12 @@ export default function ThesisSidebar({
                 </div>
             </div>
 
-            {/* Weekly thesis refresh + news watch */}
+            {/* Weekly data refresh (same logic & effect as the manual Refresh button) */}
             <div className="mt-4 pt-4 border-t border-black/10" data-testid="refresh-toggle-wrap">
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><RefreshCw size={12} /> Refresco semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza precios y TAM de tus tesis cada semana y, si hay una noticia importante, profundiza, refresca las tesis y empresas implicadas y te avisa por email.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza automáticamente precios, fundamentales y TAM de tus empresas y tesis una vez por semana, contando desde tu último refresco (manual o semanal). Mismo efecto que el botón de refrescar.</p>
                     </div>
                     <button
                         onClick={onToggleRefresh}
