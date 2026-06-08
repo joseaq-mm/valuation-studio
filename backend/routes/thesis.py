@@ -261,6 +261,15 @@ class UnmergeThesisRequest(BaseModel):
     source: str
 
 
+class MergeThesisByIdRequest(BaseModel):
+    source_thesis_id: str
+    target_thesis_id: str
+
+
+class UnmergeThesisByIdRequest(BaseModel):
+    source_thesis_id: str
+
+
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
     router = APIRouter(prefix="/thesis")
 
@@ -1304,6 +1313,71 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 t.pop("merged_into", None)
                 t.pop("merged_removed", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
+
+    @router.post("/{thesis_id}/merge-thesis")
+    async def merge_thesis_by_id(thesis_id: str, req: MergeThesisByIdRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Fase B (control manual): fold an already-developed trend thesis (source)
+        into another developed thesis (target) for THIS company. Removes the company
+        from the source thesis (it stays a member of the target) and records the
+        removal on the company doc (`thesis_merges`) so /unmerge-thesis can restore it.
+        Targets are always theses the company already belongs to, so it is never
+        orphaned. Returns the updated company thesis document."""
+        uid = user["user_id"]
+        if req.source_thesis_id == req.target_thesis_id:
+            raise HTTPException(status_code=400, detail="Una tesis no puede fusionarse consigo misma")
+        co = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not co:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        ticker = ((co.get("company") or {}).get("ticker") or "").upper().strip()
+        if not ticker:
+            raise HTTPException(status_code=400, detail="La empresa no tiene ticker")
+        src = await db.theses.find_one({"id": req.source_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1, "companies": 1})
+        tgt = await db.theses.find_one({"id": req.target_thesis_id, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "title": 1})
+        if not src or not tgt:
+            raise HTTPException(status_code=404, detail="No se encontró la tesis origen o destino")
+        merges = co.get("thesis_merges") or []
+        if any(m.get("source_thesis_id") == req.source_thesis_id for m in merges):
+            raise HTTPException(status_code=400, detail="Esa tesis ya está fusionada")
+        kept, removed = [], None
+        for c in (src.get("companies") or []):
+            if (c.get("ticker") or "").upper().strip() == ticker:
+                removed = c
+            else:
+                kept.append(c)
+        if removed is None:
+            raise HTTPException(status_code=400, detail="La empresa no está en la tesis origen")
+        await db.theses.update_one({"id": req.source_thesis_id, "user_id": uid}, {"$set": {"companies": kept}})
+        merges.append({
+            "source_thesis_id": src["id"], "source_title": src.get("title"),
+            "target_thesis_id": tgt["id"], "target_title": tgt.get("title"),
+            "removed_entry": removed,
+        })
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
+        return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
+
+    @router.post("/{thesis_id}/unmerge-thesis")
+    async def unmerge_thesis_by_id(thesis_id: str, req: UnmergeThesisByIdRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Revert a Fase B merge: re-insert the company into the source trend thesis
+        and drop the `thesis_merges` marker. Returns the updated company doc."""
+        uid = user["user_id"]
+        co = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not co:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        merges = co.get("thesis_merges") or []
+        m = next((x for x in merges if x.get("source_thesis_id") == req.source_thesis_id), None)
+        if not m:
+            raise HTTPException(status_code=404, detail="Fusión no encontrada")
+        entry = m.get("removed_entry")
+        if entry:
+            sdoc = await db.theses.find_one({"id": req.source_thesis_id, "user_id": uid}, {"_id": 0, "id": 1, "companies": 1})
+            if sdoc:
+                tk = (entry.get("ticker") or "").upper().strip()
+                comps = [c for c in (sdoc.get("companies") or []) if (c.get("ticker") or "").upper().strip() != tk]
+                comps.append(entry)
+                await db.theses.update_one({"id": req.source_thesis_id, "user_id": uid}, {"$set": {"companies": comps}})
+        merges = [x for x in merges if x.get("source_thesis_id") != req.source_thesis_id]
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/link-suggestions")

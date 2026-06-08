@@ -113,6 +113,10 @@ export const thesisMerge = (id, source, target) =>
     api.post(`/thesis/${id}/merge`, { source, target }).then(r => r.data);
 export const thesisUnmerge = (id, source) =>
     api.post(`/thesis/${id}/unmerge`, { source }).then(r => r.data);
+export const thesisMergeThesis = (id, source_thesis_id, target_thesis_id) =>
+    api.post(`/thesis/${id}/merge-thesis`, { source_thesis_id, target_thesis_id }).then(r => r.data);
+export const thesisUnmergeThesis = (id, source_thesis_id) =>
+    api.post(`/thesis/${id}/unmerge-thesis`, { source_thesis_id }).then(r => r.data);
 export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
 export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
 export const thesisDeleteFolder = (id, mode = "ungroup") =>

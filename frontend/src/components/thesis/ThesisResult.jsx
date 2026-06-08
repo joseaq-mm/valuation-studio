@@ -921,7 +921,16 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             ) : (
                 <>
                     {/* 1.1a — existing theses where the company already appears (reused box) */}
-                    {ticker && <CompanyQualCard ticker={ticker} hideEmpty refreshKey={mutateTick} />}
+                    {ticker && (
+                        <CompanyQualCard
+                            ticker={ticker}
+                            hideEmpty
+                            refreshKey={mutateTick}
+                            companyId={thesis.id}
+                            thesisMerges={thesis.thesis_merges || []}
+                            onMerged={(updated) => { onThesisUpdate?.(updated); handleAdded(); }}
+                        />
+                    )}
 
                     {/* 1.1b — existing theses it fits but isn't included in yet → add */}
                     {existingMatches.length > 0 && (
