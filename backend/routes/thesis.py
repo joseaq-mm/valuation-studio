@@ -117,7 +117,7 @@ def _friendly_err(e) -> str:
 
 
 
-def _generate_sync(kind: str, subject: str, origin_company: Optional[str] = None) -> dict:
+def _generate_sync(kind: str, subject: str, origin_company: Optional[str] = None, existing_theses: Optional[list] = None) -> dict:
     """Run the full (blocking) generation pipeline in a worker thread.
 
     emergentintegrations' LLM calls are synchronous and would otherwise block the
@@ -125,7 +125,7 @@ def _generate_sync(kind: str, subject: str, origin_company: Optional[str] = None
     async pipeline inside its own event loop in a thread (via asyncio.to_thread).
     """
     sources = gather_sources(subject, kind)
-    coro = run_trend_thesis(subject, sources, origin_company) if kind == "trend" else run_company_thesis(subject, sources)
+    coro = run_trend_thesis(subject, sources, origin_company) if kind == "trend" else run_company_thesis(subject, sources, existing_theses)
     result, cost = run_costed(coro)
     result["_cost"] = cost
     return result
@@ -463,7 +463,33 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     tk = (c.get("ticker") or "").strip()
                     if nm:
                         origin_company = f"{nm} ({tk})" if tk else nm
-            thesis = await asyncio.to_thread(_generate_sync, kind, subject, origin_company)
+
+            # Option A — regeneration-aware reconciliation: when rewriting a company
+            # thesis (or updating a matched one), feed the company's already-saved trend
+            # theses into Pass 2 so new proposals align with them (same names, no TAM
+            # overlap with what's already developed → avoids cross-generation double counting).
+            existing_theses = None
+            if kind == "company" and user_id:
+                base_id = overwrite_thesis_id or matched_thesis_id
+                tk = None
+                if base_id:
+                    bdoc = await db.theses.find_one({"id": base_id, "user_id": user_id, "type": "company"}, {"_id": 0, "company": 1})
+                    tk = ((bdoc or {}).get("company") or {}).get("ticker")
+                tk = (tk or "").upper().strip()
+                if tk:
+                    saved = await db.theses.find(
+                        {"user_id": user_id, "type": "trend", "companies.ticker": tk},
+                        {"_id": 0, "title": 1, "tam": 1, "companies": 1},
+                    ).to_list(length=50)
+                    ex = []
+                    for s in saved:
+                        role = next((c.get("value_chain_role") for c in (s.get("companies") or [])
+                                     if (c.get("ticker") or "").upper().strip() == tk), None)
+                        ex.append({"title": s.get("title"), "global_busd": (s.get("tam") or {}).get("global_busd"), "role": role})
+                    if ex:
+                        existing_theses = ex
+
+            thesis = await asyncio.to_thread(_generate_sync, kind, subject, origin_company, existing_theses)
             _cost = thesis.pop("_cost", None)
             await _record_usage(_cost)
 

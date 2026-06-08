@@ -850,16 +850,44 @@ async def _map_growth_drivers(company: str, sources_block: str) -> dict:
     return mp
 
 
-async def _reconcile_drivers(company: str, drivers: list, sources_block: str) -> list:
+async def _reconcile_drivers(company: str, drivers: list, sources_block: str, existing_theses: list = None) -> list:
     """Pass 2 (GPT-5.2): merge correlated drivers, drop low conviction, keep TAMs
-    mutually exclusive. Returns the final, non-overlapping high-conviction set."""
+    mutually exclusive. Returns the final, non-overlapping high-conviction set.
+    When `existing_theses` is provided (regeneration of a company that already has
+    saved theses), the proposals are aligned with them: same names, no re-slicing of
+    covered drivers, and only residual non-overlapping TAM for genuinely new ones."""
     drivers_block = "\n".join(
         f"- [{(d.get('type') or '').lower()}] {d.get('name')} (TAM ~${d.get('tam_busd')}B; driver: "
         f"{d.get('demand_driver') or '?'}). {(d.get('conviction_rationale') or '')[:200]}"
         for d in drivers if d.get("name")
     ) or "(ninguno)"
+    existing_block = ""
+    align_rule = ""
+    if existing_theses:
+        lines = []
+        for e in existing_theses:
+            gt = e.get("global_busd")
+            role = e.get("role")
+            lines.append(
+                f"- «{e.get('title')}»"
+                + (f" (mercado global ~${gt}B)" if gt else "")
+                + (f" — {company} participa como: {role}" if role else "")
+            )
+        existing_block = (
+            "TESIS YA DESARROLLADAS Y GUARDADAS PARA ESTA EMPRESA (debes ALINEARTE con ellas, no duplicarlas):\n"
+            + "\n".join(lines) + "\n\n"
+        )
+        align_rule = (
+            " ALINEACIÓN CON TESIS EXISTENTES: para los drivers ya cubiertos por una tesis guardada (ver lista), "
+            "REUTILIZA EXACTAMENTE su mismo nombre y alcance (no los renombres ni los trocees distinto); NUNCA "
+            "saques como tesis aparte un sub-driver que ya esté contenido dentro de una tesis guardada (fúndelo en "
+            "ella); y para los mercados NO cubiertos por ninguna tesis guardada, añade drivers nuevos solo con el "
+            "TAM RESIDUAL que NO solape con las existentes (mutuamente excluyentes también respecto a ellas)."
+        )
     user = (
-        f"EMPRESA: {company}\n\nDRIVERS PRELIMINARES:\n{drivers_block}\n\n"
+        f"EMPRESA: {company}\n\n"
+        f"{existing_block}"
+        f"DRIVERS PRELIMINARES:\n{drivers_block}\n\n"
         f"RESULTADOS DE BÚSQUEDA WEB RECIENTES:\n{sources_block}\n\n"
         "Depura la lista (fusiona correlacionados, descarta baja convicción, garantiza TAMs mutuamente "
         "excluyentes y lo más altos posible, sin que un driver sea sub-conjunto de otro). Devuelve un JSON "
@@ -874,6 +902,7 @@ async def _reconcile_drivers(company: str, drivers: list, sources_block: str) ->
         "tesis (conservando el total) y anota en su 'fit_description' que la internacionalización está en marcha. "
         "'splits' SOLO para cores grandes descomponibles (sus TAM deben sumar ~el "
         "TAM de la tesis); vacío en el resto."
+        + align_rule
     )
     trends = []
     for attempt in range(2):  # retry once on a transient empty result
@@ -918,7 +947,7 @@ def _build_splits(raw_splits, parent_tam):
     return splits
 
 
-async def run_company_thesis(company: str, sources: list) -> dict:
+async def run_company_thesis(company: str, sources: list, existing_theses: list = None) -> dict:
     sources_block = _sources_block(sources)
 
     # Pass 1: map current + future/adjacent growth drivers.
@@ -928,8 +957,9 @@ async def run_company_thesis(company: str, sources: list) -> dict:
         raise ValueError("No se pudieron identificar drivers de crecimiento para esta empresa. Revisa el nombre o ticker.")
     comp = mp.get("company") or {}
 
-    # Pass 2: reconcile into a non-overlapping, high-conviction set.
-    trends = await _reconcile_drivers(comp.get("name") or company, drivers, sources_block)
+    # Pass 2: reconcile into a non-overlapping, high-conviction set (aligned with any
+    # already-saved theses for this company when regenerating).
+    trends = await _reconcile_drivers(comp.get("name") or company, drivers, sources_block, existing_theses)
     if not trends:
         # Fallback: use the mapped drivers directly so the user still gets a result.
         trends = [{
