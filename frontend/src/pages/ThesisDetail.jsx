@@ -67,6 +67,7 @@ export default function ThesisDetail() {
                         canGenerateContra={!!user}
                         onGenerateContra={generateContra}
                         generatingContra={generatingContra}
+                        onThesisUpdate={(d) => setThesis(d)}
                     />
                 )
             )}

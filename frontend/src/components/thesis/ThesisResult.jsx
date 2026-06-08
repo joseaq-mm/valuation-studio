@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch, ChevronDown } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
-import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany } from "@/lib/api";
+import { thesisTamScores, thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany, thesisMerge, thesisUnmerge } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -325,8 +325,12 @@ function DevelopAction({ name, core, whole, companyId, onDevelop, linkTo, testid
 /** Bloque 1.2 — a NEW thesis idea (growth driver). May offer an optional split into
  *  independent sub-parts (whose TAM sum to the core). Once a part (or the whole) is
  *  developed, the card becomes an informational note + the remaining parts as cards. */
-function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
+function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [], absorbed = [], onMerge, ticker, developed = false }) {
     const [showSplits, setShowSplits] = useState(false);
+    const [mergeMode, setMergeMode] = useState("idle");
+    const [mergeTarget, setMergeTarget] = useState("");
+    const absorbedTam = (absorbed || []).reduce((a, s) => a + (s.tam_busd || 0), 0);
+    const displayTam = (t.tam_busd || 0) + absorbedTam;
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
     const slug = `${_norm(t.name).slice(0, 16)}-${idx}`;
     const coreName = t.name || "";
@@ -366,10 +370,16 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
                     {t.type === "actual" ? "Crecimiento actual" : "Apuesta futura"}
                 </span>
             )}
-            {fmtTam(t.tam_busd) && (
+            {fmtTam(displayTam) && (
                 <div className="mt-1.5 inline-flex items-center gap-1 text-xs" data-testid={`new-thesis-tam-${(t.name || "").slice(0, 12)}`}>
                     <span className="overline text-[#4A4A4A]">TAM estimado</span>
-                    <span className="font-mono font-bold text-[#1E7D45]">{fmtTam(t.tam_busd)}</span>
+                    <span className="font-mono font-bold text-[#1E7D45]">{fmtTam(displayTam)}</span>
+                </div>
+            )}
+            {absorbed.length > 0 && (
+                <div className="mt-1 text-[11px] text-[#7a5a10] flex items-start gap-1" data-testid={`absorbed-${slug}`}>
+                    <GitMerge size={11} className="shrink-0 mt-0.5" />
+                    <span>Incluye (fusionadas): {absorbed.map((s) => s.name).join(" · ")}</span>
                 </div>
             )}
 
@@ -488,6 +498,44 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop }) {
                         </DevelopAction>
                     </div>
                 </>
+            )}
+
+            {/* Fusionar (control manual): fold this minor thesis into another. */}
+            {onMerge && mergeTargets.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-black/10" data-testid={`merge-wrap-${slug}`}>
+                    {mergeMode === "idle" && (
+                        <button onClick={() => setMergeMode("pick")} className="text-[11px] uppercase tracking-[0.1em] font-semibold text-[#7a5a10] inline-flex items-center gap-1 hover:underline" data-testid={`merge-open-${slug}`}>
+                            <GitMerge size={12} /> Fusionar en otra tesis
+                        </button>
+                    )}
+                    {mergeMode === "pick" && (
+                        <div className="space-y-2" data-testid={`merge-pick-${slug}`}>
+                            <div className="text-xs font-semibold">Fusionar «{t.name}» en:</div>
+                            <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)} className="w-full border border-black/30 px-2 py-1.5 text-xs outline-none bg-white" data-testid={`merge-target-select-${slug}`}>
+                                <option value="">— Elige tesis destino —</option>
+                                {mergeTargets.map((n) => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                            <div className="flex items-center gap-2">
+                                <button disabled={!mergeTarget} onClick={() => setMergeMode("confirm")} className="text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 disabled:opacity-40" data-testid={`merge-continue-${slug}`}>Continuar</button>
+                                <button onClick={() => { setMergeMode("idle"); setMergeTarget(""); }} className="text-[11px] text-[#4A4A4A] hover:underline">Cancelar</button>
+                            </div>
+                        </div>
+                    )}
+                    {mergeMode === "confirm" && (
+                        <div className="border border-[#B8860B] bg-[#FBF3E0] p-3 space-y-2" data-testid={`merge-confirm-${slug}`}>
+                            <div className="text-xs text-[#7a5a10] leading-relaxed">
+                                «<strong>{t.name}</strong>» se fusionará en «<strong>{mergeTarget}</strong>».
+                                {fmtTam(t.tam_busd) && <> Su TAM ({fmtTam(t.tam_busd)}) se sumará al de la tesis destino.</>}
+                                {developed && <> La empresa {ticker ? <strong>{ticker}</strong> : "de origen"} se quitará de la tesis ya generada de «{t.name}».</>}
+                                {" "}Es reversible.
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => { onMerge(t.name, mergeTarget); setMergeMode("idle"); setMergeTarget(""); }} className="text-[11px] uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-2.5 py-1.5 hover:bg-[#946c09] transition-colors" data-testid={`merge-confirm-btn-${slug}`}>Confirmar fusión</button>
+                                <button onClick={() => setMergeMode("pick")} className="text-[11px] text-[#7a5a10] hover:underline">Atrás</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
@@ -628,7 +676,7 @@ function MatchedThesisRow({ match, company, fit, onAdded }) {
     );
 }
 
-export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop }) {
+export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop, onThesisUpdate }) {
     const [tamScores, setTamScores] = useState(null);
     const [tamLoading, setTamLoading] = useState(false);
     const [linkData, setLinkData] = useState(null);
@@ -703,6 +751,38 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     // pending split cards vanish.
     const splitDevCores = useMemo(() => new Set(Object.keys(splitDev)), [splitDev]);
 
+    // Manual merge state (Fase A/B): proposals folded into another (reversible).
+    const mergedTrends = useMemo(() => (thesis?.trends || []).filter((t) => t.merged_into), [thesis?.trends]);
+    const mergedNames = useMemo(() => new Set(mergedTrends.map((t) => _norm(t.name))), [mergedTrends]);
+    const absorbedByTarget = useMemo(() => {
+        const m = {};
+        mergedTrends.forEach((t) => { const k = _norm(t.merged_into); (m[k] || (m[k] = [])).push(t); });
+        return m;
+    }, [mergedTrends]);
+    const activeTargetNames = useMemo(
+        () => (thesis?.trends || []).filter((t) => !t.merged_into).map((t) => t.name),
+        [thesis?.trends]
+    );
+
+    const doMerge = async (source, target) => {
+        if (!thesis?.id) return;
+        try {
+            const updated = await thesisMerge(thesis.id, source, target);
+            onThesisUpdate?.(updated);
+            onMutated?.();
+            toast.success(`«${source}» fusionada en «${target}»`, { action: { label: "Revertir", onClick: () => doUnmerge(source) } });
+        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo fusionar."); }
+    };
+    const doUnmerge = async (source) => {
+        if (!thesis?.id) return;
+        try {
+            const updated = await thesisUnmerge(thesis.id, source);
+            onThesisUpdate?.(updated);
+            onMutated?.();
+            toast.success(`«${source}» restaurada.`);
+        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo revertir."); }
+    };
+
     // 1.1b — existing theses the company fits but isn't a member of yet.
     // Dedupe by thesis_id (several company trends can map to the same thesis).
     const existingMatches = useMemo(() => {
@@ -710,16 +790,17 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         return (linkData?.to_add || []).filter((a) => {
             if (a.already_in || !a.thesis_id || seen.has(a.thesis_id)) return false;
             if (splitDevCores.has(_norm(a.trend_name))) return false; // shown as a split-note card instead
+            if (mergedNames.has(_norm(a.trend_name))) return false; // folded into another thesis
             seen.add(a.thesis_id);
             return true;
         });
-    }, [linkData, splitDevCores]);
+    }, [linkData, splitDevCores, mergedNames]);
 
     // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
     // rich trend objects. Fallback to all themes while link data is unavailable.
     // Always include cores that were split-developed so their note + pending parts show.
     const newTrends = useMemo(() => {
-        const all = thesis?.trends || [];
+        const all = (thesis?.trends || []).filter((t) => !t.merged_into);
         if (!linkData) return all;
         const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
         return all.filter((t) => create.has(_norm(t.name)) || splitDevCores.has(_norm(t.name)));
@@ -869,11 +950,43 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         </div>
                     ) : newTrends.length ? (
                         <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">
-                            {newTrends.map((t, i) => <NewThesisCard key={i} idx={i} t={t} companyId={thesis.id} dev={splitDev[_norm(t.name)]} onDevelop={onDevelop} />)}
+                            {newTrends.map((t, i) => {
+                                const d = splitDev[_norm(t.name)];
+                                return (
+                                    <NewThesisCard
+                                        key={i} idx={i} t={t} companyId={thesis.id}
+                                        dev={d} onDevelop={onDevelop}
+                                        mergeTargets={activeTargetNames.filter((n) => _norm(n) !== _norm(t.name))}
+                                        absorbed={absorbedByTarget[_norm(t.name)] || []}
+                                        onMerge={doMerge}
+                                        ticker={thesis.company?.ticker}
+                                        developed={!!(d && (d.whole || (d.developedSplits || []).length))}
+                                    />
+                                );
+                            })}
                         </div>
                     ) : (
                         <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">
                             Todos los segmentos de negocio de {ticker || "la empresa"} ya están cubiertos por tus tesis. No hay tesis nuevas que generar.
+                        </div>
+                    )}
+
+                    {mergedTrends.length > 0 && (
+                        <div className="mt-6" data-testid="merged-theses">
+                            <div className="overline text-[#4A4A4A] mb-2">Tesis fusionadas</div>
+                            <div className="space-y-1.5">
+                                {mergedTrends.map((t, i) => (
+                                    <div key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/40 bg-[#FBF3E0] px-3 py-2" data-testid={`merged-row-${_norm(t.name).slice(0, 12)}`}>
+                                        <div className="text-xs text-[#7a5a10] min-w-0">
+                                            <GitMerge size={12} className="inline mr-1 -mt-0.5" />
+                                            «<strong>{t.name}</strong>» → fusionada en «<strong>{t.merged_into}</strong>»
+                                        </div>
+                                        <button onClick={() => doUnmerge(t.name)} className="text-[11px] uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-2.5 py-1 hover:bg-[#B8860B] hover:text-white transition-colors shrink-0" data-testid={`unmerge-${_norm(t.name).slice(0, 12)}`}>
+                                            Revertir
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </>

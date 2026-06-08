@@ -109,6 +109,10 @@ export const thesisAssignParent = (id, parent_id) =>
     api.put(`/thesis/${id}/parent`, { parent_id }).then(r => r.data);
 export const thesisRecordSplit = (id, body) =>
     api.post(`/thesis/${id}/split-developed`, body).then(r => r.data);
+export const thesisMerge = (id, source, target) =>
+    api.post(`/thesis/${id}/merge`, { source, target }).then(r => r.data);
+export const thesisUnmerge = (id, source) =>
+    api.post(`/thesis/${id}/unmerge`, { source }).then(r => r.data);
 export const thesisFolders = () => api.get(`/thesis/folders`).then(r => r.data);
 export const thesisCreateFolder = (name) => api.post(`/thesis/folders`, { name }).then(r => r.data);
 export const thesisDeleteFolder = (id, mode = "ungroup") =>

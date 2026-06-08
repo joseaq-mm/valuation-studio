@@ -252,6 +252,15 @@ class SetModelRequest(BaseModel):
     preset: str
 
 
+class MergeThesisRequest(BaseModel):
+    source: str
+    target: str
+
+
+class UnmergeThesisRequest(BaseModel):
+    source: str
+
+
 def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRouter:
     router = APIRouter(prefix="/thesis")
 
@@ -1207,6 +1216,95 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         existing.append(entry)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"split_dev": existing}})
         return {"ok": True, "split_dev": existing}
+
+    @router.post("/{thesis_id}/merge")
+    async def merge_thesis(thesis_id: str, req: MergeThesisRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Manually fold a minor/complementary proposed thesis (source) into another
+        (target) on a company suggestions page. REVERSIBLE: the source proposal is
+        flagged `merged_into` (not deleted) and, if it was already developed, the
+        company is removed from those developed trend theses and the removed entries
+        are saved on the source (`merged_removed`) so /unmerge can restore everything.
+        Returns the updated company thesis document."""
+        uid = user["user_id"]
+        nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        trends = doc.get("trends") or []
+        nsrc, ntgt = nrm(req.source), nrm(req.target)
+        if nsrc == ntgt:
+            raise HTTPException(status_code=400, detail="Una tesis no puede fusionarse consigo misma")
+        src = next((t for t in trends if nrm(t.get("name")) == nsrc), None)
+        tgt = next((t for t in trends if nrm(t.get("name")) == ntgt), None)
+        if not src or not tgt:
+            raise HTTPException(status_code=404, detail="No se encontró la tesis origen o destino")
+        if src.get("merged_into"):
+            raise HTTPException(status_code=400, detail="Esa tesis ya está fusionada")
+        if tgt.get("merged_into"):
+            raise HTTPException(status_code=400, detail="No puedes fusionar en una tesis que ya está fusionada")
+
+        # If the source was already developed, remove the company from each developed
+        # trend thesis and remember what we removed (for a clean revert).
+        ticker = ((doc.get("company") or {}).get("ticker") or "").upper().strip()
+        removed: List[Dict[str, Any]] = []
+        for e in (doc.get("split_dev") or []):
+            if nrm(e.get("core")) != nsrc:
+                continue
+            did = e.get("developed_id")
+            if not did:
+                continue
+            tdoc = await db.theses.find_one({"id": did, "user_id": uid, "type": "trend"}, {"_id": 0, "id": 1, "companies": 1})
+            if not tdoc:
+                continue
+            kept, removed_entry = [], None
+            for c in (tdoc.get("companies") or []):
+                if ticker and (c.get("ticker") or "").upper().strip() == ticker:
+                    removed_entry = c
+                else:
+                    kept.append(c)
+            if removed_entry is not None:
+                await db.theses.update_one({"id": did, "user_id": uid}, {"$set": {"companies": kept}})
+                removed.append({"thesis_id": did, "entry": removed_entry})
+
+        for t in trends:
+            if nrm(t.get("name")) == nsrc:
+                t["merged_into"] = tgt.get("name")
+                t["merged_removed"] = removed
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
+
+    @router.post("/{thesis_id}/unmerge")
+    async def unmerge_thesis(thesis_id: str, req: UnmergeThesisRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Revert a previous /merge: clear the `merged_into` flag and re-insert the
+        company into the developed trend theses it was removed from. Returns the
+        updated company thesis document."""
+        uid = user["user_id"]
+        nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
+        trends = doc.get("trends") or []
+        nsrc = nrm(req.source)
+        src = next((t for t in trends if nrm(t.get("name")) == nsrc), None)
+        if not src:
+            raise HTTPException(status_code=404, detail="Tesis no encontrada")
+        for r in (src.get("merged_removed") or []):
+            did, entry = r.get("thesis_id"), r.get("entry")
+            if not did or not entry:
+                continue
+            tdoc = await db.theses.find_one({"id": did, "user_id": uid}, {"_id": 0, "id": 1, "companies": 1})
+            if not tdoc:
+                continue
+            tk = (entry.get("ticker") or "").upper().strip()
+            comps = [c for c in (tdoc.get("companies") or []) if (c.get("ticker") or "").upper().strip() != tk]
+            comps.append(entry)
+            await db.theses.update_one({"id": did, "user_id": uid}, {"$set": {"companies": comps}})
+        for t in trends:
+            if nrm(t.get("name")) == nsrc:
+                t.pop("merged_into", None)
+                t.pop("merged_removed", None)
+        await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
+        return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
     @router.post("/{thesis_id}/link-suggestions")
     async def link_suggestions(thesis_id: str, refresh: bool = False, user: Dict[str, Any] = Depends(auth_required)):

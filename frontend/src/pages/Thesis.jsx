@@ -584,6 +584,7 @@ export default function Thesis() {
                                 generatingContra={generatingContra}
                                 onMutated={reload}
                                 onDevelop={developThesis}
+                                onThesisUpdate={(d) => setResult(d)}
                             />
                         )
                     ) : (user && dash && !busy && (
