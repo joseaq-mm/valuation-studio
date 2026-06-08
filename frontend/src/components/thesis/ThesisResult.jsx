@@ -325,7 +325,7 @@ function DevelopAction({ name, core, whole, companyId, onDevelop, linkTo, testid
 /** Bloque 1.2 — a NEW thesis idea (growth driver). May offer an optional split into
  *  independent sub-parts (whose TAM sum to the core). Once a part (or the whole) is
  *  developed, the card becomes an informational note + the remaining parts as cards. */
-function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [], absorbed = [], onMerge, ticker, developed = false }) {
+function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [], coveredTargets = [], absorbed = [], onMerge, ticker, developed = false }) {
     const [showSplits, setShowSplits] = useState(false);
     const [mergeMode, setMergeMode] = useState("idle");
     const [mergeTarget, setMergeTarget] = useState("");
@@ -501,7 +501,7 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [
             )}
 
             {/* Fusionar (control manual): fold this minor thesis into another. */}
-            {onMerge && mergeTargets.length > 0 && (
+            {onMerge && (mergeTargets.length + coveredTargets.length) > 0 && (
                 <div className="mt-3 pt-3 border-t border-black/10" data-testid={`merge-wrap-${slug}`}>
                     {mergeMode === "idle" && (
                         <button onClick={() => setMergeMode("pick")} className="text-[11px] uppercase tracking-[0.1em] font-semibold text-[#7a5a10] inline-flex items-center gap-1 hover:underline" data-testid={`merge-open-${slug}`}>
@@ -513,7 +513,16 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [
                             <div className="text-xs font-semibold">Fusionar «{t.name}» en:</div>
                             <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)} className="w-full border border-black/30 px-2 py-1.5 text-xs outline-none bg-white" data-testid={`merge-target-select-${slug}`}>
                                 <option value="">— Elige tesis destino —</option>
-                                {mergeTargets.map((n) => <option key={n} value={n}>{n}</option>)}
+                                {mergeTargets.length > 0 && (
+                                    <optgroup label="Fusionar en otra propuesta (suma TAM)">
+                                        {mergeTargets.map((n) => <option key={`p-${n}`} value={n}>{n}</option>)}
+                                    </optgroup>
+                                )}
+                                {coveredTargets.length > 0 && (
+                                    <optgroup label="Ya cubierta por una tesis guardada (no suma TAM)">
+                                        {coveredTargets.map((n) => <option key={`s-${n}`} value={n}>{n}</option>)}
+                                    </optgroup>
+                                )}
                             </select>
                             <div className="flex items-center gap-2">
                                 <button disabled={!mergeTarget} onClick={() => setMergeMode("confirm")} className="text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 disabled:opacity-40" data-testid={`merge-continue-${slug}`}>Continuar</button>
@@ -521,20 +530,24 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, mergeTargets = [
                             </div>
                         </div>
                     )}
-                    {mergeMode === "confirm" && (
-                        <div className="border border-[#B8860B] bg-[#FBF3E0] p-3 space-y-2" data-testid={`merge-confirm-${slug}`}>
-                            <div className="text-xs text-[#7a5a10] leading-relaxed">
-                                «<strong>{t.name}</strong>» se fusionará en «<strong>{mergeTarget}</strong>».
-                                {fmtTam(t.tam_busd) && <> Su TAM ({fmtTam(t.tam_busd)}) se sumará al de la tesis destino.</>}
-                                {developed && <> La empresa {ticker ? <strong>{ticker}</strong> : "de origen"} se quitará de la tesis ya generada de «{t.name}».</>}
-                                {" "}Es reversible.
+                    {mergeMode === "confirm" && (() => {
+                        const isCovered = coveredTargets.includes(mergeTarget) && !mergeTargets.includes(mergeTarget);
+                        return (
+                            <div className="border border-[#B8860B] bg-[#FBF3E0] p-3 space-y-2" data-testid={`merge-confirm-${slug}`}>
+                                <div className="text-xs text-[#7a5a10] leading-relaxed">
+                                    {isCovered ? (
+                                        <>«<strong>{t.name}</strong>» se marcará como <strong>ya cubierta</strong> por «<strong>{mergeTarget}</strong>». No se suma TAM (ya está contada en esa tesis).{developed && <> La empresa {ticker ? <strong>{ticker}</strong> : "de origen"} se quitará de la tesis ya generada de «{t.name}».</>}{" "}Es reversible.</>
+                                    ) : (
+                                        <>«<strong>{t.name}</strong>» se fusionará en «<strong>{mergeTarget}</strong>».{fmtTam(t.tam_busd) && <> Su TAM ({fmtTam(t.tam_busd)}) se sumará al de la tesis destino.</>}{developed && <> La empresa {ticker ? <strong>{ticker}</strong> : "de origen"} se quitará de la tesis ya generada de «{t.name}».</>}{" "}Es reversible.</>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => { onMerge(t.name, mergeTarget); setMergeMode("idle"); setMergeTarget(""); }} className="text-[11px] uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-2.5 py-1.5 hover:bg-[#946c09] transition-colors" data-testid={`merge-confirm-btn-${slug}`}>Confirmar fusión</button>
+                                    <button onClick={() => setMergeMode("pick")} className="text-[11px] text-[#7a5a10] hover:underline">Atrás</button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => { onMerge(t.name, mergeTarget); setMergeMode("idle"); setMergeTarget(""); }} className="text-[11px] uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-2.5 py-1.5 hover:bg-[#946c09] transition-colors" data-testid={`merge-confirm-btn-${slug}`}>Confirmar fusión</button>
-                                <button onClick={() => setMergeMode("pick")} className="text-[11px] text-[#7a5a10] hover:underline">Atrás</button>
-                            </div>
-                        </div>
-                    )}
+                        );
+                    })()}
                 </div>
             )}
         </div>
@@ -756,13 +769,23 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     const mergedNames = useMemo(() => new Set(mergedTrends.map((t) => _norm(t.name))), [mergedTrends]);
     const absorbedByTarget = useMemo(() => {
         const m = {};
-        mergedTrends.forEach((t) => { const k = _norm(t.merged_into); (m[k] || (m[k] = [])).push(t); });
+        mergedTrends.forEach((t) => { if (t.covered) return; const k = _norm(t.merged_into); (m[k] || (m[k] = [])).push(t); });
         return m;
     }, [mergedTrends]);
-    const activeTargetNames = useMemo(
-        () => (thesis?.trends || []).filter((t) => !t.merged_into).map((t) => t.name),
-        [thesis?.trends]
-    );
+
+    // Saved trend theses this company relates to → offered as "covered by" (zero-TAM)
+    // merge targets, so a regenerated proposal that overlaps an existing thesis can be
+    // dismissed without double-counting its TAM.
+    const savedTargets = useMemo(() => {
+        const seen = new Set();
+        const out = [];
+        (linkData?.to_add || []).forEach((a) => {
+            if (!a.thesis_title || seen.has(a.thesis_id)) return;
+            seen.add(a.thesis_id);
+            out.push(a.thesis_title);
+        });
+        return out;
+    }, [linkData]);
 
     const doMerge = async (source, target) => {
         if (!thesis?.id) return;
@@ -965,7 +988,8 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                                     <NewThesisCard
                                         key={i} idx={i} t={t} companyId={thesis.id}
                                         dev={d} onDevelop={onDevelop}
-                                        mergeTargets={activeTargetNames.filter((n) => _norm(n) !== _norm(t.name))}
+                                        mergeTargets={newTrends.filter((o) => _norm(o.name) !== _norm(t.name)).map((o) => o.name)}
+                                        coveredTargets={savedTargets}
                                         absorbed={absorbedByTarget[_norm(t.name)] || []}
                                         onMerge={doMerge}
                                         ticker={thesis.company?.ticker}
@@ -988,7 +1012,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                                     <div key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/40 bg-[#FBF3E0] px-3 py-2" data-testid={`merged-row-${_norm(t.name).slice(0, 12)}`}>
                                         <div className="text-xs text-[#7a5a10] min-w-0">
                                             <GitMerge size={12} className="inline mr-1 -mt-0.5" />
-                                            «<strong>{t.name}</strong>» → fusionada en «<strong>{t.merged_into}</strong>»
+                                            «<strong>{t.name}</strong>» → {t.covered ? "ya cubierta por" : "fusionada en"} «<strong>{t.merged_into}</strong>»
                                         </div>
                                         <button onClick={() => doUnmerge(t.name)} className="text-[11px] uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-2.5 py-1 hover:bg-[#B8860B] hover:text-white transition-colors shrink-0" data-testid={`unmerge-${_norm(t.name).slice(0, 12)}`}>
                                             Revertir

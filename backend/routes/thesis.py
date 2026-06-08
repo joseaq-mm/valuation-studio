@@ -685,7 +685,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
                 return
             entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
-            stage_tam = effective_stage_tam(entry, doc.get("value_chain"))
+            stage_tam = effective_stage_tam(entry, doc.get("value_chain"), (doc.get("tam") or {}).get("global_busd"))
             rev_busd, currency = await _projected_revenue_usd_busd(ticker)
             tam_score = compute_tam_score(entry.get("overall_score"), stage_tam, rev_busd)
             await db.thesis_jobs.update_one(
@@ -968,7 +968,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 continue
             overall = comp.get("overall_score")
             role = comp.get("value_chain_role")
-            stage_tam = effective_stage_tam(comp, t.get("value_chain"))
+            stage_tam = effective_stage_tam(comp, t.get("value_chain"), (t.get("tam") or {}).get("global_busd"))
             rows.append({
                 "thesis_id": t.get("id"),
                 "thesis_title": t.get("title"),
@@ -1059,11 +1059,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         trend_id_set = {t.get("id") for t in trend_docs}
         for t in trend_docs:
             vc = t.get("value_chain") or []
+            gtam = (t.get("tam") or {}).get("global_busd")
             clist = []
             for c in (t.get("companies") or []):
                 tk = (c.get("ticker") or "").upper().strip()
                 overall = c.get("overall_score")
-                tam_score = compute_tam_score(overall, effective_stage_tam(c, vc), rev_map.get(tk))
+                tam_score = compute_tam_score(overall, effective_stage_tam(c, vc, gtam), rev_map.get(tk))
                 clist.append({
                     "ticker": tk or None, "name": c.get("name"), "overall_score": overall,
                     "value_chain_role": c.get("value_chain_role"),
@@ -1244,13 +1245,25 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if nsrc == ntgt:
             raise HTTPException(status_code=400, detail="Una tesis no puede fusionarse consigo misma")
         src = next((t for t in trends if nrm(t.get("name")) == nsrc), None)
-        tgt = next((t for t in trends if nrm(t.get("name")) == ntgt), None)
-        if not src or not tgt:
-            raise HTTPException(status_code=404, detail="No se encontró la tesis origen o destino")
+        if not src:
+            raise HTTPException(status_code=404, detail="No se encontró la tesis origen")
         if src.get("merged_into"):
             raise HTTPException(status_code=400, detail="Esa tesis ya está fusionada")
-        if tgt.get("merged_into"):
-            raise HTTPException(status_code=400, detail="No puedes fusionar en una tesis que ya está fusionada")
+        # Target is either another PROPOSAL (additive merge: its TAM is summed) OR an
+        # existing SAVED trend thesis (a "covered" merge: the proposal is deemed already
+        # included in that thesis → marked covered, NO TAM added; avoids double counting).
+        tgt = next((t for t in trends if nrm(t.get("name")) == ntgt), None)
+        covered = False
+        if tgt:
+            if tgt.get("merged_into"):
+                raise HTTPException(status_code=400, detail="No puedes fusionar en una tesis que ya está fusionada")
+            target_label = tgt.get("name")
+        else:
+            saved = await db.theses.find_one({"user_id": uid, "type": "trend", "title": req.target}, {"_id": 0, "id": 1, "title": 1})
+            if not saved:
+                raise HTTPException(status_code=404, detail="No se encontró la tesis destino")
+            covered = True
+            target_label = saved.get("title")
 
         # If the source was already developed, remove the company from each developed
         # trend thesis and remember what we removed (for a clean revert).
@@ -1277,8 +1290,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         for t in trends:
             if nrm(t.get("name")) == nsrc:
-                t["merged_into"] = tgt.get("name")
+                t["merged_into"] = target_label
                 t["merged_removed"] = removed
+                if covered:
+                    t["covered"] = True
+                else:
+                    t.pop("covered", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
@@ -1312,6 +1329,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             if nrm(t.get("name")) == nsrc:
                 t.pop("merged_into", None)
                 t.pop("merged_removed", None)
+                t.pop("covered", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
 
