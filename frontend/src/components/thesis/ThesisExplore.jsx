@@ -41,9 +41,10 @@ function buildItems(view, path, dash, minConv) {
         return (dash?.convergence || []).filter((c) => c.count >= minConv).map((c) => ({
             type: "convergence", ticker: c.ticker, name: c.name || c.ticker,
             value: c.count, metric: c.count, badge: c.count,
-            sub: `${c.count} tendencias`,
+            sub: `${c.count} ${c.count === 1 ? "tendencia" : "tendencias"}`,
             analyzed: c.analyzed, company_thesis_id: c.company_thesis_id,
             leader: c.leader, competitor: c.competitor, disruptor: c.disruptor,
+            tendencias: c.tendencias || [],
         }));
     }
     if (view === "companies_score") {
@@ -59,17 +60,64 @@ function buildItems(view, path, dash, minConv) {
     }));
 }
 
-const catMix = (it) => [
-    it.leader ? `${it.leader} líder` : null,
-    it.competitor ? `${it.competitor} compet.` : null,
-    it.disruptor ? `${it.disruptor} disrupt.` : null,
-].filter(Boolean).join(" · ");
+const CAT_LABEL = { leader: "Líder", competitor: "Competidor", disruptor: "Disruptor" };
+
+/** Rich, structured tooltip shown on cell hover (follows the cursor, clamped to viewport). */
+function CellTooltip({ item, x, y }) {
+    if (!item) return null;
+    const W = 320;
+    const left = Math.min(x + 14, (typeof window !== "undefined" ? window.innerWidth : 1920) - W - 12);
+    const top = y + 16;
+    const mix = [
+        item.leader ? `${item.leader} ${item.leader === 1 ? "líder" : "líderes"}` : null,
+        item.competitor ? `${item.competitor} ${item.competitor === 1 ? "competidor" : "competidores"}` : null,
+        item.disruptor ? `${item.disruptor} ${item.disruptor === 1 ? "disruptor" : "disruptores"}` : null,
+    ].filter(Boolean).join(" · ");
+    return (
+        <div
+            role="tooltip"
+            style={{ position: "fixed", top, left, width: W, zIndex: 60, pointerEvents: "none" }}
+            className="bg-[#111111] text-white border border-black shadow-lg p-3 text-xs leading-relaxed"
+            data-testid="explore-tooltip"
+        >
+            {item.type === "convergence" ? (
+                <>
+                    <div className="font-serif text-base font-medium leading-tight">
+                        {item.name} {item.ticker && <span className="font-mono text-[#FDE9D2] text-xs">({item.ticker})</span>}
+                    </div>
+                    {mix && <div className="text-[#FDE9D2] mt-0.5">{mix}</div>}
+                    <div className="mt-2 mb-1 uppercase tracking-[0.1em] text-[10px] text-[#C9C2B8]">
+                        Aparece en {item.count} {item.count === 1 ? "tendencia" : "tendencias"}
+                    </div>
+                    <ul className="space-y-1">
+                        {(item.tendencias || []).map((t, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                                <span className="text-[#B8860B] mt-0.5">•</span>
+                                <span><span className="font-medium">{t.title}</span> <span className="text-[#C9C2B8]">— {CAT_LABEL[t.category] || "Competidor"}</span></span>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="mt-2 pt-2 border-t border-white/15 text-[#C9C2B8]">
+                        Estado: <span className="text-white font-medium">{item.analyzed ? "Ya tiene tesis de empresa desarrollada" : "Pendiente de analizar"}</span>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="font-serif text-base font-medium leading-tight">{item.name}</div>
+                    {item.badge != null && <div className="text-[#FDE9D2] mt-0.5 font-mono">{item.badge}</div>}
+                    {item.sub && <div className="text-[#C9C2B8] mt-0.5">{item.sub}</div>}
+                </>
+            )}
+        </div>
+    );
+}
 
 export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis }) {
     const navigate = useNavigate();
     const [view, setView] = useState("megatrends");
     const [path, setPath] = useState([]);
     const [minConv, setMinConv] = useState(2);
+    const [tip, setTip] = useState(null);
     const wrapRef = useRef(null);
     const [w, setW] = useState(760);
 
@@ -88,7 +136,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const laid = useMemo(() => squarify(items, w, H), [items, w]);
     const maxConvCount = useMemo(() => (dash?.convergence || []).reduce((m, c) => Math.max(m, c.count), 2), [dash]);
 
-    const changeView = (id) => { setView(id); setPath([]); };
+    const changeView = (id) => { setView(id); setPath([]); setTip(null); };
     const onCell = (it) => {
         if (it.type === "folder") setPath([{ type: "folder", id: it.id, name: it.name }]);
         else if (it.type === "tendencia" && it.id) navigate(`/thesis/${it.id}`);
@@ -191,9 +239,6 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     const big = it.w > 56 && it.h > 30;
                     const med = it.w > 38 && it.h > 20;
                     const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
-                    const tip = it.type === "convergence"
-                        ? `${it.name} · ${it.count} tendencias${catMix(it) ? ` · ${catMix(it)}` : ""}${it.analyzed ? " · ✓ analizada" : " · pendiente"}`
-                        : `${it.name}${it.badge != null ? ` · ${it.badge}` : ""}${it.sub ? ` · ${it.sub}` : ""}`;
                     return (
                         <div
                             key={it.id || it.ticker || idx}
@@ -201,7 +246,9 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                             tabIndex={0}
                             onClick={() => onCell(it)}
                             onKeyDown={(e) => { if (e.key === "Enter") onCell(it); }}
-                            title={tip}
+                            onMouseEnter={(e) => setTip({ item: it, x: e.clientX, y: e.clientY })}
+                            onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY }))}
+                            onMouseLeave={() => setTip(null)}
                             className="absolute text-left overflow-hidden border border-[#FDF1E6] hover:brightness-110 hover:z-10 transition-all cursor-pointer"
                             style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
                             data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
@@ -241,6 +288,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
             <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
                 {caption} El color va de verde (alto) a rojo (bajo).
             </p>
+            {tip && <CellTooltip item={tip.item} x={tip.x} y={tip.y} />}
         </div>
     );
 }
