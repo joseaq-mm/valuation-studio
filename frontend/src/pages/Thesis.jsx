@@ -646,7 +646,7 @@ export default function Thesis() {
                             />
                         )
                     ) : (user && dash && !busy && (
-                        <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} />
+                        <ThesisExplore dash={dash} onDeleteFolder={setFolderToDelete} onPrepareThesis={developCompanyFromTendencia} />
                     ))}
                 </div>
 

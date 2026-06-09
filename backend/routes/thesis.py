@@ -1212,7 +1212,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         tendencia_docs = await db.theses.find(
             {"user_id": uid, "type": "tendencia"},
             {"_id": 0, "id": 1, "title": 1, "query": 1, "tam": 1, "cagr_4y": 1,
-             "folder_id": 1, "created_at": 1},
+             "companies": 1, "folder_id": 1, "created_at": 1},
         ).sort("created_at", -1).to_list(length=500)
 
         # Bulk projected-revenue map (USD billions) from the fundamentals cache only.
@@ -1344,9 +1344,41 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "fit_trends": fit,
             })
 
+        # Convergencia: empresas que aparecen en VARIAS de las tendencias del usuario
+        # (señal de convergencia de megatendencias). Pura agregación, sin LLM. Marca su
+        # mezcla de categorías (líder/competidor/disruptor) y si ya está analizada (la
+        # empresa tiene una tesis de empresa completamente desarrollada). Devolvemos las
+        # de count≥2; el umbral final es configurable en el frontend.
+        cthesis_by_ticker = {ct["ticker"]: ct["id"] for ct in company_theses if ct.get("ticker")}
+        conv = {}
+        for td in tendencia_docs:
+            seen = set()  # avoid double-counting a ticker listed twice in one tendencia
+            for c in (td.get("companies") or []):
+                tk = (c.get("ticker") or "").upper().strip()
+                if not tk or tk in seen:
+                    continue
+                seen.add(tk)
+                cat = (c.get("category") or "competitor").strip().lower()
+                e = conv.setdefault(tk, {"ticker": tk, "name": c.get("name"),
+                                         "tendencias": [], "leader": 0, "competitor": 0, "disruptor": 0})
+                e["tendencias"].append({"id": td.get("id"), "title": td.get("title") or td.get("query"), "category": cat})
+                e[cat if cat in ("leader", "competitor", "disruptor") else "competitor"] += 1
+        convergence = []
+        for tk, e in conv.items():
+            if len(e["tendencias"]) < 2:
+                continue
+            convergence.append({
+                "ticker": tk, "name": e["name"], "count": len(e["tendencias"]),
+                "tendencias": e["tendencias"],
+                "leader": e["leader"], "competitor": e["competitor"], "disruptor": e["disruptor"],
+                "analyzed": tk in complete_tickers,
+                "company_thesis_id": cthesis_by_ticker.get(tk),
+            })
+        convergence.sort(key=lambda x: -x["count"])
+
         return {"folders": folder_out, "trends": trends,
                 "companies": companies, "company_theses": company_theses,
-                "tendencias": tendencias_out}
+                "tendencias": tendencias_out, "convergence": convergence}
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

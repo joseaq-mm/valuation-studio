@@ -67,6 +67,8 @@ async def main():
             "companies": [
                 comp("Tesla", "TSLA", "leader", "Robot Optimus", "Integración vertical IA + manufactura."),
                 comp("ABB", "ABB", "competitor", "Robótica industrial", "Extiende su base instalada hacia humanoides."),
+                comp("NVIDIA", "NVDA", "competitor", "Cómputo y simulación (Isaac/Omniverse)", "Plataforma de IA física para robots."),
+                comp("AMD", "AMD", "competitor", "Cómputo embebido", "Gana terreno en cómputo para robótica."),
                 comp("Figure AI", None, "disruptor", "Humanoide de propósito general", "Apuesta pura de paradigma nuevo."),
             ],
             "value_chain": [], "sources": [],
@@ -80,6 +82,7 @@ async def main():
             "cagr_4y": 18.0, "cagr_note": "Crecimiento condicionado a aprobaciones regulatorias.",
             "companies": [
                 comp("Constellation Energy", "CEG", "leader", "Operación nuclear", "Mayor operador nuclear de EE. UU."),
+                comp("NVIDIA", "NVDA", "leader", "Demanda de cómputo", "La IA dispara la necesidad de energía base limpia."),
                 comp("Oklo", "OKLO", "disruptor", "Microrreactores", "Modelo de negocio y diseño disruptivos."),
             ],
             "value_chain": [], "sources": [],
