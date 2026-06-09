@@ -5,11 +5,11 @@ import { squarify, relColor } from "@/lib/treemap";
 
 // Left group = the "what's growing" entities; right group = the completed-company scores.
 const VIEWS = [
-    { id: "megatrends", label: "Megatendencias", icon: Layers, group: "left" },
-    { id: "tendencias", label: "Tendencias", icon: TrendingUp, group: "left" },
-    { id: "convergence", label: "Convergencia", icon: Share2, group: "left" },
-    { id: "companies_score", label: "Empresas · score medio", icon: Building2, group: "right" },
-    { id: "companies_tam", label: "Empresas · TAM total", icon: BarChart3, group: "right" },
+    { id: "megatrends", label: "Megatendencias", icon: Layers, group: "left", desc: "Tus megatendencias (carpetas que agrupan tendencias). El tamaño del cuadro es la MEDIA del crecimiento a 4 años (CAGR) de sus tendencias y muestra el TAM total (suma)." },
+    { id: "tendencias", label: "Tendencias", icon: TrendingUp, group: "left", desc: "Tus tendencias (creadas con «Tendencias → Empresas»). El tamaño del cuadro es su crecimiento compuesto a 4 años (CAGR) y muestra el TAM estimado a 2027." },
+    { id: "convergence", label: "Convergencia", icon: Share2, group: "left", desc: "Empresas que aparecen en VARIAS de tus tendencias a la vez (señal de convergencia de megatendencias). El tamaño es el nº de tendencias en las que aparece." },
+    { id: "companies_score", label: "Empresas · score medio", icon: Building2, group: "right", desc: "Tus empresas completamente desarrolladas (todas sus tesis generadas), ordenadas por su score global medio. El tamaño del cuadro es ese score." },
+    { id: "companies_tam", label: "Empresas · TAM total", icon: BarChart3, group: "right", desc: "Tus empresas completamente desarrolladas (todas sus tesis generadas), por TAM total. El tamaño del cuadro es la suma de sus TAM Score." },
 ];
 const H = 440;
 
@@ -118,6 +118,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [path, setPath] = useState([]);
     const [minConv, setMinConv] = useState(2);
     const [tip, setTip] = useState(null);
+    const [btnTip, setBtnTip] = useState(null);
     const wrapRef = useRef(null);
     const [w, setW] = useState(760);
 
@@ -163,12 +164,16 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     ? "El tamaño de cada empresa es proporcional a su score global medio (solo empresas completamente desarrolladas)."
                     : "El tamaño de cada empresa es proporcional a la suma de sus TAM Scores (solo empresas completamente desarrolladas).";
 
-    const ViewBtn = ({ v, i, n }) => {
+    const ViewBtn = ({ v, i }) => {
         const Icon = v.icon;
         const active = view === v.id;
         return (
             <button
                 onClick={() => changeView(v.id)}
+                title={v.desc}
+                onMouseEnter={(e) => setBtnTip({ text: v.desc, x: e.clientX, y: e.clientY })}
+                onMouseMove={(e) => setBtnTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { text: v.desc, x: e.clientX, y: e.clientY }))}
+                onMouseLeave={() => setBtnTip(null)}
                 className={`px-3 py-2 text-xs uppercase tracking-[0.1em] font-semibold flex items-center gap-1.5 transition-colors ${i > 0 ? "border-l border-black" : ""} ${active ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
                 data-testid={`explore-view-${v.id}`}
             >
@@ -289,6 +294,16 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                 {caption} El color va de verde (alto) a rojo (bajo).
             </p>
             {tip && <CellTooltip item={tip.item} x={tip.x} y={tip.y} />}
+            {btnTip && (
+                <div
+                    role="tooltip"
+                    style={{ position: "fixed", top: btnTip.y + 16, left: Math.min(btnTip.x + 14, (typeof window !== "undefined" ? window.innerWidth : 1920) - 312), width: 300, zIndex: 60, pointerEvents: "none" }}
+                    className="bg-[#111111] text-white border border-black shadow-lg px-3 py-2 text-xs leading-relaxed"
+                    data-testid="explore-view-tooltip"
+                >
+                    {btnTip.text}
+                </div>
+            )}
         </div>
     );
 }
