@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { thesisGet, thesisGenerateContra, thesisRefreshRun, thesisGenerateRaw, thesisPollJob } from "@/lib/api";
+import { thesisGet, thesisGenerateContra, thesisRefreshRun, thesisGeneratePlan, thesisPollJob } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -16,6 +16,7 @@ export default function ThesisDetail() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [generatingContra, setGeneratingContra] = useState(false);
+    const [generatingPlan, setGeneratingPlan] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -41,24 +42,26 @@ export default function ThesisDetail() {
 
     const isTendencia = thesis?.type === "tendencia";
 
-    // "Generar todas las particiones": enqueue all splits (1st starts, rest queue),
-    // then open the resulting thesis. Keeps the TAM partition conserved.
-    const developAllPartitions = async ({ splits, core, companyId }) => {
-        if (!splits?.length || !companyId) return;
-        let lastJob = null;
-        for (const sp of splits) {
-            const r = await thesisGenerateRaw("trend", sp.name, { from_company: companyId, core, develop_whole: false, queue: true });
-            if (r?.job_id) lastJob = r.job_id;
-        }
-        if (!lastJob) return;
-        toast.promise(
-            thesisPollJob(lastJob).then((data) => { if (data?.id) navigate(`/thesis/${data.id}`); return data; }),
-            {
-                loading: `Generando ${splits.length} particiones (1ª en marcha, resto en cola)…`,
-                success: "Particiones generadas",
-                error: (e) => e?.response?.data?.detail || "No se pudieron generar las particiones.",
+    // "Generar plan": execute the whole plan (enqueue every non-merged driver, serial).
+    // Reloads the thesis to show locked planning + pending states; polls the first job.
+    const generatePlan = async (companyId) => {
+        if (!companyId) return;
+        setGeneratingPlan(true);
+        try {
+            const res = await thesisGeneratePlan(companyId);
+            toast.success(`Plan en marcha: ${res.count} tesis (1ª generándose, el resto en cola).`);
+            const fresh = await thesisGet(companyId);
+            setThesis(fresh);
+            if (res.first_job_id) {
+                thesisPollJob(res.first_job_id)
+                    .then(async () => { const f2 = await thesisGet(companyId); setThesis(f2); })
+                    .catch(() => {});
             }
-        );
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo generar el plan.");
+        } finally {
+            setGeneratingPlan(false);
+        }
     };
 
     const refresh = async () => {
@@ -97,7 +100,8 @@ export default function ThesisDetail() {
                         canGenerateContra={!!user}
                         onGenerateContra={generateContra}
                         generatingContra={generatingContra}
-                        onDevelopAll={developAllPartitions}
+                        onGeneratePlan={generatePlan}
+                        generatingPlan={generatingPlan}
                         onThesisUpdate={(d) => setThesis(d)}
                     />
                 )

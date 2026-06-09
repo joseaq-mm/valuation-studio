@@ -302,3 +302,23 @@ Objetivo: TAM mutuamente excluyentes y conservados en CUALQUIER estado (sin gene
 
 ### Decisiones del usuario (cerradas)
 1a lock al lanzar 1ª gen, reabre al borrar/reescribir · 2a fusión solo hermanos (quitar cubierta) · 3a particiones encolan todas · 4a quitar Fase B · 5a el driver manda (normalizar splits).
+
+## CHANGELOG — Planificar → Ejecutar (Plan → Execute) (9 jun 2026)
+Objetivo del usuario: separar la FASE DE PLANIFICACIÓN (marcar/fusionar/partir drivers para dejar el TAM 100% mutuamente excluyente) de la FASE DE EJECUCIÓN (generar todas las tesis planificadas de golpe, en cola serial), sin re-evaluaciones LLM que cambien TAM o la lista de propuestas al recargar.
+
+### Backend (ya existía, verificado por curl)
+- `POST /api/thesis/{id}/plan` {core, plan:"whole"|"split"} → marca el driver en `trends[].plan` (sin LLM, sin generar). 409 si la planificación está cerrada; 400 si se intenta `split` en un driver sin `splits`. Devuelve el doc actualizado.
+- `POST /api/thesis/{id}/generate-plan` → encola UNA generación por cada driver no fusionado (whole → 1 tesis; split → todas sus particiones), todas en serie vía `_enqueue_generation`, ancladas a su trozo de TAM congelado. Bloquea la planificación. Devuelve {ok, count, first_job_id}.
+
+### Frontend (NUEVO en esta sesión)
+- `api.js`: `thesisSetPlan(id, core, plan)` + `thesisGeneratePlan(id)`.
+- `ThesisResult.jsx`: las tarjetas de driver (`NewThesisCard`) ya NO generan al instante. En planificación muestran marcadores **Conjunto** / **Particiones (N)** (`plan-whole-*` / `plan-split-*` → `/plan`), con texto del efecto. Se eliminó el botón "Generar todas las particiones" y el "Generar tesis (conjunto)" por tarjeta. Barra **"Generar plan · N tesis"** (`generate-plan-bar` / `generate-plan-btn`) bien visible TRAS los drivers; N = suma reactiva (split→nº particiones, resto→1). Sin opción "Excluir" (constraint usuario 1b: si no quieres un driver, lo fusionas → su TAM se suma al destino, conservación 100%).
+- Durante la planificación, `newTrends` muestra TODOS los drivers no fusionados (independiente del matcher LLM `link-suggestions`) → lista estable al recargar, partición completa. El matcher solo se sigue usando para el bloque "Tesis ya generadas que encajan" (anti-duplicación).
+- Al bloquear (tras Generar plan), las tarjetas no desarrolladas muestran "En cola para generarse…" y desaparecen fusión/marcadores.
+- Handlers `generatePlan` en `Thesis.jsx` y `ThesisDetail.jsx` (poll del 1er job + recarga del doc para reflejar locked/pending).
+
+### Pruebas (self-test, SIN testing_agent ni gasto LLM)
+- curl `/plan`: marca whole/split, rechaza split en no-divisible (400), GET devuelve `planning_locked:false` + `trends[].plan`.
+- screenshot (usuario sembrado `co_plan_ui`, NVDA con driver divisible): marcadores resaltados, barra "Generar plan · 4 tesis"; al cambiar Particiones→Conjunto el contador baja a 3 en vivo.
+- NO se ejecutó `/generate-plan` en vivo (evitar coste LLM); reusa `_enqueue_generation` ya cubierto por `test_gen_queue.py`.
+- Seed nuevo: `backend/tests/seed_plan_test.py` → `co_plan_ui`.

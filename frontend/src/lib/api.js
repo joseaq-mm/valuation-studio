@@ -120,6 +120,11 @@ export const thesisAssignParent = (id, parent_id) =>
     api.put(`/thesis/${id}/parent`, { parent_id }).then(r => r.data);
 export const thesisRecordSplit = (id, body) =>
     api.post(`/thesis/${id}/split-developed`, body).then(r => r.data);
+// Plan → Execute: mark a driver as "whole"/"split" (no LLM), then execute the whole plan.
+export const thesisSetPlan = (id, core, plan) =>
+    api.post(`/thesis/${id}/plan`, { core, plan }).then(r => r.data);
+export const thesisGeneratePlan = (id) =>
+    api.post(`/thesis/${id}/generate-plan`).then(r => r.data);
 export const thesisMerge = (id, source, target) =>
     api.post(`/thesis/${id}/merge`, { source, target }).then(r => r.data);
 export const thesisUnmerge = (id, source) =>

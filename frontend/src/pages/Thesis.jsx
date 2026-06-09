@@ -4,10 +4,10 @@ import { toast } from "sonner";
 import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Undo2, Redo2, RefreshCw, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisGenerateRaw, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
+    thesisGenerate, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
     thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisDashboard,
-    thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet,
+    thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -29,6 +29,7 @@ export default function Thesis() {
     const [trendLoading, setTrendLoading] = useState(false); // explore / auto-trend
     const [result, setResult] = useState(null);
     const [generatingContra, setGeneratingContra] = useState(false);
+    const [generatingPlan, setGeneratingPlan] = useState(false);
     const [tendenciaSaving, setTendenciaSaving] = useState(false);
     const [autoSeen, setAutoSeen] = useState([]);         // trend names already shown (avoid repeats)
     const [genCount, setGenCount] = useState(0);          // bump to refresh model usage counters
@@ -211,31 +212,28 @@ export default function Thesis() {
         generate("trend", name, null, { force: true, recordSplit });
     };
 
-    // "Generar todas las particiones": enqueue ALL splits of a driver (1st starts, rest
-    // queue) — keeps the TAM partition conserved (splits sum to the driver).
-    const developAllPartitions = async ({ splits, core, companyId }) => {
-        if (!splits?.length || !companyId) return;
-        setLoading(true);
-        setResult(null);
-        setGenStatus("processing");
+    // "Generar plan": execute the whole plan — enqueue a generation for every
+    // non-merged driver (whole → 1 thesis; split → its partitions), all serial.
+    // Planning locks; we reload the company thesis to show the pending/generating
+    // states, and poll the first job to update once it lands.
+    const generatePlan = async (companyId) => {
+        if (!companyId) return;
+        setGeneratingPlan(true);
         try {
-            let lastJob = null;
-            for (const sp of splits) {
-                const r = await thesisGenerateRaw("trend", sp.name, { from_company: companyId, core, develop_whole: false, queue: true });
-                if (r?.job_id) lastJob = r.job_id;
-            }
-            toast.info(`Generando ${splits.length} particiones: la 1ª en marcha, el resto en cola.`);
-            if (lastJob) {
-                const data = await thesisPollJob(lastJob, setGenStatus);
-                setResult(data);
-            }
-            setGenCount((n) => n + 1);
+            const res = await thesisGeneratePlan(companyId);
+            toast.success(`Plan en marcha: ${res.count} tesis (1ª generándose, el resto en cola).`);
+            const fresh = await thesisGet(companyId);   // planning_locked + pending states
+            setResult(fresh);
             reload();
+            if (res.first_job_id) {
+                thesisPollJob(res.first_job_id)
+                    .then(async () => { const f2 = await thesisGet(companyId); setResult(f2); reload(); })
+                    .catch(() => {});
+            }
         } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudieron generar las particiones.");
+            toast.error(e?.response?.data?.detail || "No se pudo generar el plan.");
         } finally {
-            setLoading(false);
-            setGenStatus(null);
+            setGeneratingPlan(false);
         }
     };
 
@@ -665,7 +663,8 @@ export default function Thesis() {
                                 generatingContra={generatingContra}
                                 onMutated={reload}
                                 onDevelop={developThesis}
-                                onDevelopAll={developAllPartitions}
+                                onGeneratePlan={generatePlan}
+                                generatingPlan={generatingPlan}
                                 onThesisUpdate={(d) => setResult(d)}
                             />
                         )

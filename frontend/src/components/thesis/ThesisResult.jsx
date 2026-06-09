@@ -6,7 +6,7 @@ import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } fro
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
-import { thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany, thesisMerge, thesisUnmerge } from "@/lib/api";
+import { thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany, thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -326,10 +326,11 @@ function DevelopAction({ name, core, whole, companyId, onDevelop, linkTo, testid
 /** Bloque 1.2 — a NEW thesis idea (growth driver). May offer an optional split into
  *  independent sub-parts (whose TAM sum to the core). Once a part (or the whole) is
  *  developed, the card becomes an informational note + the remaining parts as cards. */
-function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onDevelopAll, planningLocked = false, mergeTargets = [], absorbed = [], onMerge, ticker, developed = false }) {
+function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, planningLocked = false, mergeTargets = [], absorbed = [], onMerge, ticker, developed = false }) {
     const [showSplits, setShowSplits] = useState(false);
     const [mergeMode, setMergeMode] = useState("idle");
     const [mergeTarget, setMergeTarget] = useState("");
+    const planBtn = (active) => `text-[11px] uppercase tracking-[0.1em] font-semibold px-3 py-1.5 border transition-colors ${active ? "bg-black text-[#FDF1E6] border-black" : "bg-white text-[#1a1a1a] border-black/30 hover:border-black"}`;
     const absorbedTam = (absorbed || []).reduce((a, s) => a + (s.tam_busd || 0), 0);
     const displayTam = (t.tam_busd || 0) + absorbedTam;
     const c = t.relevance_score == null ? "#9CA3AF" : t.relevance_score >= 75 ? "#1E7D45" : t.relevance_score >= 50 ? "#B8860B" : "#B32A22";
@@ -337,7 +338,6 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onDevelopAll, pl
     const coreName = t.name || "";
     const ctx = companyId ? `&from_company=${companyId}&core=${encodeURIComponent(coreName)}` : "";
     const splitLink = (name) => `/thesis?trend=${encodeURIComponent(name || "")}&auto=1${ctx}`;
-    const wholeLink = `/thesis?trend=${encodeURIComponent(coreName)}&auto=1${ctx}${companyId ? "&whole=1" : ""}`;
     const splits = Array.isArray(t.splits) && t.splits.length >= 2 ? t.splits : null;
     const splitSum = splits ? splits.reduce((a, s) => a + (s.tam_busd || 0), 0) : 0;
 
@@ -476,26 +476,33 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onDevelopAll, pl
                                     ))}
                                 </ul>
                             )}
-                            {!planningLocked && onDevelopAll && (
-                                <button
-                                    onClick={() => onDevelopAll({ splits, core: coreName, companyId })}
-                                    data-testid={`generate-all-splits-${slug}`}
-                                    className="mt-2 w-full inline-flex items-center justify-center gap-1.5 text-[11px] uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-2.5 py-2 hover:bg-[#946c09] transition-colors"
-                                >
-                                    <GitBranch size={13} /> Generar todas las particiones
-                                </button>
-                            )}
                         </div>
                     )}
                     <div className="mt-auto pt-4 border-t border-black/10">
-                        <DevelopAction
-                            name={coreName} core={coreName} whole={true} companyId={companyId} onDevelop={onDevelop}
-                            linkTo={wholeLink}
-                            className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors"
-                            testid={`trend-generate-${slug}`}
-                        >
-                            <Sparkles size={13} /> {splits ? "Generar tesis (conjunto)" : "Generar tesis"} <ArrowRight size={12} />
-                        </DevelopAction>
+                        {planningLocked ? (
+                            <div className="text-[11px] text-[#4A4A4A] inline-flex items-center gap-1.5" data-testid={`pending-gen-${slug}`}>
+                                <Loader2 size={12} className="animate-spin" /> En cola para generarse…
+                            </div>
+                        ) : (
+                            <div data-testid={`plan-markers-${slug}`}>
+                                <div className="overline text-[#4A4A4A] mb-1.5">¿Cómo generarla?</div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <button onClick={() => onSetPlan?.(coreName, "whole")} className={planBtn(t.plan !== "split")} data-testid={`plan-whole-${slug}`}>
+                                        Conjunto
+                                    </button>
+                                    {splits && (
+                                        <button onClick={() => onSetPlan?.(coreName, "split")} className={planBtn(t.plan === "split")} data-testid={`plan-split-${slug}`}>
+                                            <GitBranch size={12} className="inline -mt-0.5 mr-1" />Particiones ({splits.length})
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-[#4A4A4A] mt-1.5 leading-snug">
+                                    {t.plan === "split" && splits
+                                        ? <>Se generarán <strong>{splits.length} tesis</strong>; sus TAM se reparten el conjunto ({fmtTam(t.tam_busd) || "del driver"}).</>
+                                        : <>Se generará <strong>1 tesis</strong> con todo el TAM del driver{fmtTam(t.tam_busd) ? ` (${fmtTam(t.tam_busd)})` : ""}.</>}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </>
             )}
@@ -672,7 +679,7 @@ function MatchedThesisRow({ match, company, fit, onAdded }) {
     );
 }
 
-export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop, onDevelopAll, onThesisUpdate }) {
+export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop, onGeneratePlan, generatingPlan = false, onThesisUpdate }) {
     const [linkData, setLinkData] = useState(null);
     const [linkLoading, setLinkLoading] = useState(false);
     const [mutateTick, setMutateTick] = useState(0);
@@ -747,6 +754,16 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo revertir."); }
     };
 
+    // Planning phase: mark a driver as "whole" (one thesis) or "split" (all partitions).
+    // Pure metadata, no LLM — nothing generates until the user presses "Generar plan".
+    const doSetPlan = async (core, plan) => {
+        if (!thesis?.id) return;
+        try {
+            const updated = await thesisSetPlan(thesis.id, core, plan);
+            onThesisUpdate?.(updated);
+        } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo marcar el plan."); }
+    };
+
     // 1.1b — existing theses the company fits but isn't a member of yet.
     // Dedupe by thesis_id (several company trends can map to the same thesis).
     const existingMatches = useMemo(() => {
@@ -765,10 +782,25 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     // Always include cores that were split-developed so their note + pending parts show.
     const newTrends = useMemo(() => {
         const all = (thesis?.trends || []).filter((t) => !t.merged_into);
+        // Planning phase: show EVERY non-merged driver so each can be planned (or
+        // merged). This keeps the partition complete → 100% of the TAM is conserved
+        // and the list no longer depends on the LLM matcher (stable on reload).
+        if (!planningLocked) return all;
         if (!linkData) return all;
         const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
         return all.filter((t) => create.has(_norm(t.name)) || splitDevCores.has(_norm(t.name)));
-    }, [thesis?.trends, linkData, splitDevCores]);
+    }, [thesis?.trends, linkData, splitDevCores, planningLocked]);
+
+    // How many theses "Generar plan" will create: split → its partitions, else 1.
+    const planCount = useMemo(() => {
+        if (planningLocked) return 0;
+        return (thesis?.trends || [])
+            .filter((t) => !t.merged_into)
+            .reduce((n, t) => {
+                const sp = Array.isArray(t.splits) && t.splits.length >= 2 ? t.splits : null;
+                return n + (t.plan === "split" && sp ? sp.length : 1);
+            }, 0);
+    }, [thesis?.trends, planningLocked]);
 
     // Map a matched thesis to a short "why it fits" (the company-trend fit description
     // / rationale, falling back to the matcher's reason) for the existing-matches rows.
@@ -917,11 +949,11 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             </span>
                         )}
                     </div>
-                    {/* Planning notice: merge/split only BEFORE generating, to keep TAMs coherent. */}
+                    {/* Planning notice: mark each driver, merge what you don't want, THEN execute. */}
                     {!planningLocked ? (
                         <div className="mb-3 border border-[#B8860B] bg-[#FBF3E0] px-3 py-2 text-[12px] text-[#7a5a10] leading-snug flex items-start gap-2" data-testid="planning-notice">
                             <GitBranch size={14} className="shrink-0 mt-0.5" />
-                            <span><strong>Fase de planificación.</strong> Antes de generar, fusiona o parte estos drivers para dejar la empresa y sus tesis como quieras: así los <strong>TAM quedan mutuamente excluyentes y coherentes</strong> (al fusionar se suman, al partir se reparten). Al generar la primera tesis, estas opciones se cierran.</span>
+                            <span><strong>Fase de planificación.</strong> Marca cada driver como <strong>Conjunto</strong> o <strong>Particiones</strong>, y <strong>fusiona</strong> los que no quieras por separado (su TAM se suma al destino, no se pierde). Cuando lo tengas, pulsa <strong>Generar plan</strong> abajo para crear todas las tesis a la vez. Nada se genera hasta entonces.</span>
                         </div>
                     ) : (
                         <div className="mb-3 border border-black/15 bg-[#F7F2EA] px-3 py-2 text-[12px] text-[#4A4A4A] leading-snug flex items-start gap-2" data-testid="planning-locked-notice">
@@ -940,7 +972,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                                 return (
                                     <NewThesisCard
                                         key={i} idx={i} t={t} companyId={thesis.id}
-                                        dev={d} onDevelop={onDevelop} onDevelopAll={onDevelopAll}
+                                        dev={d} onDevelop={onDevelop} onSetPlan={doSetPlan}
                                         planningLocked={planningLocked}
                                         mergeTargets={newTrends.filter((o) => _norm(o.name) !== _norm(t.name)).map((o) => o.name)}
                                         absorbed={absorbedByTarget[_norm(t.name)] || []}
@@ -954,6 +986,27 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     ) : (
                         <div className="text-sm text-[#4A4A4A] border border-dashed border-black/20 p-4" data-testid="new-trends-empty">
                             Todos los segmentos de negocio de {ticker || "la empresa"} ya están cubiertos por tus tesis. No hay tesis nuevas que generar.
+                        </div>
+                    )}
+
+                    {/* EXECUTE — generate the whole plan at once (serial queue). */}
+                    {!planningLocked && planCount > 0 && (
+                        <div className="mt-5 border-2 border-black bg-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" data-testid="generate-plan-bar">
+                            <div className="min-w-0">
+                                <div className="font-serif text-lg font-medium leading-tight">¿Listo? Genera el plan completo</div>
+                                <p className="text-xs text-[#4A4A4A] mt-0.5 leading-snug">
+                                    Se crearán <strong>{planCount}</strong> tesis en serie (cola), conservando el 100 % del TAM. Los drivers sin marcar se generan como <strong>conjunto</strong>; los marcados como particiones, en sus partes.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => onGeneratePlan?.(thesis.id)}
+                                disabled={generatingPlan}
+                                className="shrink-0 inline-flex items-center justify-center gap-2 text-sm uppercase tracking-[0.12em] font-semibold bg-black text-[#FDF1E6] px-5 py-3 hover:bg-[#052049] transition-colors disabled:opacity-50"
+                                data-testid="generate-plan-btn"
+                            >
+                                {generatingPlan ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                                Generar plan · {planCount} {planCount === 1 ? "tesis" : "tesis"}
+                            </button>
                         </div>
                     )}
 
