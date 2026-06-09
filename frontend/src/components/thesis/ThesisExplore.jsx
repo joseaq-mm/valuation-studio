@@ -62,6 +62,24 @@ function buildItems(view, path, dash, minConv) {
 
 const CAT_LABEL = { leader: "Líder", competitor: "Competidor", disruptor: "Disruptor" };
 
+/** View-switcher button (module-level so it isn't remounted on every parent re-render —
+ *  that was leaving the tooltip "stuck"). Tooltip is anchored under the button, set on
+ *  enter and cleared on leave. */
+function ViewBtn({ v, i, active, onSelect, onTip }) {
+    const Icon = v.icon;
+    return (
+        <button
+            onClick={onSelect}
+            onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); onTip({ text: v.desc, x: r.left, y: r.bottom }); }}
+            onMouseLeave={() => onTip(null)}
+            className={`px-3 py-2 text-xs uppercase tracking-[0.1em] font-semibold flex items-center gap-1.5 transition-colors ${i > 0 ? "border-l border-black" : ""} ${active ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
+            data-testid={`explore-view-${v.id}`}
+        >
+            <Icon size={13} /> {v.label}
+        </button>
+    );
+}
+
 /** Rich, structured tooltip shown on cell hover (follows the cursor, clamped to viewport). */
 function CellTooltip({ item, x, y }) {
     if (!item) return null;
@@ -164,32 +182,15 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     ? "El tamaño de cada empresa es proporcional a su score global medio (solo empresas completamente desarrolladas)."
                     : "El tamaño de cada empresa es proporcional a la suma de sus TAM Scores (solo empresas completamente desarrolladas).";
 
-    const ViewBtn = ({ v, i }) => {
-        const Icon = v.icon;
-        const active = view === v.id;
-        return (
-            <button
-                onClick={() => changeView(v.id)}
-                onMouseEnter={(e) => setBtnTip({ text: v.desc, x: e.clientX, y: e.clientY })}
-                onMouseMove={(e) => setBtnTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { text: v.desc, x: e.clientX, y: e.clientY }))}
-                onMouseLeave={() => setBtnTip(null)}
-                className={`px-3 py-2 text-xs uppercase tracking-[0.1em] font-semibold flex items-center gap-1.5 transition-colors ${i > 0 ? "border-l border-black" : ""} ${active ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
-                data-testid={`explore-view-${v.id}`}
-            >
-                <Icon size={13} /> {v.label}
-            </button>
-        );
-    };
-
     return (
         <div data-testid="thesis-explore">
             {/* View switcher: left group (entities) + right group (completed-company scores) */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3" data-testid="explore-views">
                 <div className="flex border border-black w-fit">
-                    {leftViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} />)}
+                    {leftViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
                 </div>
                 <div className="flex border border-black w-fit" data-testid="explore-views-right">
-                    {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} />)}
+                    {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
                 </div>
             </div>
 
@@ -296,7 +297,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
             {btnTip && (
                 <div
                     role="tooltip"
-                    style={{ position: "fixed", top: btnTip.y + 16, left: Math.min(btnTip.x + 14, (typeof window !== "undefined" ? window.innerWidth : 1920) - 312), width: 300, zIndex: 60, pointerEvents: "none" }}
+                    style={{ position: "fixed", top: btnTip.y + 8, left: Math.min(btnTip.x, (typeof window !== "undefined" ? window.innerWidth : 1920) - 312), width: 300, zIndex: 60, pointerEvents: "none" }}
                     className="bg-[#111111] text-white border border-black shadow-lg px-3 py-2 text-xs leading-relaxed"
                     data-testid="explore-view-tooltip"
                 >
