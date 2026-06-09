@@ -46,6 +46,32 @@ def prune_stale_split_dev(split_dev, alive_ids):
     return [e for e in (split_dev or []) if e.get("developed_id") in alive]
 
 
+def company_is_complete(doc) -> bool:
+    """A company thesis is 'complete' when planning is locked (has split_dev) AND every
+    non-merged driver has been fully developed (whole developed, or — if planned as
+    'split' — all its partitions developed). Used to decide which companies surface in
+    the dashboard treemap (only fully-planned, fully-developed ones)."""
+    def _n(s):
+        return (s or "").strip().lower()
+    dev = doc.get("split_dev") or []
+    if not dev:
+        return False
+    whole_done = {_n(e.get("core")) for e in dev if e.get("whole")}
+    split_done = {(_n(e.get("core")), _n(e.get("split"))) for e in dev if not e.get("whole") and e.get("split")}
+    for drv in (doc.get("trends") or []):
+        if drv.get("merged_into"):
+            continue
+        name = _n(drv.get("name"))
+        splits = drv.get("splits") or []
+        if drv.get("plan") == "split" and splits:
+            for sp in splits:
+                if (name, _n(sp.get("name"))) not in split_done:
+                    return False
+        elif name not in whole_done:
+            return False
+    return True
+
+
 def _score_far(a, b, tol):
     """True if two scores differ by more than `tol` (or one is missing and not both)."""
     if a is None and b is None:
@@ -975,6 +1001,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "query": t.get("query"),
             "summary": t.get("summary"),
             "tam": t.get("tam"),
+            "cagr_4y": t.get("cagr_4y"),
+            "cagr_note": t.get("cagr_note"),
             "value_chain": t.get("value_chain") or [],
             "companies": t.get("companies") or [],
             "heat": t.get("heat"),
@@ -1176,14 +1204,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         company_docs = await db.theses.find(
             {"user_id": uid, "type": "company"},
             {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "company": 1,
-             "overall_relevance": 1, "trends": 1, "created_at": 1},
+             "overall_relevance": 1, "trends": 1, "split_dev": 1, "created_at": 1},
         ).sort("created_at", -1).to_list(length=1000)
         folders = await db.thesis_folders.find(
             {"user_id": uid}, {"_id": 0}
         ).sort("created_at", -1).to_list(length=200)
         tendencia_docs = await db.theses.find(
             {"user_id": uid, "type": "tendencia"},
-            {"_id": 0, "id": 1, "title": 1, "query": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "title": 1, "query": 1, "tam": 1, "cagr_4y": 1,
+             "folder_id": 1, "created_at": 1},
         ).sort("created_at", -1).to_list(length=500)
 
         # Bulk projected-revenue map (USD billions) from the fundamentals cache only.
@@ -1242,8 +1271,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "company_count": len(clist), "companies": clist,
             })
 
+        # Only surface companies that are FULLY planned + fully developed (per the user:
+        # the dashboard treemap shows completed companies only). Membership/scores still
+        # come from the developed trend theses, but we gate by the company thesis state.
+        complete_tickers = {
+            ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            for d in company_docs if company_is_complete(d)
+        }
+        complete_tickers.discard("")
         companies = []
         for tk, a in comp_agg.items():
+            if tk not in complete_tickers:
+                continue
             avg = round(sum(a["scores"]) / len(a["scores"]), 1) if a["scores"] else None
             stam = round(sum(a["tams"]), 2) if a["tams"] else None
             companies.append({
@@ -1252,21 +1291,36 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 
+        # Tendencias (the 'Tendencias → Empresas' results) are now the dashboard's
+        # first-class entities: each carries its TAM (2027) and forward 4y CAGR, and can
+        # be grouped into a megatendencia (folder).
+        tendencias_out = []
+        for d in tendencia_docs:
+            tendencias_out.append({
+                "id": d.get("id"),
+                "title": d.get("title") or d.get("query"),
+                "query": d.get("query"),
+                "tam_busd": (d.get("tam") or {}).get("global_busd"),
+                "cagr_4y": d.get("cagr_4y"),
+                "folder_id": d.get("folder_id"),
+            })
+
+        # Megatendencias (folders) aggregate their TENDENCIAS: TAM = sum, CAGR = average.
         folder_out = []
         for f in folders:
-            contained = [tr for tr in trends if tr["folder_id"] == f.get("id")]
-            ftam = aggregate_folder_tam(contained)  # excludes nested children (no double-counting)
+            contained = [t for t in tendencias_out if t["folder_id"] == f.get("id")]
+            tams = [t["tam_busd"] for t in contained if t["tam_busd"] is not None]
+            cagrs = [t["cagr_4y"] for t in contained if t["cagr_4y"] is not None]
             folder_out.append({
                 "id": f.get("id"), "name": f.get("name"),
-                "tam_busd": ftam,
-                "trend_ids": [tr["id"] for tr in contained],
-                "trend_count": len(contained),
+                "tam_busd": round(sum(tams), 1) if tams else None,
+                "cagr_4y": round(sum(cagrs) / len(cagrs), 1) if cagrs else None,
+                "tendencia_ids": [t["id"] for t in contained],
+                "tendencia_count": len(contained),
             })
 
         # Company dropdown (simplified): list ONLY the trend theses already generated
-        # where the company really appears (membership). Newest doc per ticker. The
-        # list reflects live membership, so adding a company to an existing thesis
-        # shows up on the next dashboard reload (page change or the Refresh button).
+        # where the company really appears (membership). Newest doc per ticker.
         trend_tickers = {
             tr["id"]: {(c.get("ticker") or "").upper() for c in tr["companies"] if c.get("ticker")}
             for tr in trends
@@ -1292,11 +1346,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         return {"folders": folder_out, "trends": trends,
                 "companies": companies, "company_theses": company_theses,
-                "tendencias": [
-                    {"id": d.get("id"), "title": d.get("title") or d.get("query"),
-                     "query": d.get("query")}
-                    for d in tendencia_docs
-                ]}
+                "tendencias": tendencias_out}
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

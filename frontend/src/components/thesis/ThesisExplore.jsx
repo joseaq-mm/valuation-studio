@@ -4,45 +4,38 @@ import { Layers, TrendingUp, Building2, BarChart3, ChevronRight, MousePointerCli
 import { squarify, relColor } from "@/lib/treemap";
 
 const VIEWS = [
-    { id: "megatrends", label: "Megatesis", icon: Layers },
-    { id: "trends", label: "Tesis", icon: TrendingUp },
+    { id: "megatrends", label: "Megatendencias", icon: Layers },
+    { id: "tendencias", label: "Tendencias", icon: TrendingUp },
     { id: "companies_score", label: "Empresas · score medio", icon: Building2 },
     { id: "companies_tam", label: "Empresas · TAM total", icon: BarChart3 },
 ];
 const H = 440;
 
 const fmtTam = (b) => (b == null ? null : b >= 1000 ? `$${(b / 1000).toFixed(1)}T` : b >= 10 ? `$${Math.round(b)}B` : `$${b}B`);
+const fmtCagr = (v) => (v == null ? null : `${v > 0 ? "+" : ""}${v}%`);
 
 function buildItems(view, path, dash) {
-    const folders = dash?.folders || [], trends = dash?.trends || [], companies = dash?.companies || [];
-    const trendItems = (list) => list.map((t) => ({
-        type: "trend", id: t.id, name: t.is_child ? `↳ ${t.title}` : t.title,
-        value: t.tam_busd > 0 ? t.tam_busd : Math.max(t.company_count, 1),
-        metric: t.tam_busd, sub: `${t.company_count} emp.`,
-        badge: t.is_child ? "sub-tesis" : fmtTam(t.tam_busd),
+    const folders = dash?.folders || [], tendencias = dash?.tendencias || [], companies = dash?.companies || [];
+    // A tendencia cell: size ∝ forward 4y CAGR; shows CAGR% (badge) + TAM (sub).
+    const tendenciaItems = (list) => list.map((t) => ({
+        type: "tendencia", id: t.id, name: t.title,
+        value: t.cagr_4y > 0 ? t.cagr_4y : 1,
+        metric: t.cagr_4y, sub: fmtTam(t.tam_busd) || "", badge: fmtCagr(t.cagr_4y),
     }));
-    const companiesOfTrend = (entry) => {
-        const t = trends.find((x) => x.id === entry.id);
-        return (t?.companies || []).filter((c) => c.overall_score != null).map((c) => ({
-            type: "company", ticker: c.ticker, name: c.name || c.ticker,
-            value: Math.max(c.overall_score, 1), metric: c.overall_score,
-            sub: c.ticker || "", badge: c.overall_score,
-        }));
-    };
     if (view === "megatrends") {
         if (path.length === 0) {
+            // Megatendencia cell: size ∝ AVG CAGR of its tendencias; shows avg CAGR + SUM TAM.
             return folders.map((f) => ({
-                type: "folder", id: f.id, name: f.name, trend_count: f.trend_count,
-                value: f.tam_busd > 0 ? f.tam_busd : Math.max(f.trend_count, 1),
-                metric: f.tam_busd, sub: `${f.trend_count} tesis`, badge: fmtTam(f.tam_busd),
+                type: "folder", id: f.id, name: f.name, tendencia_count: f.tendencia_count,
+                value: f.cagr_4y > 0 ? f.cagr_4y : Math.max(f.tendencia_count || 0, 1),
+                metric: f.cagr_4y, sub: fmtTam(f.tam_busd) || `${f.tendencia_count || 0} tend.`,
+                badge: fmtCagr(f.cagr_4y),
             }));
         }
-        if (path.length === 1) return trendItems(trends.filter((t) => t.folder_id === path[0].id));
-        return companiesOfTrend(path[1]);
+        return tendenciaItems(tendencias.filter((t) => t.folder_id === path[0].id));
     }
-    if (view === "trends") {
-        if (path.length === 0) return trendItems(trends);
-        return companiesOfTrend(path[0]);
+    if (view === "tendencias") {
+        return tendenciaItems(tendencias);
     }
     if (view === "companies_score") {
         return companies.filter((c) => c.avg_overall_score != null).map((c) => ({
@@ -81,12 +74,20 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
     const changeView = (id) => { setView(id); setPath([]); };
     const onCell = (it) => {
         if (it.type === "folder") setPath([{ type: "folder", id: it.id, name: it.name }]);
-        else if (it.type === "trend") setPath((p) => [...p, { type: "trend", id: it.id, name: it.name }]);
+        else if (it.type === "tendencia" && it.id) navigate(`/thesis/${it.id}`);
         else if (it.type === "company" && it.ticker) navigate(`/company/${it.ticker}`);
     };
 
     const viewLabel = VIEWS.find((v) => v.id === view)?.label;
-    const drillable = items.length > 0 && (items[0].type === "folder" || items[0].type === "trend");
+    const drillable = items.length > 0 && items[0].type === "folder";
+
+    const caption = view === "megatrends"
+        ? "El tamaño de cada megatendencia es proporcional a la MEDIA del crecimiento compuesto a 4 años (CAGR) de sus tendencias; el badge muestra ese CAGR y el subtítulo el TAM total (suma)."
+        : view === "tendencias"
+            ? "El tamaño de cada tendencia es proporcional a su crecimiento compuesto a 4 años (CAGR); el badge muestra el CAGR y el subtítulo el TAM 2027e."
+            : view === "companies_score"
+                ? "El tamaño de cada empresa es proporcional a su score global medio (solo empresas completamente desarrolladas)."
+                : "El tamaño de cada empresa es proporcional a la suma de sus TAM Scores (solo empresas completamente desarrolladas).";
 
     return (
         <div data-testid="thesis-explore">
@@ -115,18 +116,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                     {path.map((p, i) => (
                         <span key={i} className="flex items-center gap-1">
                             <ChevronRight size={12} />
-                            {p.type === "trend" ? (
-                                <button
-                                    onClick={() => navigate(`/thesis/${p.id}`)}
-                                    className="underline text-[#052049] hover:text-[#B32A22] font-medium"
-                                    title="Abrir esta tesis"
-                                    data-testid={`breadcrumb-trend-${p.id}`}
-                                >
-                                    {p.name}
-                                </button>
-                            ) : (
-                                <button onClick={() => setPath(path.slice(0, i + 1))} className="hover:underline">{p.name}</button>
-                            )}
+                            <button onClick={() => setPath(path.slice(0, i + 1))} className="hover:underline">{p.name}</button>
                         </span>
                     ))}
                     {drillable && <span className="flex items-center gap-1 text-[#9CA3AF] ml-1"><MousePointerClick size={12} /> clic para explorar</span>}
@@ -143,8 +133,8 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                 {laid.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center text-center text-sm text-[#4A4A4A] px-6" data-testid="explore-empty">
                         {view.startsWith("companies")
-                            ? "Aún no hay empresas con datos suficientes en tus tesis."
-                            : "Aún no hay datos para esta vista. Genera o guarda tesis para verlas aquí."}
+                            ? "Aún no hay empresas completamente desarrolladas. Planifica una empresa y genera todas sus tesis para verla aquí."
+                            : "Aún no hay tendencias. Usa «Tendencias → Empresas» para crear una y agrúpalas en megatendencias."}
                     </div>
                 )}
                 {laid.map((it, idx) => {
@@ -158,7 +148,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                             tabIndex={0}
                             onClick={() => onCell(it)}
                             onKeyDown={(e) => { if (e.key === "Enter") onCell(it); }}
-                            title={`${it.name}${it.badge != null ? ` · ${it.badge}` : ""}`}
+                            title={`${it.name}${it.badge != null ? ` · ${it.badge}` : ""}${it.sub ? ` · ${it.sub}` : ""}`}
                             className="absolute text-left overflow-hidden border border-[#FDF1E6] hover:brightness-110 hover:z-10 transition-all cursor-pointer"
                             style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
                             data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
@@ -179,7 +169,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                             {it.type === "folder" && onDeleteFolder && it.w > 44 && it.h > 28 && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onDeleteFolder(it); }}
-                                    title="Eliminar megatesis"
+                                    title="Eliminar megatendencia"
                                     className="absolute top-1 right-1 p-1 bg-black/25 hover:bg-black/55 text-[#FDF1E6] transition-colors"
                                     data-testid={`explore-delete-folder-${it.id}`}
                                 >
@@ -191,7 +181,7 @@ export default function ThesisExplore({ dash, onDeleteFolder }) {
                 })}
             </div>
             <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
-                El tamaño de cada cuadrado es proporcional a {view === "megatrends" || view === "trends" ? "su TAM (potencial de mercado)" : view === "companies_score" ? "su score global medio" : "la suma de sus TAM Scores"}, relativo al resto. El color va de verde (alto) a rojo (bajo).
+                {caption} El color va de verde (alto) a rojo (bajo).
             </p>
         </div>
     );

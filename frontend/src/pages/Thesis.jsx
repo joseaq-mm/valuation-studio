@@ -240,9 +240,14 @@ export default function Thesis() {
     // From an informational trend: generate the Empresa→Tesis of a mentioned company.
     const developCompanyFromTendencia = (ticker) => {
         if (!ticker) return;
+        // Per requirement: take the user to "Empresa → Tesis" with the ticker prefilled
+        // and READY to press "Generar tesis" — but do NOT auto-generate.
+        setResult(null);
+        setPendingDup(null);
         setMode("company");
         setSubject(ticker);
-        generate("company", ticker);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        toast.info(`${ticker} listo en «Empresa → Tesis». Pulsa «Generar tesis» cuando quieras.`);
     };
 
     // Informational (structural-only) trend exploration.
@@ -369,27 +374,17 @@ export default function Thesis() {
         try {
             const f = await thesisCreateFolder(n);
             setNewFolder("");
-            toast.success("Megatesis creada");
+            toast.success("Megatendencia creada");
             pushAction({ type: "create_folder", folder: { id: f.id, name: f.name, created_at: f.created_at } });
             reload();
         } catch { toast.error("No se pudo crear la megatesis"); }
     };
 
-    const assign = async (folderId) => {
-        if (!result?.id) return;
-        try {
-            await thesisAssignFolder(result.id, folderId || null);
-            setResult({ ...result, saved: true, folder_id: folderId || null });
-            toast.success(folderId ? "Guardada en megatesis" : "Guardada");
-            reload();
-        } catch { toast.error("No se pudo guardar"); }
-    };
-
     const assignThesisFolder = async (id, folderId) => {
-        const prev = (dash?.trends || []).find((t) => t.id === id)?.folder_id || null;
+        const prev = (dash?.tendencias || []).find((t) => t.id === id)?.folder_id || null;
         try {
             await thesisAssignFolder(id, folderId || null);
-            toast.success(folderId ? "Movida a la megatesis" : "Quitada de la megatesis");
+            toast.success(folderId ? "Movida a la megatendencia" : "Quitada de la megatendencia");
             pushAction({ type: "assign_folder", id, prev, next: folderId || null });
             reload();
         } catch { toast.error("No se pudo mover la tesis"); }
@@ -595,47 +590,29 @@ export default function Thesis() {
                         </div>
                     )}
 
-                    {/* Megatesis management */}
+                    {/* Megatendencias management */}
                     {user && (
                         <div className="border border-black bg-white p-4 mb-6" data-testid="megatrends-bar">
-                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatesis</div>
-                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tesis desarrolladas en megatesis. Crea una abajo, asígnala desde el selector de cada tesis (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatesis</strong>.</p>
+                            <div className="overline text-black flex items-center gap-1 mb-1"><Folder size={12} /> Megatendencias</div>
+                            <p className="text-[11px] text-[#4A4A4A] mb-3">Agrupa tus tendencias en megatendencias. Crea una abajo, asígnala desde el selector de cada tendencia (lista de la derecha) y elimínala desde su cuadro en la vista <strong>Megatendencias</strong>.</p>
                             <div className="flex gap-1 max-w-sm">
                                 <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)}
                                        onKeyDown={(e) => e.key === "Enter" && createFolder()}
-                                       placeholder="Nueva megatesis" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
-                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatesis">
+                                       placeholder="Nueva megatendencia" className="flex-1 border border-black/30 px-2 py-1 text-xs outline-none" data-testid="new-folder-input" />
+                                <button onClick={createFolder} className="border border-black px-2 hover:bg-[#F5E4D4]" data-testid="create-folder-btn" title="Crear megatendencia">
                                     <FolderPlus size={14} />
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* Save bar — only for theses (company / trend); tendencias save inline. */}
-                    {result && !isTendencia && user && (
-                        result.type === "company" ? (
-                            result.id && (
-                                <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
-                                    <Link to={`/thesis/${result.id}`} className="btn-primary flex items-center gap-1.5 !px-4" data-testid="thesis-view-detail">
-                                        Ver en detalle <ArrowRight size={14} />
-                                    </Link>
-                                </div>
-                            )
-                        ) : (
-                            <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
-                                <span className="overline text-[#4A4A4A]">Guardar en megatesis</span>
-                                <select
-                                    value={result.folder_id || ""}
-                                    onChange={(e) => assign(e.target.value)}
-                                    className="border border-black bg-white px-2 py-1.5 text-sm outline-none"
-                                    data-testid="thesis-folder-select"
-                                >
-                                    <option value="">— Sin megatesis —</option>
-                                    {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                </select>
-                                {result.id && <Link to={`/thesis/${result.id}`} className="text-xs text-[#052049] hover:underline">Ver en detalle →</Link>}
-                            </div>
-                        )
+                    {/* Save bar — theses (company / trend) just link to detail; tendencias save inline. */}
+                    {result && !isTendencia && user && result.id && (
+                        <div className="border border-black bg-[#F5E4D4] p-3 mb-6 flex items-center gap-3 flex-wrap" data-testid="thesis-save-bar">
+                            <Link to={`/thesis/${result.id}`} className="btn-primary flex items-center gap-1.5 !px-4" data-testid="thesis-view-detail">
+                                Ver en detalle <ArrowRight size={14} />
+                            </Link>
+                        </div>
                     )}
                     {result && !isTendencia && !user && (
                         <div className="border border-[#B32A22]/40 bg-white p-3 mb-6 text-sm" data-testid="thesis-login-hint">
@@ -677,13 +654,12 @@ export default function Thesis() {
                 <div className="order-1 lg:order-2">
                     {!user ? (
                         <aside className="border border-black bg-white p-4" data-testid="thesis-sidebar">
-                            <div className="overline text-black mb-2">Tendencias, tesis y empresas</div>
-                            <div className="text-sm text-[#4A4A4A]">Inicia sesión con Google para guardar tus tendencias, tesis y empresas y consultarlas cuando quieras.</div>
+                            <div className="overline text-black mb-2">Tendencias y empresas</div>
+                            <div className="text-sm text-[#4A4A4A]">Inicia sesión con Google para guardar tus tendencias y empresas y consultarlas cuando quieras.</div>
                         </aside>
                     ) : (
                         <ThesisSidebar
                             tendencias={dash?.tendencias || []}
-                            trends={dash?.trends || []}
                             companyTheses={dash?.company_theses || []}
                             folders={folders}
                             onAssignFolder={assignThesisFolder}
@@ -703,16 +679,16 @@ export default function Thesis() {
                     <div className="bg-white border border-black max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
                         <div className="font-serif text-xl font-medium mb-1">Eliminar «{folderToDelete.name}»</div>
                         <p className="text-sm text-[#4A4A4A] mb-4">
-                            Esta megatesis agrupa <strong>{folderToDelete.trend_count || 0} tesis</strong>. ¿Qué quieres hacer con ellas?
+                            Esta megatendencia agrupa <strong>{folderToDelete.tendencia_count || 0} tendencias</strong>. ¿Qué quieres hacer con ellas?
                         </p>
                         <div className="flex flex-col gap-2">
                             <button onClick={() => deleteFolder(folderToDelete, "ungroup")} data-testid="delete-folder-ungroup"
                                     className="text-left text-sm border border-black px-3 py-2 hover:bg-[#F5E4D4] transition-colors">
-                                <span className="font-semibold">Solo desagrupar</span> — mantener las tesis en mi lista (sin megatesis)
+                                <span className="font-semibold">Solo desagrupar</span> — mantener las tendencias en mi lista (sin megatendencia)
                             </button>
                             <button onClick={() => deleteFolder(folderToDelete, "cascade")} data-testid="delete-folder-cascade"
                                     className="text-left text-sm border border-[#B32A22] text-[#B32A22] px-3 py-2 hover:bg-[#B32A22] hover:text-white transition-colors">
-                                <span className="font-semibold">Borrar también las tesis</span> — eliminar la megatesis y su contenido
+                                <span className="font-semibold">Borrar también las tendencias</span> — eliminar la megatendencia y su contenido
                             </button>
                             <button onClick={() => setFolderToDelete(null)} data-testid="delete-folder-cancel"
                                     className="text-xs text-[#4A4A4A] hover:underline mt-1 self-start">

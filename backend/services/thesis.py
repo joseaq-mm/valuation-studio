@@ -402,6 +402,22 @@ def _normalize_tam(tam):
     }
 
 
+def _cagr_pct(v):
+    """Coerce a forward CAGR to a percentage number (e.g. 22.5). None if invalid.
+    Clamped to a sane [-50, 200] range to avoid absurd LLM outputs."""
+    if isinstance(v, str):
+        v = v.replace("%", "").replace(",", ".").strip()
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    if v < -50:
+        v = -50.0
+    if v > 200:
+        v = 200.0
+    return round(v, 1)
+
+
 def _normalize_value_chain(vc):
     out = []
     for s in (vc or []):
@@ -518,10 +534,11 @@ async def run_trend_thesis(trend: str, sources: list, origin_company: str = None
 
 
 async def run_trend_explore(trend: str, sources: list) -> dict:
-    """Lightweight STRUCTURAL-ONLY trend exploration (no scoring → cheaper).
-    ONE LLM call: maps the value chain + ≥1 leader and ≥1 disruptor per stage, each
-    company with its role (líder/disruptor) and a short prominence note. Used by the
-    informational 'Tendencias → Empresas' and 'Tendencia automática' flows."""
+    """Informational trend exploration for 'Tendencias → Empresas' (and 'Tendencia
+    automática'). ONE LLM call producing: a half-page explanation (4-8 paragraphs),
+    TAM 2027 (TTM), a forward 4-year CAGR, and up to 2 expected leaders + 2 competitors
+    gaining ground + 2 disruptors (real listed companies), each with its value-chain role
+    and why it's included."""
     sources_block = _sources_block(sources)
     inv_user = (
         f"TENDENCIA / TEMA A ANALIZAR: {trend}\n\n"
@@ -529,45 +546,50 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         "Devuelve un JSON con esta forma EXACTA:\n"
         "{\n"
         '  "title": "título corto de la tendencia",\n'
-        '  "summary": "2-3 frases sobre por qué es una megatendencia relevante para invertir",\n'
+        '  "summary": "explicación de MEDIA PÁGINA: entre 4 y 5 párrafos (máximo 8 solo si es estrictamente necesario), separados por DOBLE salto de línea (\\n\\n). Cubre: qué es la tendencia, por qué ocurre ahora, los drivers de demanda, la cadena de valor a alto nivel, riesgos principales y horizonte temporal.",\n'
         '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
+        '  "cagr_4y": 0, "cagr_note": "1 frase: supuesto del crecimiento compuesto anual a 4 años",\n'
         '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "nombre EXACTO del eslabón (igual que en value_chain)", "category": "leader|competitor|disruptor", "why": "1-2 frases sobre su papel y protagonismo; si es disruptor, indica qué criterio cumple"}]\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "su rol/posición real en la cadena de valor", "category": "leader|competitor|disruptor", "why": "1-2 frases: por qué se incluye en esa categoría; si es disruptor, qué criterio cumple"}]\n'
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
-        "- En la mayoría de eslabones intenta incluir AL MENOS 1 'leader' y AL MENOS 1 NO-líder ('competitor' o "
-        "'disruptor'), PERO solo con empresas cotizadas REALES cuya actividad PRINCIPAL encaje de verdad en ese "
-        "eslabón. NUNCA coloques una empresa en un eslabón que no corresponde a su actividad real solo para "
-        "rellenarlo: es preferible dejar un eslabón sin no-líder (o sin líder) que ubicar mal a una empresa.\n"
-        "- 'value_chain_role' debe reflejar la ACTIVIDAD REAL de la empresa y coincidir EXACTAMENTE con un 'stage' de value_chain.\n"
-        "- Usa 3-5 eslabones y todas las empresas reales y cotizadas con su TICKER canónico."
+        "- 'cagr_4y' = crecimiento compuesto anual estimado del MERCADO de la tendencia para los próximos 4 años (~2027→2031), en PORCENTAJE como número (ej. 18.5), SIN el símbolo %.\n"
+        "- 'companies': incluye HASTA 2 'leader' (líderes esperados), HASTA 2 'competitor' (competidores que GANAN TERRENO al líder) y HASTA 2 'disruptor' (misma definición estricta de disruptor). Si en alguna categoría no hay 2 empresas cotizadas reales BIEN encajadas, incluye solo las que haya (o ninguna): NO rellenes con empresas mal encajadas.\n"
+        "- Solo empresas COTIZADAS reales con su TICKER canónico de Yahoo Finance.\n"
+        "- 'value_chain_role' describe la actividad/posición real de la empresa (información adicional)."
     )
     inv_raw = await _llm(*_inv_model(), f"thesis-explore-{datetime.now(timezone.utc).timestamp()}",
                          INVESTIGATOR_TREND_SYS, inv_user)
     inv = _extract_json(inv_raw)
-    companies = inv.get("companies") or []
-    if not companies:
-        raise ValueError("No se pudieron identificar empresas para esta tendencia. Prueba a reformularla.")
-    merged = []
-    for c in companies:
+    raw_companies = inv.get("companies") or []
+    # Cap to 2 per category (leaders / competitors / disruptors), keep order.
+    caps = {"leader": [], "competitor": [], "disruptor": []}
+    for c in raw_companies:
         tk = (c.get("ticker") or "").upper().strip()
         cat = (c.get("category") or "competitor").strip().lower()
-        if cat not in ("leader", "competitor", "disruptor"):
+        if cat not in caps:
             cat = "competitor"
-        merged.append({
+        if len(caps[cat]) >= 2:
+            continue
+        caps[cat].append({
             "name": c.get("name"),
             "ticker": tk or None,
             "value_chain_role": c.get("value_chain_role"),
             "category": cat,
             "why": c.get("why"),
         })
+    merged = caps["leader"] + caps["competitor"] + caps["disruptor"]
+    if not merged:
+        raise ValueError("No se pudieron identificar empresas para esta tendencia. Prueba a reformularla.")
     return {
         "type": "tendencia",
         "query": trend,
         "title": inv.get("title") or trend,
         "summary": inv.get("summary"),
         "tam": _normalize_tam(inv.get("tam")),
+        "cagr_4y": _cagr_pct(inv.get("cagr_4y")),
+        "cagr_note": inv.get("cagr_note"),
         "value_chain": _normalize_value_chain(inv.get("value_chain")),
         "companies": merged,
         "sources": sources,

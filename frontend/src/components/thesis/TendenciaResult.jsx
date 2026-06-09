@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Sparkles, Bookmark, X, Flame, ExternalLink } from "lucide-react";
+import { ArrowRight, Sparkles, Bookmark, X, Flame, ExternalLink, TrendingUp } from "lucide-react";
 import HoverTip from "@/components/HoverTip";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
@@ -21,38 +21,48 @@ function fmtTam(busd) {
     return `$${busd} B`;
 }
 
-function TamBadge({ busd, label, note }) {
-    const txt = fmtTam(busd);
-    if (!txt) return null;
+function fmtCagr(v) {
+    if (v == null || isNaN(v)) return null;
+    return `${v > 0 ? "+" : ""}${v}%`;
+}
+
+function MetricBadge({ value, label, note, color = "#1E7D45", testid }) {
+    if (!value) return null;
     const inner = (
-        <div className="flex flex-col items-center gap-0.5" data-testid="tendencia-tam-badge">
-            <div className="font-mono font-bold leading-none text-[#1E7D45] text-2xl">{txt}</div>
+        <div className="flex flex-col items-center gap-0.5" data-testid={testid}>
+            <div className="font-mono font-bold leading-none text-2xl" style={{ color }}>{value}</div>
             <span className="overline text-[#4A4A4A] text-center leading-tight">{label}</span>
         </div>
     );
     return note
-        ? <HoverTip text={`${note}\n\n(TAM en miles de millones de USD · estimación informativa)`} maxWidth={300}><div className="cursor-help">{inner}</div></HoverTip>
+        ? <HoverTip text={note} maxWidth={300}><div className="cursor-help">{inner}</div></HoverTip>
         : inner;
 }
 
-/** Informational company card (no scores): role + prominence + "Generar tesis". */
+/** Informational company card: category + role + why + "prepare thesis" link. */
 function CompanyCard({ c, onDevelopCompany }) {
     const badge = catBadge(c.category);
+    const key = c.ticker || _norm(c.name).slice(0, 10);
     return (
-        <div className="border border-black bg-white p-4" data-testid={`tendencia-company-${c.ticker || _norm(c.name).slice(0, 10)}`}>
+        <div className="border border-black bg-white p-4" data-testid={`tendencia-company-${key}`}>
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <span
                         className={`inline-block text-[10px] uppercase tracking-[0.12em] font-bold px-1.5 py-0.5 mb-1 ${badge.cls}`}
-                        data-testid={`tendencia-category-${c.ticker || _norm(c.name).slice(0, 10)}`}
+                        data-testid={`tendencia-category-${key}`}
                     >
                         {badge.txt}
                     </span>
                     <div className="font-serif text-lg font-medium leading-tight">{c.name}</div>
-                    <div className="overline text-[#4A4A4A] mt-0.5">{c.value_chain_role}</div>
+                    {c.value_chain_role && (
+                        <div className="text-xs text-[#4A4A4A] mt-0.5">
+                            <span className="font-semibold">En la cadena de valor:</span> {c.value_chain_role}
+                        </div>
+                    )}
                 </div>
                 {c.ticker && (
                     <Link to={`/company/${c.ticker}`}
+                          title="Ver análisis cuantitativo"
                           className="shrink-0 inline-flex items-center gap-1 font-mono text-xs font-semibold bg-black text-[#FDF1E6] px-2 py-1 hover:bg-[#052049] transition-colors"
                           data-testid={`tendencia-company-link-${c.ticker}`}>
                         {c.ticker} <ArrowRight size={12} />
@@ -65,43 +75,25 @@ function CompanyCard({ c, onDevelopCompany }) {
             {c.ticker && (
                 <button
                     onClick={() => onDevelopCompany?.(c.ticker, c.name)}
+                    title={`Te lleva a «Empresa → Tesis» con ${c.ticker} listo para que pulses Generar tesis (no se genera automáticamente).`}
                     className="mt-3 inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.1em] font-semibold border border-black px-2.5 py-1.5 hover:bg-black hover:text-[#FDF1E6] transition-colors"
                     data-testid={`tendencia-develop-${c.ticker}`}
                 >
-                    <Sparkles size={12} /> Generar tesis de {c.ticker}
+                    <Sparkles size={12} /> Preparar tesis de {c.ticker}
                 </button>
             )}
         </div>
     );
 }
 
-function StageRow({ stage, leaders, disruptors, onDevelopCompany }) {
+function CategoryBlock({ title, color, companies, empty, onDevelopCompany, testid }) {
     return (
-        <div className="mb-8" data-testid={`tendencia-stage-${_norm(stage.stage).slice(0, 16)}`}>
-            <div className="flex items-end justify-between gap-3 border-b-2 border-black pb-1.5 mb-3">
-                <div className="min-w-0">
-                    <div className="font-serif text-lg font-medium leading-tight">{stage.stage}</div>
-                    {stage.description && <div className="text-xs text-[#4A4A4A] leading-snug mt-0.5">{stage.description}</div>}
-                </div>
-                <TamBadge busd={stage.tam_busd} label="TAM 2027e" />
-            </div>
-            <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                    <div className="overline text-[#052049] mb-2">Líderes establecidos</div>
-                    <div className="space-y-4">
-                        {leaders.length
-                            ? leaders.map((c, i) => <CompanyCard key={i} c={c} onDevelopCompany={onDevelopCompany} />)
-                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin líder identificado en este eslabón.</div>}
-                    </div>
-                </div>
-                <div>
-                    <div className="overline text-[#B32A22] mb-2">Competidores / disruptores</div>
-                    <div className="space-y-4">
-                        {disruptors.length
-                            ? disruptors.map((c, i) => <CompanyCard key={i} c={c} onDevelopCompany={onDevelopCompany} />)
-                            : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3">Sin competidores identificados en este eslabón.</div>}
-                    </div>
-                </div>
+        <div data-testid={testid}>
+            <div className="overline mb-2" style={{ color }}>{title}</div>
+            <div className="space-y-4">
+                {companies.length
+                    ? companies.map((c, i) => <CompanyCard key={i} c={c} onDevelopCompany={onDevelopCompany} />)
+                    : <div className="text-xs text-[#9CA3AF] border border-dashed border-black/20 p-3" data-testid={`${testid}-empty`}>{empty}</div>}
             </div>
         </div>
     );
@@ -109,26 +101,11 @@ function StageRow({ stage, leaders, disruptors, onDevelopCompany }) {
 
 export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, onDiscard, saved = false, saving = false, canSave = true }) {
     if (!tendencia) return null;
-    const stages = tendencia.value_chain || [];
     const companies = tendencia.companies || [];
-    const used = new Set();
-    const groups = stages.map((s) => {
-        const inStage = companies.filter((c) => _norm(c.value_chain_role) === _norm(s.stage));
-        inStage.forEach((c) => used.add(c.ticker || c.name));
-        return {
-            stage: s,
-            leaders: inStage.filter((c) => c.category === "leader"),
-            disruptors: inStage.filter((c) => c.category !== "leader"),
-        };
-    });
-    const leftover = companies.filter((c) => !used.has(c.ticker || c.name));
-    if (leftover.length) {
-        groups.push({
-            stage: { stage: stages.length ? "Otros" : "Empresas", description: "", tam_busd: null },
-            leaders: leftover.filter((c) => c.category === "leader"),
-            disruptors: leftover.filter((c) => c.category !== "leader"),
-        });
-    }
+    const leaders = companies.filter((c) => c.category === "leader");
+    const competitors = companies.filter((c) => c.category === "competitor");
+    const disruptors = companies.filter((c) => c.category === "disruptor");
+    const paragraphs = (tendencia.summary || "").split(/\n{2,}|\n/).map((p) => p.trim()).filter(Boolean);
 
     return (
         <div data-testid="tendencia-result">
@@ -137,20 +114,38 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="min-w-0">
                         <div className="overline text-[#B32A22] mb-1 flex items-center gap-2">
-                            Tendencia · cadena de valor (informativa)
+                            Tendencia · análisis informativo
                             {tendencia.auto && <span className="inline-flex items-center gap-1 text-[#B8860B]"><Flame size={12} /> automática{tendencia.heat != null ? ` · heat ${tendencia.heat}` : ""}</span>}
                         </div>
                         <h1 className="font-serif text-3xl sm:text-4xl font-medium leading-tight">{tendencia.title}</h1>
                     </div>
-                    <div className="flex items-start gap-5 shrink-0">
-                        {tendencia.tam?.global_busd != null && (
-                            <TamBadge busd={tendencia.tam.global_busd} label={`TAM ${tendencia.tam?.year || 2027}e`} note={tendencia.tam?.note} />
-                        )}
+                    <div className="flex items-start gap-6 shrink-0">
+                        <MetricBadge
+                            value={fmtTam(tendencia.tam?.global_busd)}
+                            label={`TAM ${tendencia.tam?.year || 2027}e`}
+                            note={tendencia.tam?.note ? `${tendencia.tam.note}\n\n(TAM en miles de millones de USD · estimación informativa)` : null}
+                            testid="tendencia-tam-badge"
+                        />
+                        <MetricBadge
+                            value={fmtCagr(tendencia.cagr_4y)}
+                            label="Crecimiento 4a (CAGR)"
+                            color="#052049"
+                            note={tendencia.cagr_note ? `${tendencia.cagr_note}\n\n(Crecimiento compuesto anual estimado del mercado a 4 años · estimación informativa)` : "Crecimiento compuesto anual estimado del mercado a 4 años (informativo)."}
+                            testid="tendencia-cagr-badge"
+                        />
                     </div>
                 </div>
-                {tendencia.summary && <p className="text-base mt-4 leading-relaxed text-[#1a1a1a]">{tendencia.summary}</p>}
+
+                {/* Half-page explanation (4-8 paragraphs) */}
+                {paragraphs.length > 0 && (
+                    <div className="mt-4 space-y-3" data-testid="tendencia-summary">
+                        {paragraphs.map((p, i) => (
+                            <p key={i} className="text-base leading-relaxed text-[#1a1a1a]">{p}</p>
+                        ))}
+                    </div>
+                )}
                 {tendencia.why_now && (
-                    <p className="text-sm mt-2 leading-relaxed text-[#7a5a10] border-l-2 border-[#B8860B] pl-3">
+                    <p className="text-sm mt-3 leading-relaxed text-[#7a5a10] border-l-2 border-[#B8860B] pl-3">
                         <span className="font-semibold">Por qué ahora:</span> {tendencia.why_now}
                     </p>
                 )}
@@ -183,18 +178,32 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
                 </div>
             </div>
 
-            {/* Value chain (leaders vs disruptors, informational) */}
+            {/* Companies — 3 flat blocks (up to 2 each). Value-chain role shown per card. */}
             <div className="flex items-baseline justify-between gap-2 mb-3">
-                <div className="overline text-[#4A4A4A]">Cadena de valor · líderes vs. competidores/disruptores</div>
-                <div className="overline text-[#9CA3AF] hidden sm:block">Genera una tesis desde cualquier empresa</div>
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5"><TrendingUp size={13} /> Empresas en la tendencia</div>
+                <div className="overline text-[#9CA3AF] hidden sm:block">Prepara una tesis desde cualquiera</div>
             </div>
-            {groups.map((g, i) => (
-                <StageRow key={i} stage={g.stage} leaders={g.leaders} disruptors={g.disruptors} onDevelopCompany={onDevelopCompany} />
-            ))}
+            <div className="grid md:grid-cols-3 gap-5">
+                <CategoryBlock
+                    title="Líderes esperados" color="#052049" companies={leaders}
+                    empty="No se ha identificado un líder claro." onDevelopCompany={onDevelopCompany}
+                    testid="tendencia-leaders"
+                />
+                <CategoryBlock
+                    title="Competidores que ganan terreno" color="#4A4A4A" companies={competitors}
+                    empty="No se han identificado competidores claros." onDevelopCompany={onDevelopCompany}
+                    testid="tendencia-competitors"
+                />
+                <CategoryBlock
+                    title="Disruptores" color="#B32A22" companies={disruptors}
+                    empty="No se han identificado disruptores." onDevelopCompany={onDevelopCompany}
+                    testid="tendencia-disruptors"
+                />
+            </div>
 
             {/* Sources */}
             {tendencia.sources?.length > 0 && (
-                <div className="mt-4" data-testid="tendencia-sources">
+                <div className="mt-6" data-testid="tendencia-sources">
                     <div className="overline text-[#4A4A4A] mb-2">Fuentes (búsqueda web en vivo)</div>
                     <ul className="space-y-1">
                         {tendencia.sources.slice(0, 10).map((s, i) => (
