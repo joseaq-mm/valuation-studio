@@ -481,7 +481,7 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
                     <div className="mt-auto pt-4 border-t border-black/10">
                         {planningLocked ? (
                             <div className="text-[11px] text-[#4A4A4A] inline-flex items-center gap-1.5" data-testid={`pending-gen-${slug}`}>
-                                <Loader2 size={12} className="animate-spin" /> En cola para generarse…
+                                <Loader2 size={12} className="animate-spin" /> Pendiente de generarse…
                             </div>
                         ) : (
                             <div data-testid={`plan-markers-${slug}`}>
@@ -802,6 +802,23 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
             }, 0);
     }, [thesis?.trends, planningLocked]);
 
+    // After locking, how many planned theses are still NOT developed (failed /
+    // interrupted / queued). Drives the "Reanudar generación" recovery button.
+    const pendingCount = useMemo(() => {
+        if (!planningLocked) return 0;
+        return (thesis?.trends || [])
+            .filter((t) => !t.merged_into)
+            .reduce((n, t) => {
+                const d = splitDev[_norm(t.name)];
+                const sp = Array.isArray(t.splits) && t.splits.length >= 2 ? t.splits : null;
+                if (t.plan === "split" && sp) {
+                    const done = new Set((d?.developedSplits || []).map((x) => _norm(x.split)));
+                    return n + sp.filter((s) => !done.has(_norm(s.name))).length;
+                }
+                return n + (d?.whole ? 0 : 1);
+            }, 0);
+    }, [thesis?.trends, planningLocked, splitDev]);
+
     // Map a matched thesis to a short "why it fits" (the company-trend fit description
     // / rationale, falling back to the matcher's reason) for the existing-matches rows.
     const trendByName = useMemo(() => {
@@ -958,7 +975,22 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     ) : (
                         <div className="mb-3 border border-black/15 bg-[#F7F2EA] px-3 py-2 text-[12px] text-[#4A4A4A] leading-snug flex items-start gap-2" data-testid="planning-locked-notice">
                             <Sparkles size={14} className="shrink-0 mt-0.5" />
-                            <span><strong>Planificación cerrada:</strong> ya empezaste a generar tesis de esta empresa. Para reorganizar la partición (fusionar/partir), borra sus tesis generadas o reescribe la empresa desde cero.</span>
+                            <div className="flex-1">
+                                <span><strong>Planificación cerrada:</strong> ya empezaste a generar tesis de esta empresa. Para reorganizar la partición (fusionar/partir), borra sus tesis generadas o reescribe la empresa desde cero.</span>
+                                {pendingCount > 0 && (
+                                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                        <span className="text-[#B32A22] font-medium">Quedan {pendingCount} tesis del plan sin generar.</span>
+                                        <button
+                                            onClick={() => onGeneratePlan?.(thesis.id)}
+                                            disabled={generatingPlan}
+                                            className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-3 py-1.5 hover:bg-[#052049] transition-colors disabled:opacity-50"
+                                            data-testid="resume-plan-btn"
+                                        >
+                                            {generatingPlan ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Reanudar generación
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                     {thesis.id && linkLoading && !linkData ? (
@@ -1010,7 +1042,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         </div>
                     )}
 
-                    {mergedTrends.length > 0 && (
+                    {!planningLocked && mergedTrends.length > 0 && (
                         <div className="mt-6" data-testid="merged-theses">
                             <div className="overline text-[#4A4A4A] mb-2">Tesis fusionadas</div>
                             <div className="space-y-1.5">

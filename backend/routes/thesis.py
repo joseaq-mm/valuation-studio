@@ -821,6 +821,28 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         _spawn(_run_generate_job(job_id, kind, subject, uid, matched_thesis_id, overwrite_thesis_id, from_company, core, develop_whole))
         return job_id, "processing", None
 
+    async def _start_next_queued(uid):
+        """Serial queue advance: when a generation finishes, promote the oldest queued
+        job (FIFO) to processing and start it. One running generation per user. Without
+        this, queued theses (e.g. from /generate-plan) would stay 'queued' forever."""
+        if not uid:
+            return
+        running = await db.thesis_jobs.find_one(
+            {"user_id": uid, "kind": "generate", "status": "processing"})
+        if running:
+            return  # something already running → it will dequeue the next when it ends
+        nxt = await db.thesis_jobs.find_one(
+            {"user_id": uid, "kind": "generate", "status": "queued"},
+            sort=[("created_at", 1)])
+        if not nxt:
+            return
+        await db.thesis_jobs.update_one({"id": nxt["id"]}, {"$set": {"status": "processing"}})
+        p = nxt.get("params") or {}
+        _spawn(_run_generate_job(
+            nxt["id"], p.get("kind"), p.get("subject"), uid,
+            p.get("matched_thesis_id"), p.get("overwrite_thesis_id"),
+            p.get("from_company"), p.get("core"), p.get("develop_whole", False)))
+
     async def _company_locked(uid, thesis_id, split_dev=None):
         """Planning is locked once a plan is executed: any developed thesis (split_dev)
         or an in-flight generation launched from this company."""
@@ -1401,34 +1423,53 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.post("/{thesis_id}/generate-plan")
     async def generate_plan(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):
-        """Execute the plan: enqueue a generation for every driver (not merged away),
-        according to its marker ('whole' → 1 thesis; 'split' → all partitions). All are
-        queued (serial), each anchored to its frozen partition slice. Locks planning."""
+        """Execute (or RESUME) the plan: enqueue a generation for every driver that is
+        not merged away, per its marker ('whole' → 1 thesis; 'split' → all partitions),
+        SKIPPING the ones already developed or with an in-flight job. All queued (serial),
+        each anchored to its frozen partition slice. Idempotent → safe to re-run to
+        recover failed/interrupted generations. Locks planning."""
         uid = user["user_id"]
         nrm = lambda s: (s or "").strip().lower()  # noqa: E731
         doc = await db.theses.find_one({"id": thesis_id, "user_id": uid, "type": "company"}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
-        if await _company_locked(uid, thesis_id, doc.get("split_dev")):
-            raise HTTPException(status_code=409, detail="El plan ya se ejecutó.")
+        # What is already developed (from split_dev) and what is currently in-flight,
+        # so a resume run doesn't duplicate work.
+        dev = doc.get("split_dev") or []
+        whole_done = {nrm(e.get("core")) for e in dev if e.get("whole")}
+        split_done = {(nrm(e.get("core")), nrm(e.get("split"))) for e in dev if not e.get("whole") and e.get("split")}
+        inflight = await db.thesis_jobs.find(
+            {"user_id": uid, "kind": "generate", "status": {"$in": ["processing", "queued"]},
+             "params.from_company": thesis_id},
+            {"_id": 0, "params": 1},
+        ).to_list(length=500)
+        inflight_keys = {(nrm((j.get("params") or {}).get("core")), nrm((j.get("params") or {}).get("subject"))) for j in inflight}
+
         count, first = 0, None
         for drv in (doc.get("trends") or []):
             if drv.get("merged_into"):
                 continue  # folded into another driver → its TAM travels there
             name = drv.get("name")
+            n = nrm(name)
             if (drv.get("plan") == "split") and (drv.get("splits") or []):
                 for sp in drv["splits"]:
+                    sn = sp.get("name")
+                    key = (n, nrm(sn))
+                    if key in split_done or key in inflight_keys:
+                        continue
                     jid, _st, _a = await _enqueue_generation(
-                        uid, "trend", sp.get("name"), from_company=thesis_id, core=name, develop_whole=False)
+                        uid, "trend", sn, from_company=thesis_id, core=name, develop_whole=False)
                     count += 1
                     first = first or jid
             else:
+                if n in whole_done or (n, n) in inflight_keys:
+                    continue
                 jid, _st, _a = await _enqueue_generation(
                     uid, "trend", name, from_company=thesis_id, core=name, develop_whole=True)
                 count += 1
                 first = first or jid
         if count == 0:
-            raise HTTPException(status_code=400, detail="No hay drivers que generar.")
+            raise HTTPException(status_code=400, detail="No hay drivers pendientes que generar.")
         return {"ok": True, "count": count, "first_job_id": first}
 
     @router.post("/{thesis_id}/merge")
