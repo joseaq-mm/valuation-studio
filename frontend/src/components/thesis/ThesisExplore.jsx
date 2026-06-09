@@ -170,7 +170,6 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
         return (
             <button
                 onClick={() => changeView(v.id)}
-                title={v.desc}
                 onMouseEnter={(e) => setBtnTip({ text: v.desc, x: e.clientX, y: e.clientY })}
                 onMouseMove={(e) => setBtnTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { text: v.desc, x: e.clientX, y: e.clientY }))}
                 onMouseLeave={() => setBtnTip(null)}
