@@ -9,6 +9,7 @@ import { getPortfolioEntry, savePortfolioOverrides, removePosition } from "@/lib
 import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
+import { useAuth } from "@/lib/auth";
 import HoverTip from "@/components/HoverTip";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
 import { Star, RefreshCw, AlertCircle, Save, X, Briefcase } from "lucide-react";
