@@ -981,16 +981,11 @@ export default function Company() {
                     </div>
                     {grossMarginPreRevenue && (
                         <div className="mt-4 pt-3 border-t border-black/10" data-testid="auto-correct-gross-margin-section">
-                            <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
-                                <div>
-                                    <div className="overline text-[#1D7044]">Auto-corregir</div>
-                                    <div className="text-xs text-[#4A4A4A]">Yahoo reporta un margen bruto del {(grossMarginPreRevenue.gm * 100).toFixed(1)}% con ingresos de solo {fmtCompact(grossMarginPreRevenue.latestRevenue / 1e9)} (último año fiscal). Cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado — es casi siempre un artefacto contable. El factor (1 + GM) = {(1 + grossMarginPreRevenue.gm).toFixed(2)} multiplica POC por ~2× sin sustento operativo real. Auto-corregimos a 50% (semiconductor / hardware pre-revenue típico). Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
-                                </div>
-                                <button onClick={applyGrossMarginFix} className="btn-primary whitespace-nowrap" data-testid="auto-correct-gross-margin-apply">
-                                    Aplicar al 50%
-                                </button>
+                            <div className="mb-2">
+                                <div className="overline text-[#1D7044]">Auto-corregir</div>
+                                <div className="text-xs text-[#4A4A4A]">Yahoo reporta un margen bruto del {(grossMarginPreRevenue.gm * 100).toFixed(1)}% con ingresos de solo {fmtCompact(grossMarginPreRevenue.latestRevenue / 1e9)} (último año fiscal). Cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado — es casi siempre un artefacto contable. El factor (1 + GM) = {(1 + grossMarginPreRevenue.gm).toFixed(2)} multiplica POC por ~2× sin sustento operativo real. Auto-corregimos a 50% (semiconductor / hardware pre-revenue típico). Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 items-center">
                                 <div className="border border-black/10 bg-[#FAF6EE] p-2 text-xs font-mono" data-testid="correction-gross-margin">
                                     <div className="font-sans text-[#4A4A4A]">Margen bruto</div>
                                     <div className="mt-1">
@@ -999,6 +994,11 @@ export default function Company() {
                                         <span className="text-[#1D7044]">{(grossMarginPreRevenue.to * 100).toFixed(2)}%</span>
                                     </div>
                                     <div className="text-[10px] text-[#4A4A4A] mt-1 font-sans">Clip margen bruto a 50% (heurística para empresas casi sin ingresos con GM reportado ≥ 95% por Yahoo).</div>
+                                </div>
+                                <div>
+                                    <button onClick={applyGrossMarginFix} className="btn-primary whitespace-nowrap" data-testid="auto-correct-gross-margin-apply">
+                                        Aplicar 1 corrección
+                                    </button>
                                 </div>
                             </div>
                         </div>
