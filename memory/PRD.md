@@ -322,3 +322,23 @@ Objetivo del usuario: separar la FASE DE PLANIFICACIÓN (marcar/fusionar/partir 
 - screenshot (usuario sembrado `co_plan_ui`, NVDA con driver divisible): marcadores resaltados, barra "Generar plan · 4 tesis"; al cambiar Particiones→Conjunto el contador baja a 3 en vivo.
 - NO se ejecutó `/generate-plan` en vivo (evitar coste LLM); reusa `_enqueue_generation` ya cubierto por `test_gen_queue.py`.
 - Seed nuevo: `backend/tests/seed_plan_test.py` → `co_plan_ui`.
+
+## CHANGELOG — Vista trimestral TTM en gráficos de Company (11 jun 2026)
+Petición del usuario: en los gráficos Ingresos, FCF e Histórico POC/POV, tocar el título alterna una vista con eje X trimestral TTM. Ingresos/FCF: hacia delante con proyecciones (interpolación geométrica trimestral hasta fin de 2027) y hacia atrás rellenando el eje (opción 2a: híbrido — trimestres reales + interpolación desde anuales marcada como "Aprox."). POC/POV: el usuario pidió después "cuantos más puntos mejor" → serie completa (real + aprox) con precios de cierre trimestrales reales; el último punto (2026Q1) es real.
+
+### Backend (`server.py`)
+- `GET /api/company/{ticker}/quarterly-history` (caché 12h en colección `quarterly_history`):
+  - `revenue_ttm` / `fcf_ttm`: TTM real (suma móvil de 4 trimestres consecutivos de `quarterly_financials`/`quarterly_cashflow`, ~2-3 puntos) + backfill `kind:"approx"` interpolado (geométrico) desde `revenue_history`/`fcf_history` anuales. Merge por etiqueta de trimestre (real gana).
+  - `ratio_ttm`: POC/POV por trimestre sobre la serie TTM completa (real+aprox) con precio de cierre trimestral real (`history(period="max", interval="1mo")`), mcap = precio × acciones actuales, CAGR proxy desde el primer año anual (`_cagr_to_point`). Campo `kind` real/approx.
+  - Helpers módulo: `_q_label`, `_rolling_ttm`, `_approx_quarterly_from_annual`, `_merge_ttm`, `_cagr_to_point`. Import añadido: `_series_to_pairs`, `_get_row`.
+- `.env`: `CORS_ORIGINS` ahora lista explícita (localhost:3000 + ambos hosts preview) en vez de `*` (necesario para tests headless; el proxy de plataforma añade sus propios headers).
+
+### Frontend (`Company.jsx`)
+- Estado `qHist`/`qHistLoading` + `requestQuarterly` (fetch perezoso al primer toggle; se resetea al cambiar de ticker).
+- `buildQuarterlyChart`: mapea serie TTM (real/approx) y construye proyección trimestral hacia delante (geométrica) desde el último TTM → proj 1y → proj 2y anclada a fin de año fiscal +1/+2; respeta ediciones manuales de revenue_2y/fcf_2y (`interpolate`).
+- `ChartBlock` y `RatioHistoryChart`: título clicable (HoverTip explicativo + badge `ANUAL`/`TTM TRIM.`, data-testids `revenue-chart-title-toggle`, `fcf-chart-title-toggle`, `ratio-history-title-toggle`). Línea/serie "Aprox." en trazo punteado tenue; barras FCF aprox con opacidad 0.3; en POC/POV punto pequeño tenue = aprox, grande = real, con nota en tooltip ("TTM aproximado…"). Fix preexistente: eje Y de POC/POV usaba fmtCompact (mostraba "280 B" para precios) → fmtNum.
+
+### Pruebas (self-test, sin testing_agent, sin gasto LLM)
+- curl AAPL: 15 puntos rev/fcf TTM (2022Q3→2026Q1, 2 reales), ratio_ttm 15 puntos (último 2026Q1 real).
+- Screenshots (preview stock-fundamentals-13, same-origin): los 3 gráficos alternan ANUAL↔TTM en cada click, proyección hasta 2027Q3E, vuelta a anual sin regresión.
+- NOTA: el navegador headless contra `ai-valuation-desk.preview...` sirve la página estática "wake servers"; usar `https://stock-fundamentals-13.preview.emergentagent.com` (el de frontend/.env) para screenshots.

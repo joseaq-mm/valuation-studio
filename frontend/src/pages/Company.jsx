@@ -251,6 +251,8 @@ export default function Company() {
     const [summaryEs, setSummaryEs] = useState(null); // translated description (null = not yet loaded)
     const [translating, setTranslating] = useState(false);
     const [ratioHistory, setRatioHistory] = useState([]); // [{year, price, ratio_compra_pct, ratio_venta_pct}]
+    const [qHist, setQHist] = useState(null);              // quarterly TTM payload (lazy, fetched on first toggle)
+    const [qHistLoading, setQHistLoading] = useState(false);
     useThresholds(); // subscribe to threshold changes so colours/labels live-update
     const { display: displayCur, convert: fxConvert } = useFx();
 
@@ -306,11 +308,22 @@ export default function Company() {
         if (!data?.ticker) return;
         let cancelled = false;
         setRatioHistory([]);
+        setQHist(null); // quarterly cache belongs to the previous ticker
         api.get(`/company/${encodeURIComponent(data.ticker)}/ratio-history`)
             .then(r => { if (!cancelled) setRatioHistory(r.data?.series || []); })
             .catch(() => { /* silently ignore — chart will just hide */ });
         return () => { cancelled = true; };
     }, [data?.ticker]);
+
+    // Lazy fetch of quarterly TTM data, triggered the first time a chart is toggled to TTM.
+    const requestQuarterly = useCallback(() => {
+        if (!data?.ticker || qHist || qHistLoading) return;
+        setQHistLoading(true);
+        api.get(`/company/${encodeURIComponent(data.ticker)}/quarterly-history`)
+            .then(r => setQHist(r.data || null))
+            .catch(() => toast.error("No se pudieron cargar los datos trimestrales"))
+            .finally(() => setQHistLoading(false));
+    }, [data?.ticker, qHist, qHistLoading]);
 
     // Navigation guard for unsaved session edits.
     // - Internal links: intercept anchor clicks; show modal.
@@ -567,6 +580,70 @@ export default function Company() {
 
     const revChart = buildChartData(data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, true);
     const fcfChart = buildChartData(data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, false);
+
+    // ---- Quarterly TTM chart builder ----
+    // Backend supplies real TTM quarters + approx backfill (interpolated from annual data).
+    // Forward path is built here, quarterly, from the last TTM point towards the user's
+    // (or model's) 1y/2y projections, so manual edits of revenue_2y/fcf_2y are respected.
+    const QUARTER_MS = 91.3 * 24 * 3600 * 1000;
+    const nextQLabel = (label) => {
+        const y = parseInt(label.slice(0, 4), 10);
+        const q = parseInt(label.slice(5), 10);
+        return q === 4 ? `${y + 1}Q1` : `${y}Q${q + 1}`;
+    };
+    const buildQuarterlyChart = (ttmSeries, annualHistory, proj1Auto, proj2Auto, userProj2, userEdited) => {
+        if (!ttmSeries || ttmSeries.length === 0) return [];
+        const out = ttmSeries.map(p => ({
+            year: p.label,
+            historical: p.kind === "real" ? p.value / 1e9 : null,
+            approx: p.kind === "approx" ? p.value / 1e9 : null,
+            projection: null,
+            kind: p.kind,
+            value: p.value / 1e9,
+        }));
+        // Bridge the approx line into the first real point so the series looks continuous.
+        const firstRealIdx = out.findIndex(p => p.kind === "real");
+        if (firstRealIdx > 0) out[firstRealIdx].approx = out[firstRealIdx].historical;
+        const last = out[out.length - 1];
+        last.projection = last.value;
+
+        const lastDate = new Date(ttmSeries[ttmSeries.length - 1].date);
+        const lastVal = last.value;
+        const annLastDate = annualHistory && annualHistory.length
+            ? new Date(annualHistory[annualHistory.length - 1].date)
+            : lastDate;
+        const proj2 = userEdited ? userProj2 : proj2Auto;
+        const proj1 = userEdited
+            ? (lastVal != null && proj2 != null ? interpolate(lastVal, proj2 / 1e9) : null)
+            : (proj1Auto != null ? proj1Auto / 1e9 : null);
+        const p2 = proj2 != null ? proj2 / 1e9 : null;
+        if (proj1 == null || isNaN(proj1)) return out;
+
+        // Projection targets sit at fiscal-year-end +1y / +2y (same anchors as the annual chart).
+        const t1 = new Date(annLastDate); t1.setFullYear(t1.getFullYear() + 1);
+        const t2 = new Date(annLastDate); t2.setFullYear(t2.getFullYear() + 2);
+        const nQ1 = Math.max(1, Math.round((t1 - lastDate) / QUARTER_MS));
+        const nQ2 = Math.max(nQ1 + 1, Math.round((t2 - lastDate) / QUARTER_MS));
+        const geomStep = (a, b, k, n) => (a > 0 && b > 0) ? a * Math.pow(b / a, k / n) : a + (b - a) * (k / n);
+
+        let label = last.year;
+        for (let k = 1; k <= nQ1; k++) {
+            label = nextQLabel(label);
+            const v = geomStep(lastVal, proj1, k, nQ1);
+            out.push({ year: label + "E", historical: null, approx: null, projection: v, kind: "proj", value: v });
+        }
+        if (p2 != null && !isNaN(p2)) {
+            for (let k = 1; k <= nQ2 - nQ1; k++) {
+                label = nextQLabel(label);
+                const v = geomStep(proj1, p2, k, nQ2 - nQ1);
+                out.push({ year: label + "E", historical: null, approx: null, projection: v, kind: "proj", value: v });
+            }
+        }
+        return out;
+    };
+    const revChartQ = qHist ? buildQuarterlyChart(qHist.revenue_ttm, data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited) : null;
+    const fcfChartQ = qHist ? buildQuarterlyChart(qHist.fcf_ttm, data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited) : null;
+    const ratioHistQ = qHist ? (qHist.ratio_ttm || []).map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) })) : null;
 
     // Detect anomalies in POC/POV and explain them based on the actual inputs.
     // Each item also contributes suggested corrections (clipping rules) that the
@@ -1140,9 +1217,9 @@ export default function Company() {
                 </div>
 
                 <div className="space-y-6">
-                    <ChartBlock title="Ingresos históricos" data={revChart} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
-                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
-                    <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) }))} currency={cur} />
+                    <ChartBlock title="Ingresos históricos" data={revChart} qData={revChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
+                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} qData={fcfChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
+                    <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) }))} qSeries={ratioHistQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} currency={cur} />
                 </div>
             </div>
 
@@ -1359,50 +1436,74 @@ function CompactTooltip({ active, payload, label }) {
     );
 }
 
-function ChartBlock({ title, data, unit, color, type = "line", testid, userEdited = false }) {
-    if (!data || data.length === 0) {
+function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false }) {
+    const [mode, setMode] = useState("annual");
+    const isTTM = mode === "ttm";
+    const toggleMode = () => {
+        const next = isTTM ? "annual" : "ttm";
+        setMode(next);
+        if (next === "ttm" && onRequestQuarterly) onRequestQuarterly();
+    };
+    const chartData = isTTM ? (qData || []) : (data || []);
+    const titleEl = (
+        <HoverTip text="Toca el título para alternar entre la vista anual y la trimestral TTM (suma de los últimos 12 meses en cada trimestre). La parte antigua de la serie trimestral es aproximada (interpolada desde los datos anuales) y se muestra en trazo punteado tenue.">
+            <div className="overline text-[#4A4A4A] cursor-pointer select-none flex items-center gap-1.5" onClick={toggleMode} data-testid={`${testid}-title-toggle`}>
+                <span className="underline decoration-dotted underline-offset-2">{title}</span>
+                <span className="px-1 border border-black text-[9px] font-mono bg-[#FAF6EE]">{isTTM ? "TTM TRIM." : "ANUAL"}</span>
+            </div>
+        </HoverTip>
+    );
+    if (!chartData || chartData.length === 0) {
         return (
             <div className="border border-black bg-white p-4" data-testid={testid}>
-                <div className="overline text-[#4A4A4A] mb-2">{title}</div>
-                <div className="text-sm text-[#4A4A4A]">Sin datos disponibles</div>
+                {titleEl}
+                <div className="text-sm text-[#4A4A4A] mt-2">{isTTM ? (qLoading ? "Cargando datos trimestrales…" : "Sin datos trimestrales disponibles") : "Sin datos disponibles"}</div>
             </div>
         );
     }
     const projColor = userEdited ? "#052049" : "#B32A22";
     const projLabel = userEdited ? "Estimado por usuario" : "Proyección";
+    const hasApprox = isTTM && chartData.some(p => p.kind === "approx");
+    const tickStyle = { fontSize: isTTM ? 9 : 11, fontFamily: "IBM Plex Mono" };
     return (
         <div className="border border-black bg-white p-4" data-testid={testid}>
             <div className="flex items-start justify-between mb-1">
                 <div>
-                    <div className="overline text-[#4A4A4A]">{title}</div>
+                    {titleEl}
                     <div className="font-serif text-xl">en miles de millones ({unit})</div>
                 </div>
-                <div className="flex gap-3 text-[10px] font-mono mt-1" data-testid={`${testid}-legend`}>
+                <div className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px] font-mono mt-1" data-testid={`${testid}-legend`}>
                     <span className="flex items-center gap-1"><span className="inline-block w-3 h-[2px]" style={{ background: color }} />Real</span>
+                    {hasApprox && <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dotted" style={{ borderColor: color, opacity: 0.5 }} />Aprox.</span>}
                     <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />{projLabel}</span>
                 </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
                 {type === "bar" ? (
-                    <BarChart data={data}>
+                    <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis dataKey="year" stroke="#111" style={tickStyle} minTickGap={isTTM ? 14 : 5} />
                         <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
                         <Tooltip content={<CompactTooltip />} cursor={{ fill: "#11111110" }} />
                         <Bar dataKey="value" name="FCF">
-                            {data.map((entry, i) => (
-                                <Cell key={i} fill={entry.kind === "proj" ? projColor : color} fillOpacity={entry.kind === "proj" ? 0.45 : 1} stroke={entry.kind === "proj" ? projColor : "none"} strokeDasharray={entry.kind === "proj" ? "3 3" : "0"} />
+                            {chartData.map((entry, i) => (
+                                <Cell key={i}
+                                      fill={entry.kind === "proj" ? projColor : color}
+                                      fillOpacity={entry.kind === "proj" ? 0.45 : entry.kind === "approx" ? 0.3 : 1}
+                                      stroke={entry.kind === "proj" ? projColor : "none"}
+                                      strokeDasharray={entry.kind === "proj" ? "3 3" : "0"} />
                             ))}
                         </Bar>
                     </BarChart>
                 ) : (
-                    <LineChart data={data}>
+                    <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis dataKey="year" stroke="#111" style={tickStyle} minTickGap={isTTM ? 14 : 5} />
                         <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
                         <Tooltip content={<CompactTooltip />} />
-                        <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} name="Real" connectNulls={false} />
-                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 4, fill: projColor }} name={projLabel} connectNulls={false} />
+                        {hasApprox && <Line type="monotone" dataKey="approx" stroke={color} strokeOpacity={0.45} strokeWidth={2} strokeDasharray="2 3" dot={{ r: 2, fill: color, fillOpacity: 0.45 }} name="Aprox." connectNulls={false} />}
+                        <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={2} dot={{ r: isTTM ? 3 : 4, fill: color }} name="Real" connectNulls={false} />
+                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: isTTM ? 3 : 4, fill: projColor }} name={projLabel} connectNulls={false} />
                     </LineChart>
                 )}
             </ResponsiveContainer>
@@ -1423,6 +1524,9 @@ function RatioHistoryTooltip({ active, payload, label, currency }) {
             <div>POC: <span style={{ color: "#B32A22" }}>{fmtPrice(row.poc, currency)}</span></div>
             <div>POV: <span style={{ color: "#1D7044" }}>{fmtPrice(row.pov, currency)}</span></div>
             <div className="mt-1">Precio cierre: <span style={{ color: "#052049" }}>{fmtPrice(row.price, currency)}</span></div>
+            {row.kind === "approx" && (
+                <div className="mt-1 text-[10px] text-[#4A4A4A]">TTM aproximado (interpolado de datos anuales)</div>
+            )}
             {aboveBuy != null && (
                 <div className="mt-1 text-[10px] text-[#4A4A4A]">
                     Vs POC: {aboveBuy ? "precio ≤ POC (barata)" : "precio > POC"}
@@ -1433,43 +1537,74 @@ function RatioHistoryTooltip({ active, payload, label, currency }) {
     );
 }
 
-function RatioHistoryChart({ series, currency }) {
-    if (!series || series.length === 0) {
+function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, currency }) {
+    const [mode, setMode] = useState("annual");
+    const isTTM = mode === "ttm";
+    const toggleMode = () => {
+        const next = isTTM ? "annual" : "ttm";
+        setMode(next);
+        if (next === "ttm" && onRequestQuarterly) onRequestQuarterly();
+    };
+    const src = isTTM ? (qSeries || []) : (series || []);
+    const titleEl = (
+        <HoverTip text="Toca el título para alternar entre la vista anual y la trimestral TTM. En modo trimestral, POC y POV se calculan con ingresos y FCF de los últimos 12 meses en cada trimestre: los últimos trimestres publicados son reales (punto grande) y los anteriores aproximados, interpolados desde los datos anuales (punto pequeño tenue). El precio de cierre es real en todos los puntos.">
+            <div className="overline text-[#4A4A4A] cursor-pointer select-none flex items-center gap-1.5" onClick={toggleMode} data-testid="ratio-history-title-toggle">
+                <span className="underline decoration-dotted underline-offset-2">Histórico POC / POV vs Precio</span>
+                <span className="px-1 border border-black text-[9px] font-mono bg-[#FAF6EE]">{isTTM ? "TTM TRIM." : "ANUAL"}</span>
+            </div>
+        </HoverTip>
+    );
+    if (!src || src.length === 0) {
         return (
             <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
-                <div className="overline text-[#4A4A4A] mb-1">Histórico POC / POV vs Precio</div>
-                <div className="text-sm text-[#4A4A4A]">Sin datos históricos suficientes para reconstruir la serie.</div>
+                {titleEl}
+                <div className="text-sm text-[#4A4A4A] mt-2">
+                    {isTTM
+                        ? (qLoading ? "Cargando datos trimestrales…" : "Sin datos trimestrales suficientes para reconstruir la serie.")
+                        : "Sin datos históricos suficientes para reconstruir la serie."}
+                </div>
             </div>
         );
     }
-    const data = series.map(s => ({
-        year: String(s.year),
+    const data = src.map(s => ({
+        year: isTTM ? String(s.label) : String(s.year),
         poc: s.poc,
         pov: s.pov,
         price: s.price,
+        kind: s.kind,
     }));
+    // In TTM mode, approx points (TTM interpolated from annual data) get a small faint dot;
+    // real published quarters get the full-size dot.
+    const mkDot = (color) => (props) => {
+        const { cx, cy, payload, index } = props;
+        if (cx == null || cy == null) return <g key={`d-${index}`} />;
+        const approx = payload?.kind === "approx";
+        return <circle key={`d-${index}`} cx={cx} cy={cy} r={approx ? 2 : 4} fill={color} fillOpacity={approx ? 0.45 : 1} />;
+    };
     return (
         <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
             <div className="flex items-start justify-between mb-1">
                 <div>
-                    <div className="overline text-[#4A4A4A]">Histórico POC / POV vs Precio</div>
-                    <div className="font-serif text-xl">Tendencia anual</div>
+                    {titleEl}
+                    <div className="font-serif text-xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
                     <div className="text-[10px] font-mono text-[#4A4A4A] mt-1 max-w-md leading-relaxed">
-                        Compara precio de cierre contra <span style={{ color: "#B32A22" }} className="font-semibold">POC</span> (precio objetivo de compra) y <span style={{ color: "#1D7044" }} className="font-semibold">POV</span> (precio objetivo de venta). Si el precio cae por debajo del POC: zona barata histórica. Si los POC/POV caen con el precio: deterioro fundamental real. Si los POC/POV suben mientras el precio cae: posible oportunidad.
+                        {isTTM
+                            ? <>POC/POV recalculados por trimestre con TTM (últimos 12 meses). Punto grande = trimestre con datos publicados reales; punto pequeño tenue = TTM aproximado interpolado desde los datos anuales. El precio de cierre trimestral es real en toda la serie.</>
+                            : <>Compara precio de cierre contra <span style={{ color: "#B32A22" }} className="font-semibold">POC</span> (precio objetivo de compra) y <span style={{ color: "#1D7044" }} className="font-semibold">POV</span> (precio objetivo de venta). Si el precio cae por debajo del POC: zona barata histórica. Si los POC/POV caen con el precio: deterioro fundamental real. Si los POC/POV suben mientras el precio cae: posible oportunidad.</>}
                     </div>
                 </div>
             </div>
             <ResponsiveContainer width="100%" height={240}>
                 <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                    <XAxis dataKey="year" stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                    <XAxis dataKey="year" stroke="#111" style={{ fontSize: isTTM ? 9 : 11, fontFamily: "IBM Plex Mono" }} minTickGap={isTTM ? 14 : 5} />
                     <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
-                           tickFormatter={(v) => fmtCompact(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
+                           tickFormatter={(v) => fmtNum(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
                     <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
                     <Legend wrapperStyle={{ fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={{ r: 4, fill: "#B32A22" }} connectNulls />
-                    <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 4, fill: "#1D7044" }} connectNulls />
-                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: 3, fill: "#052049" }} />
+                    <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={isTTM ? mkDot("#B32A22") : { r: 4, fill: "#B32A22" }} connectNulls />
+                    <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={isTTM ? mkDot("#1D7044") : { r: 4, fill: "#1D7044" }} connectNulls />
+                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : 3, fill: "#052049" }} />
                 </ComposedChart>
             </ResponsiveContainer>
         </div>

@@ -48,6 +48,8 @@ from services.valuation import (
     compute_custom_ratios,
     _safe_float,
     _cagr,
+    _series_to_pairs,
+    _get_row,
 )
 
 
@@ -295,6 +297,227 @@ async def ratio_history(ticker: str):
         })
 
     return {"ticker": ticker, "series": series}
+
+
+# ---------------------- Quarterly TTM history ----------------------
+
+QUARTERLY_CACHE_HOURS = 12
+
+
+def _q_label(date_str: str) -> str:
+    """'2026-03-31' -> '2026Q1' (calendar quarter)."""
+    y = int(date_str[:4])
+    m = int(date_str[5:7])
+    return f"{y}Q{(m - 1) // 3 + 1}"
+
+
+def _rolling_ttm(qpairs):
+    """Rolling 4-quarter sums over consecutive quarterly points (ascending {date, value}).
+
+    A TTM point is only emitted when the 4 quarters are actually consecutive
+    (span between first and last ≈ 9 months), so gaps in Yahoo's quarterly data
+    never produce a bogus sum.
+    """
+    out = []
+    if len(qpairs) < 4:
+        return out
+    try:
+        dates = [datetime.strptime(p["date"], "%Y-%m-%d") for p in qpairs]
+    except Exception:
+        return out
+    for i in range(3, len(qpairs)):
+        span = (dates[i] - dates[i - 3]).days
+        if 240 <= span <= 330:  # 3 quarter-gaps ≈ 273 days, with tolerance
+            out.append({
+                "label": _q_label(qpairs[i]["date"]),
+                "date": qpairs[i]["date"],
+                "value": sum(qpairs[j]["value"] for j in range(i - 3, i + 1)),
+                "kind": "real",
+            })
+    return out
+
+
+def _approx_quarterly_from_annual(annual_pairs):
+    """Approximate quarterly TTM points by interpolating between fiscal-year-end
+    anchors (each annual statement value IS the TTM at that date). Geometric
+    interpolation when both endpoints are positive, linear otherwise."""
+    pts = []
+    parsed = []
+    for p in annual_pairs:
+        if p.get("value") is None:
+            continue
+        try:
+            parsed.append((datetime.strptime(str(p["date"])[:10], "%Y-%m-%d"), p["value"]))
+        except Exception:
+            continue
+    if len(parsed) < 2:
+        return pts
+
+    def _interp(a, b, frac):
+        if a > 0 and b > 0:
+            return a * (b / a) ** frac
+        return a + (b - a) * frac
+
+    for (da, va), (db_, vb) in zip(parsed, parsed[1:]):
+        ds_a = da.strftime("%Y-%m-%d")
+        pts.append({"label": _q_label(ds_a), "date": ds_a, "value": va, "kind": "approx"})
+        total_days = (db_ - da).days
+        if total_days <= 0:
+            continue
+        n_steps = max(1, round(total_days / 91.3))
+        for k in range(1, n_steps):
+            frac = k / n_steps
+            d = (da + timedelta(days=total_days * frac)).strftime("%Y-%m-%d")
+            pts.append({"label": _q_label(d), "date": d, "value": _interp(va, vb, frac), "kind": "approx"})
+    dl, vl = parsed[-1]
+    ds_l = dl.strftime("%Y-%m-%d")
+    pts.append({"label": _q_label(ds_l), "date": ds_l, "value": vl, "kind": "approx"})
+    return pts
+
+
+def _merge_ttm(approx_pts, real_pts):
+    """Real points win over approximations at the same quarter label."""
+    by_label = {p["label"]: p for p in approx_pts}
+    for p in real_pts:
+        by_label[p["label"]] = p
+    return sorted(by_label.values(), key=lambda x: x["date"])
+
+
+def _cagr_to_point(annual_pairs, point):
+    """CAGR from the earliest annual value up to a TTM point (proxy for the
+    formula's CAGR input, mirroring the yearly ratio-history approach)."""
+    vals = [p for p in annual_pairs if p.get("value") is not None]
+    if not vals or point.get("value") is None:
+        return 0.0
+    try:
+        d0 = datetime.strptime(str(vals[0]["date"])[:10], "%Y-%m-%d")
+        dt = datetime.strptime(point["date"], "%Y-%m-%d")
+    except Exception:
+        return 0.0
+    span = max(1, round((dt - d0).days / 365.25))
+    c = _cagr([vals[0]["value"], point["value"]], span)
+    return c if c is not None else 0.0
+
+
+@api_router.get("/company/{ticker}/quarterly-history")
+async def quarterly_history(ticker: str):
+    """Quarterly TTM series for the Revenue / FCF / POC-POV charts.
+
+    - revenue_ttm / fcf_ttm: real TTM points (rolling 4 consecutive quarters from
+      Yahoo's quarterly statements, ~2-3 points) + 'approx' backfill interpolated
+      from the annual history so the axis reaches as far back as annual data does.
+    - ratio_ttm: POC/POV computed ONLY on real TTM quarters (quarter-end close ×
+      current shares as market cap, same proxy approach as /ratio-history).
+    Forward projection is built client-side from the user's own 1y/2y projections.
+    Cached 12h per ticker to avoid hammering Yahoo.
+    """
+    ticker = ticker.upper().strip()
+    cached_company = await db.fundamentals.find_one({"ticker": ticker}, {"_id": 0})
+    if not cached_company:
+        raise HTTPException(status_code=404, detail="Company not loaded yet — open it first.")
+    data = cached_company.get("data", {})
+
+    cached_q = await db.quarterly_history.find_one({"ticker": ticker}, {"_id": 0})
+    if cached_q:
+        try:
+            fetched = datetime.fromisoformat(cached_q["fetched_at"])
+            if datetime.now(timezone.utc) - fetched < timedelta(hours=QUARTERLY_CACHE_HOURS):
+                return cached_q["payload"]
+        except Exception:
+            pass
+
+    def _fetch():
+        t = yf.Ticker(ticker)
+        try:
+            qfin = t.quarterly_financials
+        except Exception:
+            qfin = pd.DataFrame()
+        try:
+            qcf = t.quarterly_cashflow
+        except Exception:
+            qcf = pd.DataFrame()
+        try:
+            hist = t.history(period="max", interval="1mo", auto_adjust=True)
+        except Exception:
+            hist = pd.DataFrame()
+        return qfin, qcf, hist
+
+    qfin, qcf, hist = await run_in_threadpool(_fetch)
+
+    q_rev = _series_to_pairs(_get_row(qfin, ["Total Revenue", "TotalRevenue", "Revenue"]), limit=8)
+    fcf_q_series = _get_row(qcf, ["Free Cash Flow", "FreeCashFlow"])
+    if fcf_q_series is None:
+        ocf_q = _get_row(qcf, ["Operating Cash Flow", "Total Cash From Operating Activities", "CashFlowFromContinuingOperatingActivities"])
+        capex_q = _get_row(qcf, ["Capital Expenditure", "Capital Expenditures", "CapitalExpenditure"])
+        if ocf_q is not None and capex_q is not None:
+            fcf_q_series = ocf_q + capex_q
+    q_fcf = _series_to_pairs(fcf_q_series, limit=8)
+
+    rev_ttm_real = _rolling_ttm(q_rev)
+    fcf_ttm_real = _rolling_ttm(q_fcf)
+
+    annual_rev = data.get("revenue_history") or []
+    annual_fcf = data.get("fcf_history") or []
+    rev_ttm = _merge_ttm(_approx_quarterly_from_annual(annual_rev), rev_ttm_real)
+    fcf_ttm = _merge_ttm(_approx_quarterly_from_annual(annual_fcf), fcf_ttm_real)
+
+    # POC/POV per TTM quarter: uses the full merged series (real + approx TTM) so the
+    # axis goes as far back as annual data allows. Prices are always real quarter-end
+    # closes; a point is flagged "approx" when its revenue or FCF TTM is interpolated.
+    ratio_ttm = []
+    shares = data.get("shares_outstanding")
+    if shares and shares > 0 and rev_ttm and fcf_ttm and hist is not None and not hist.empty:
+        closes_by_q: Dict[str, float] = {}
+        try:
+            for idx, row in hist.iterrows():
+                close = _safe_float(row.get("Close"))
+                if close is None:
+                    continue
+                ds = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                closes_by_q[_q_label(ds)] = close  # last write wins → latest month of the quarter
+        except Exception as e:
+            logger.warning(f"quarterly price aggregation failed for {ticker}: {e}")
+
+        gross_m = data.get("gross_margin") or 0.0
+        op_m = data.get("operating_margin") or 0.0
+        cur_net_debt = data.get("net_debt") or 0.0
+        fcf_by_label = {p["label"]: p for p in fcf_ttm}
+        for p in rev_ttm:
+            fp = fcf_by_label.get(p["label"])
+            price = closes_by_q.get(p["label"])
+            if fp is None or price is None or price <= 0:
+                continue
+            mcap = price * shares
+            ratios = compute_custom_ratios({
+                "revenue_2y": p["value"],
+                "fcf_2y": fp["value"],
+                "shares_outstanding": shares,
+                "gross_margin": gross_m,
+                "operating_margin": op_m,
+                "net_debt": cur_net_debt,
+                "market_cap": mcap,
+                "revenue_cagr_4y": _cagr_to_point(annual_rev, p),
+                "fcf_cagr_4y": _cagr_to_point(annual_fcf, fp),
+                "current_price": price,
+            })
+            ratio_ttm.append({
+                "label": p["label"],
+                "date": p["date"],
+                "price": price,
+                "poc": ratios.get("poc"),
+                "pov": ratios.get("pov"),
+                "ratio_compra_pct": ratios.get("ratio_compra_pct"),
+                "ratio_venta_pct": ratios.get("ratio_venta_pct"),
+                "kind": "real" if (p["kind"] == "real" and fp["kind"] == "real") else "approx",
+            })
+
+    payload = {"ticker": ticker, "revenue_ttm": rev_ttm, "fcf_ttm": fcf_ttm, "ratio_ttm": ratio_ttm}
+    await db.quarterly_history.update_one(
+        {"ticker": ticker},
+        {"$set": {"ticker": ticker, "fetched_at": datetime.now(timezone.utc).isoformat(), "payload": payload}},
+        upsert=True,
+    )
+    return payload
 
 
 @api_router.get("/company/{ticker}/translate-summary")
