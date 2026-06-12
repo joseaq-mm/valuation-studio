@@ -733,6 +733,24 @@ export default function Company() {
             addCorr("operating_margin", om, 0, "Clip margen operativo a 0% (neutraliza el factor, POV = POC).");
         }
 
+        // Pre-revenue artifact: Yahoo reports gross_margin ≈ 100% because the
+        // company barely has sales, so most costs fall below the gross-profit
+        // line and (1 + gm) ≈ 2 inflates POC ~2× without operational backing.
+        // Threshold: revenue < 5 M$ AND gross_margin ≥ 95%.
+        const revHist = data.revenue_history || [];
+        const latestRevenue = revHist.length ? revHist[revHist.length - 1].value : null;
+        if (gm != null && gm >= 0.95 && latestRevenue != null && latestRevenue < 5_000_000) {
+            anomalies.push({
+                title: `Margen bruto = ${(gm * 100).toFixed(1)}% en empresa casi pre-revenue`,
+                detail: `Yahoo reporta un margen bruto del ${(gm * 100).toFixed(1)}% para una empresa con ingresos mínimos (${fmtCompact(latestRevenue / 1e9)} en el último año fiscal). Es casi siempre un artefacto contable: cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado. Recomendación, igual que con el margen operativo:`,
+                bullets: [
+                    `Margen bruto reportado = ${(gm * 100).toFixed(1)}% → factor (1 + GM) = ${(1 + gm).toFixed(2)}, que multiplica POC por ~2× sin sustento operativo real.`,
+                    "Sugerencia: aplica un valor más sensato para el sector (por defecto auto-corregimos a 50%, en línea con un semiconductor / hardware pre-revenue típico). Edita manualmente si tu propia tesis sugiere otro nivel.",
+                ],
+            });
+            addCorr("gross_margin", gm, 0.5, "Clip margen bruto a 50% (heurística para empresas casi sin ingresos con GM reportado ≥ 95% por Yahoo).");
+        }
+
         // Extreme upside (>1000%) — opportunity or value trap.
         const rc = cr.ratio_compra_pct, rv = cr.ratio_venta_pct;
         const extremeRC = rc != null && rc > 1000;
