@@ -995,7 +995,7 @@ export default function Company() {
                                     </div>
                                     <div className="text-[10px] text-[#4A4A4A] mt-1 font-sans">Clip margen bruto a 50% (heurística para empresas casi sin ingresos con GM reportado ≥ 95% por Yahoo).</div>
                                 </div>
-                                <div>
+                                <div className="flex justify-end">
                                     <button onClick={applyGrossMarginFix} className="btn-primary whitespace-nowrap" data-testid="auto-correct-gross-margin-apply">
                                         Aplicar 1 corrección
                                     </button>
