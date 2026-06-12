@@ -733,24 +733,6 @@ export default function Company() {
             addCorr("operating_margin", om, 0, "Clip margen operativo a 0% (neutraliza el factor, POV = POC).");
         }
 
-        // Pre-revenue artifact: Yahoo reports gross_margin ≈ 100% because the
-        // company barely has sales, so most costs fall below the gross-profit
-        // line and (1 + gm) ≈ 2 inflates POC ~2× without operational backing.
-        // Threshold: revenue < 5 M$ AND gross_margin ≥ 95%.
-        const revHist = data.revenue_history || [];
-        const latestRevenue = revHist.length ? revHist[revHist.length - 1].value : null;
-        if (gm != null && gm >= 0.95 && latestRevenue != null && latestRevenue < 5_000_000) {
-            anomalies.push({
-                title: `Margen bruto = ${(gm * 100).toFixed(1)}% en empresa casi pre-revenue`,
-                detail: `Yahoo reporta un margen bruto del ${(gm * 100).toFixed(1)}% para una empresa con ingresos mínimos (${fmtCompact(latestRevenue / 1e9)} en el último año fiscal). Es casi siempre un artefacto contable: cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado. Recomendación, igual que con el margen operativo:`,
-                bullets: [
-                    `Margen bruto reportado = ${(gm * 100).toFixed(1)}% → factor (1 + GM) = ${(1 + gm).toFixed(2)}, que multiplica POC por ~2× sin sustento operativo real.`,
-                    "Sugerencia: aplica un valor más sensato para el sector (por defecto auto-corregimos a 50%, en línea con un semiconductor / hardware pre-revenue típico). Edita manualmente si tu propia tesis sugiere otro nivel.",
-                ],
-            });
-            addCorr("gross_margin", gm, 0.5, "Clip margen bruto a 50% (heurística para empresas casi sin ingresos con GM reportado ≥ 95% por Yahoo).");
-        }
-
         // Extreme upside (>1000%) — opportunity or value trap.
         const rc = cr.ratio_compra_pct, rv = cr.ratio_venta_pct;
         const extremeRC = rc != null && rc > 1000;
@@ -800,6 +782,35 @@ export default function Company() {
             return next;
         });
         toast.success(`${pocPovCorrections.length} input(s) auto-corregido(s). Revisa, edita o guarda.`);
+    };
+
+    // Pre-revenue gross margin artifact detection (own standalone panel above
+    // the POC/POV anomalies). Trigger: revenue < 5 M$ AND gross_margin ≥ 95%.
+    const grossMarginPreRevenue = (() => {
+        const gm = inputs?.gross_margin;
+        const revHist = data.revenue_history || [];
+        const latestRevenue = revHist.length ? revHist[revHist.length - 1].value : null;
+        if (gm == null || gm < 0.95) return null;
+        if (latestRevenue == null || latestRevenue >= 5_000_000) return null;
+        return { gm, latestRevenue, from: gm, to: 0.5 };
+    })();
+
+    const applyGrossMarginFix = () => {
+        if (!grossMarginPreRevenue) return;
+        const { to } = grossMarginPreRevenue;
+        setInputs(prev => {
+            const next = { ...prev, gross_margin: to };
+            setSessionEdits(prevEdits => {
+                const ne = { ...prevEdits };
+                const loaded = wlEntry?.overrides?.gross_margin !== undefined ? wlEntry.overrides.gross_margin : autoInputs?.gross_margin;
+                if (!valuesEqual(to, loaded)) ne.gross_margin = true;
+                else delete ne.gross_margin;
+                return ne;
+            });
+            setCustomRatios(computeCustomRatios(next));
+            return next;
+        });
+        toast.success("Margen bruto auto-corregido al 50%. Revisa, edita o guarda.");
     };
 
     // Map field key to its display label (used in the corrections preview)
@@ -951,7 +962,7 @@ export default function Company() {
                 </div>
             )}
 
-            {pocPovAnomalies.length > 0 && (
+            {(pocPovAnomalies.length > 0 || grossMarginPreRevenue) && (
                 <div className="border border-[#B32A22] bg-white p-4 mb-6" data-testid="poc-pov-anomalies">
                     <div className="flex items-center gap-2 mb-3">
                         <AlertCircle size={16} className="text-[#B32A22]" />
@@ -968,6 +979,30 @@ export default function Company() {
                             </div>
                         ))}
                     </div>
+                    {grossMarginPreRevenue && (
+                        <div className="mt-4 pt-3 border-t border-black/10" data-testid="auto-correct-gross-margin-section">
+                            <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                                <div>
+                                    <div className="overline text-[#1D7044]">Auto-corregir</div>
+                                    <div className="text-xs text-[#4A4A4A]">Yahoo reporta un margen bruto del {(grossMarginPreRevenue.gm * 100).toFixed(1)}% con ingresos de solo {fmtCompact(grossMarginPreRevenue.latestRevenue / 1e9)} (último año fiscal). Cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado — es casi siempre un artefacto contable. El factor (1 + GM) = {(1 + grossMarginPreRevenue.gm).toFixed(2)} multiplica POC por ~2× sin sustento operativo real. Auto-corregimos a 50% (semiconductor / hardware pre-revenue típico). Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
+                                </div>
+                                <button onClick={applyGrossMarginFix} className="btn-primary whitespace-nowrap" data-testid="auto-correct-gross-margin-apply">
+                                    Aplicar al 50%
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                                <div className="border border-black/10 bg-[#FAF6EE] p-2 text-xs font-mono" data-testid="correction-gross-margin">
+                                    <div className="font-sans text-[#4A4A4A]">Margen bruto</div>
+                                    <div className="mt-1">
+                                        <span className="text-[#B32A22]">{(grossMarginPreRevenue.from * 100).toFixed(2)}%</span>
+                                        <span className="mx-1 text-[#4A4A4A]">→</span>
+                                        <span className="text-[#1D7044]">{(grossMarginPreRevenue.to * 100).toFixed(2)}%</span>
+                                    </div>
+                                    <div className="text-[10px] text-[#4A4A4A] mt-1 font-sans">Clip margen bruto a 50% (heurística para empresas casi sin ingresos con GM reportado ≥ 95% por Yahoo).</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {pocPovCorrections.length > 0 && (
                         <div className="mt-4 pt-3 border-t border-black/10" data-testid="auto-correct-section">
                             <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
