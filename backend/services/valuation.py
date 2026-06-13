@@ -387,6 +387,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     fcf_1y_bu = None
     fcf_growth_fwd = None
     bottom_up_breakdown = None
+    bottom_up_rejected_alternative = None
     projection_method = "historical-cagr"
 
     # ---- Method 1: bottom-up ----
@@ -424,14 +425,15 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         # Sanity-guard analyst NI estimate: yfinance occasionally returns malformed
         # earnings_estimate values (wrong fiscal year, share-count mismatch). Reject
         # estimates that imply >150% YoY growth or <-50% — those are almost always data
-        # issues, not real expectations.
+        # issues, not real expectations. We compute the value anyway and expose it as
+        # `bottom_up_rejected_alternative` so the user can opt-in manually via the
+        # [BU+] button (useful for cyclicals in recovery where +150% NI is legit).
+        ni_growth_check = None
         if bottom_up_eligible and ni_pos:
             latest_ni_for_check = ni_pos[-1]
             if latest_ni_for_check > 0:
                 ni_growth_check = ni_plus1y / latest_ni_for_check - 1
-                if ni_growth_check > 1.5 or ni_growth_check < -0.5:
-                    bottom_up_eligible = False
-                    projection_flags["fcf_bottom_up_ni_suspicious"] = True
+        ni_suspicious = ni_growth_check is not None and (ni_growth_check > 1.5 or ni_growth_check < -0.5)
 
         if bottom_up_eligible:
             ocf_to_ni_ratio = sum(paired_ratios) / len(paired_ratios)
@@ -484,42 +486,80 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             # Final sanity: bottom-up FCF should be in a reasonable band relative to TTM/last annual
             # to avoid pathological cases (e.g., one-off charge year).
             ref_fcf = latest_fcf or fcf_ttm
+            sanity_ok = False
             if fcf_2y_candidate is not None and ref_fcf:
                 ratio = fcf_2y_candidate / ref_fcf
-                if 0.3 <= ratio <= 4.0:
-                    fcf_2y = fcf_2y_candidate
-                    projection_method = "bottom-up"
-                    bottom_up_breakdown = {
-                        "ocf_to_ni_ratio": round(ocf_to_ni_ratio, 3),
-                        "capex_intensity": round(capex_intensity, 4),
-                        "trend_factor": round(trend_factor, 3),
-                        "earnings_mod": round(earnings_mod, 3),
-                        "leverage_mod": round(leverage_mod, 3),
-                        "ni_plus1y": ni_plus1y,
-                        "ocf_plus1y": ocf_plus1y,
-                        "capex_plus1y": capex_plus1y,
-                        "fcf_plus1y": fcf_1y_bu,
-                        "g_step": round(g_step, 3),
+                sanity_ok = 0.3 <= ratio <= 4.0
+
+            bu_breakdown_candidate = {
+                "ocf_to_ni_ratio": round(ocf_to_ni_ratio, 3),
+                "capex_intensity": round(capex_intensity, 4),
+                "trend_factor": round(trend_factor, 3),
+                "earnings_mod": round(earnings_mod, 3),
+                "leverage_mod": round(leverage_mod, 3),
+                "ni_plus1y": ni_plus1y,
+                "ocf_plus1y": ocf_plus1y,
+                "capex_plus1y": capex_plus1y,
+                "fcf_plus1y": fcf_1y_bu,
+                "g_step": round(g_step, 3),
+            }
+
+            if not ni_suspicious and sanity_ok:
+                fcf_2y = fcf_2y_candidate
+                projection_method = "bottom-up"
+                bottom_up_breakdown = bu_breakdown_candidate
+            elif ni_suspicious:
+                # Stash rejected value for the [BU+] manual override in UI,
+                # BUT only if it's within a plausible band (≤ 10x base FCF).
+                # Above that it's almost always yfinance returning garbage NI
+                # estimates (wrong FY, share-count mismatch) — not a real recovery.
+                projection_flags["fcf_bottom_up_ni_suspicious"] = True
+                ref_fcf_for_bu = latest_fcf or fcf_ttm
+                bu_plausible = (
+                    ref_fcf_for_bu and ref_fcf_for_bu > 0
+                    and fcf_2y_candidate is not None
+                    and 0.5 <= fcf_2y_candidate / ref_fcf_for_bu <= 10.0
+                )
+                if bu_plausible:
+                    bottom_up_rejected_alternative = {
+                        "fcf_2y": fcf_2y_candidate,
+                        "fcf_1y": fcf_1y_bu,
+                        "ni_growth_implied_pct": ni_growth_check,
+                        "breakdown": bu_breakdown_candidate,
                     }
     except Exception as e:
         logger.info(f"bottom-up FCF computation failed for {ticker}: {e}")
 
-    # ---- Always compute the CAGR-based breakdown when feasible, even if bottom-up was
-    # chosen — this lets the UI offer TTM/ANUAL alternative bases as additional manual
-    # options on top of the primary projection method.
+    # ---- Always compute the regression-based breakdown when feasible, even if
+    # bottom-up was chosen — this lets the UI offer TTM/ANUAL alternative bases as
+    # additional manual options on top of the primary projection method.
+    #
+    # Method: linear regression over ALL annual FCF years (including negative ones).
+    # The slope ($/year) is converted to a growth rate by dividing by |latest_fcf|.
+    # This is robust to cyclical companies (e.g., memory chips) where a single deep
+    # negative year used to be dropped by the old "positive-years-only CAGR" approach,
+    # producing pessimistic projections during recovery phases.
     cagr_breakdown = None
-    fcf_cagr_growth = None  # CAGR growth rate (independent of which method "won")
+    fcf_cagr_growth = None  # regression-derived growth rate (legacy field name kept for compat)
+    regression_slope = None
     try:
         fvals = [p["value"] for p in fcf_history if p["value"] is not None]
         if any(v <= 0 for v in fvals):
             projection_flags["fcf_history_has_negatives"] = True
-        pos_vals = [v for v in fvals if v > 0]
-        if len(pos_vals) >= 2:
-            n = len(pos_vals) - 1
-            raw_fg = (pos_vals[-1] / pos_vals[0]) ** (1 / n) - 1
-            fcf_cagr_growth = _clamp(raw_fg, -0.30, 0.50)
-            if raw_fg != fcf_cagr_growth:
-                projection_flags["fcf_projection_capped"] = True
+        if len(fvals) >= 2 and latest_fcf is not None and abs(latest_fcf) > 1e6:
+            n = len(fvals)
+            t_vals = list(range(n))
+            t_mean = sum(t_vals) / n
+            y_mean = sum(fvals) / n
+            num = sum((t_vals[i] - t_mean) * (fvals[i] - y_mean) for i in range(n))
+            den = sum((t_vals[i] - t_mean) ** 2 for i in range(n))
+            if den > 0:
+                regression_slope = num / den
+                # Convert slope ($/year) to growth rate relative to latest base
+                raw_fg = regression_slope / abs(latest_fcf)
+                fcf_cagr_growth = _clamp(raw_fg, -0.30, 0.50)
+                if raw_fg != fcf_cagr_growth:
+                    projection_flags["fcf_projection_capped"] = True
     except Exception:
         pass
 
@@ -531,15 +571,23 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "fcf_ttm": fcf_ttm,
             "growth_pct": fcf_cagr_growth,
             "positive_years_used": len([v for v in [p["value"] for p in fcf_history if p["value"] is not None] if v > 0]),
+            "method": "linear_regression",
+            "slope_per_year": regression_slope,
+            "years_used": len([p["value"] for p in fcf_history if p["value"] is not None]),
         }
 
-    # ---- Method 2: historical FCF CAGR (fallback if bottom-up didn't apply) ----
+    # ---- Method 2: linear-regression projection (fallback if bottom-up didn't apply).
+    # If the base is positive, use multiplicative growth (preserves CAGR semantics).
+    # If the base is negative (loss-making), additive projection keeps the sign
+    # correct: a negative slope SHOULD make a negative FCF more negative, not less.
     if fcf_2y is None:
         fcf_growth_fwd = fcf_cagr_growth
-        if latest_fcf and fcf_growth_fwd is not None:
+        if latest_fcf is not None and latest_fcf < 0 and regression_slope is not None:
+            fcf_2y = latest_fcf + 2.0 * regression_slope
+        elif latest_fcf and fcf_growth_fwd is not None:
             fcf_2y = latest_fcf * (1 + fcf_growth_fwd) ** 2
         elif latest_fcf:
-            # If we can't compute growth (e.g., negative FCF in history), assume flat
+            # If we can't compute growth at all, assume flat
             fcf_2y = latest_fcf
 
     # ----- 1y forward values (for charting projections) -----
@@ -550,6 +598,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     fcf_1y = None
     if fcf_1y_bu is not None and projection_method == "bottom-up":
         fcf_1y = fcf_1y_bu
+    elif latest_fcf is not None and latest_fcf < 0 and regression_slope is not None:
+        fcf_1y = latest_fcf + 1.0 * regression_slope
     elif latest_fcf and fcf_growth_fwd is not None:
         fcf_1y = latest_fcf * (1 + fcf_growth_fwd)
     elif latest_fcf:
@@ -691,6 +741,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "flags": projection_flags,
             "projection_method": projection_method,
             "bottom_up_breakdown": bottom_up_breakdown,
+            "bottom_up_rejected_alternative": bottom_up_rejected_alternative,
             "cagr_breakdown": cagr_breakdown,
         },
         "classic_ratios": classic_ratios,

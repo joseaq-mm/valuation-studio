@@ -1041,7 +1041,14 @@ export default function Company() {
                 if (f.fcf_projection_capped) warnings.push("El crecimiento histórico del FCF se ha capado para evitar extrapolaciones extremas.");
                 if (f.fcf_cagr_fallback) warnings.push("CAGR del FCF a 4 años calculado por fallback (no por la fórmula estándar 2y atrás → 2y adelante).");
                 if (f.revenue_cagr_fallback) warnings.push("CAGR de ingresos a 4 años calculado por fallback.");
-                if (f.fcf_bottom_up_ni_suspicious) warnings.push("La estimación de Net Income de analistas parecía anómala (crecimiento >150% o <−50%). La proyección de FCF se ha hecho con el método histórico como precaución.");
+                if (f.fcf_bottom_up_ni_suspicious) {
+                    const buRej = data.auto_projections.bottom_up_rejected_alternative;
+                    if (buRej && buRej.fcf_2y != null) {
+                        warnings.push(`La estimación de Net Income de analistas parece anómala (crecimiento >150% o <−50%). La proyección de FCF se ha hecho con la regresión lineal histórica como precaución. Si crees que la empresa es cíclica saliendo del valle (recuperación legítima), puedes aplicar manualmente la proyección de analistas con el botón [BU+] junto a "FCF proyectado 2y" abajo.`);
+                    } else {
+                        warnings.push("La estimación de Net Income de analistas parecía anómala (crecimiento >150% o <−50%). La proyección de FCF se ha hecho con la regresión lineal histórica como precaución. El valor de analistas también está fuera de un rango plausible, así que no se ofrece como opción manual.");
+                    }
+                }
 
                 // TTM stale: explicit warning when the backend dropped Yahoo's TTM FCF and
                 // switched to the last annual value as the base for the CAGR projection.
@@ -1054,15 +1061,15 @@ export default function Company() {
 
                 if (!warnings.length) return null;
                 return (
-                    <div className="border border-[#D97706] bg-white p-4 mb-6" data-testid="projection-warnings">
+                    <div className="border border-[#D97706] bg-[#FFF8E1] p-4 mb-6" data-testid="projection-warnings">
                         <div className="flex items-center gap-2 mb-2">
-                            <AlertCircle size={16} className="text-[#D97706]" />
-                            <div className="overline text-[#D97706]">Avisos sobre las proyecciones automáticas</div>
+                            <AlertCircle size={18} className="text-[#D97706]" />
+                            <div className="overline text-[#D97706] text-sm">Avisos sobre las proyecciones automáticas</div>
                         </div>
-                        <ul className="text-xs text-[#4A4A4A] space-y-1 list-disc pl-5 font-sans">
+                        <ul className="text-sm text-[#3A3A3A] space-y-1.5 list-disc pl-5 font-sans">
                             {warnings.map((w, i) => <li key={i} data-testid={`warning-${i}`}>{w}</li>)}
                         </ul>
-                        <div className="text-[10px] text-[#4A4A4A] mt-2 font-mono">
+                        <div className="text-xs text-[#4A4A4A] mt-3 font-mono">
                             Recomendación: revisa los inputs abajo y ajústalos a tu criterio antes de tomar decisiones.
                         </div>
                     </div>
@@ -1109,6 +1116,7 @@ export default function Company() {
                         const isFcfRow = key === "fcf_2y";
                         const method = data?.auto_projections?.projection_method;
                         const bu = data?.auto_projections?.bottom_up_breakdown;
+                        const buRejected = data?.auto_projections?.bottom_up_rejected_alternative;
                         const methodBadge = (isFcfRow && method) ? (() => {
                             const cb = data?.auto_projections?.cagr_breakdown;
                             // Format helpers for the tooltip
@@ -1120,11 +1128,13 @@ export default function Company() {
                                 "annual_latest": "último anual",
                             }[cb?.base_source] || cb?.base_source || "desconocido";
                             const cagrText = cb
-                                ? `Método: CAGR HISTÓRICO (fallback)\n\nPaso 1 — Base usada: ${fmtBn(cb.base_value)} (fuente: ${baseSourceLabel})\n   • TTM Yahoo:        ${fmtBn(cb.fcf_ttm)}\n   • Último FCF anual: ${fmtBn(cb.latest_annual)}\n\nPaso 2 — Crecimiento: ${cb.growth_pct != null ? `${(cb.growth_pct*100).toFixed(1)}% anual` : "—"} (CAGR de ${cb.positive_years_used} año(s) positivo(s) del histórico)\n\nPaso 3 — Proyección:\n   FCF +1y = base × (1 + g)\n   FCF +2y = base × (1 + g)²\n\nNota: este método se usa cuando los datos de analistas de NI no permiten el modelo bottom-up (NI negativo, histórico corto, etc.).`
-                                : "Método: CAGR HISTÓRICO\nUsamos la CAGR de FCF positivo histórico aplicada al último FCF disponible.";
+                                ? `Método: REGRESIÓN LINEAL (fallback)\n\nPaso 1 — Base usada: ${fmtBn(cb.base_value)} (fuente: ${baseSourceLabel})\n   • TTM Yahoo:        ${fmtBn(cb.fcf_ttm)}\n   • Último FCF anual: ${fmtBn(cb.latest_annual)}\n\nPaso 2 — Regresión lineal sobre ${cb.years_used || cb.positive_years_used || "—"} año(s) del histórico (incluye años negativos).\n   Pendiente: ${cb.slope_per_year != null ? fmtBn(cb.slope_per_year) + "/año" : "—"}\n   Tasa de crecimiento implícita: ${cb.growth_pct != null ? `${(cb.growth_pct*100).toFixed(1)}% anual` : "—"} (pendiente / |base|, capada a ±30/50%)\n\nPaso 3 — Proyección:\n   FCF +1y = base × (1 + g)\n   FCF +2y = base × (1 + g)²\n   (si la base es negativa, se usa proyección aditiva: base + n·pendiente)\n\nNota: este método se usa cuando los datos de analistas de NI no permiten el modelo bottom-up (NI negativo, histórico corto, NI suspicious, etc.).`
+                                : "Método: REGRESIÓN LINEAL\nUsamos la regresión lineal sobre el FCF histórico aplicada al último FCF disponible.";
+
+                            const buRejectedText = buRejected ? `Método: BOTTOM-UP ANALISTAS (rechazado por guard-rail)\n\nEl guard-rail rechazó la proyección automática porque los analistas esperan un crecimiento de NI de ${buRejected.ni_growth_implied_pct != null ? `${(buRejected.ni_growth_implied_pct*100).toFixed(0)}%` : "—"} (umbral: ±150%/-50%).\n\nFCF +1y = ${fmtBn(buRejected.fcf_1y)}\nFCF +2y = ${fmtBn(buRejected.fcf_2y)}\n\nÚSALO si:\n• Crees que la empresa es cíclica saliendo del valle (recuperación legítima)\n• Confías en las estimaciones de analistas para los próximos 12 meses\n\nNO LO USES si:\n• Sospechas que los datos de Yahoo están corruptos (FY incorrecto, mismatch de share count)\n• La proyección parece desproporcionada respecto al histórico` : "";
 
                             // Compute alternative base projections so the user can swap with one
-                            // click. Available whenever the historical CAGR can be computed —
+                            // click. Available whenever the historical regression can be computed —
                             // even for bottom-up companies (offered as 2nd/3rd manual options).
                             const canSwap = cb && cb.growth_pct != null && cb.fcf_ttm && cb.latest_annual && cb.latest_annual > 0;
                             const g = canSwap ? cb.growth_pct : 0;
@@ -1137,10 +1147,9 @@ export default function Company() {
 
                             const buFcfPlus2y = (method === "bottom-up" && bu) ? data?.auto_projections?.fcf_2y : null;
                             const isUsingBu = buFcfPlus2y != null && within(currentVal, buFcfPlus2y);
+                            const isUsingBuRejected = buRejected?.fcf_2y != null && within(currentVal, buRejected.fcf_2y);
 
-                            // Build a uniform [BU?] [TTM] [ANUAL] toolbar. The CAGR informational
-                            // badge is intentionally NOT rendered: the hover tooltip on each
-                            // button explains everything without adding noise to the label.
+                            // Build a uniform [BU?] [BU+?] [TTM] [ANUAL] toolbar.
                             return (
                                 <span className="inline-flex items-center gap-1 ml-2">
                                     {method === "bottom-up" && buFcfPlus2y != null && (
@@ -1157,6 +1166,22 @@ export default function Company() {
                                                 data-testid="fcf-method-badge"
                                                 aria-pressed={isUsingBu}
                                             >BU</button>
+                                        </HoverTip>
+                                    )}
+                                    {buRejected && buRejected.fcf_2y != null && (
+                                        <HoverTip text={buRejectedText}>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateInput("fcf_2y", buRejected.fcf_2y)}
+                                                className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                style={{
+                                                    background: isUsingBuRejected ? "#D97706" : "transparent",
+                                                    color: isUsingBuRejected ? "white" : "#D97706",
+                                                    borderColor: "#D97706",
+                                                }}
+                                                data-testid="fcf-method-bu-plus"
+                                                aria-pressed={isUsingBuRejected}
+                                            >BU+</button>
                                         </HoverTip>
                                     )}
                                     {canSwap && (
