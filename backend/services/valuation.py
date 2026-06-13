@@ -334,6 +334,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "fcf_cagr_fallback": False,
         "revenue_cagr_fallback": False,
         "fcf_bottom_up_ni_suspicious": False,
+        "fcf_bottom_up_sparse_paired_data": False,
+        "fcf_bottom_up_asset_light": False,
     }
 
     # ----- Revenue 2y projection -----
@@ -417,10 +419,38 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         bottom_up_eligible = (
             ni_plus1y is not None and ni_plus1y > 0
             and revenue_2y is not None and revenue_plus1y is not None and revenue_plus1y > 0
-            and len(paired_ratios) >= 3
-            and len(intensities) >= 3
-            and ni_pos                # need ≥1 positive historical NI for momentum
+            and len(paired_ratios) >= 2     # (b) lowered from 3 to allow cyclicals with 1-2 loss years
+            and ni_pos                       # need ≥1 positive historical NI for momentum
         )
+
+        # (b) Cyclical guard-rail: even if paired_ratios is sparse (2 years), require that
+        # the MAJORITY of historical NI years are positive. This blocks chronically loss-making
+        # companies from sneaking through with a single recent profitable year.
+        ni_total_count = len([p for p in ni_history if p.get("value") is not None])
+        ni_positive_count = len([p for p in ni_history if p.get("value") is not None and p["value"] > 0])
+        majority_positive = ni_total_count >= 2 and ni_positive_count >= ni_total_count / 2
+        if bottom_up_eligible and not majority_positive:
+            bottom_up_eligible = False
+
+        # (c) Asset-light detection (software/SaaS pattern): CapEx is structurally near-zero
+        # or unreported. If we don't have enough capex_history but the company is otherwise
+        # eligible, mark as asset-light and use a 0.5% revenue intensity floor instead of
+        # rejecting the company outright.
+        capex_reported_count = len([p for p in capex_history if p.get("value") is not None])
+        asset_light = (
+            bottom_up_eligible
+            and len(intensities) < 3
+            and (capex_reported_count == 0 or (len(intensities) >= 1 and max(intensities) < 0.03))
+        )
+        if asset_light:
+            projection_flags["fcf_bottom_up_asset_light"] = True
+        elif bottom_up_eligible and len(intensities) < 3:
+            # Not asset-light and no capex data → reject (we can't trust an unknown CapEx structure)
+            bottom_up_eligible = False
+
+        # Sparse-data warning when paired_ratios = 2 (instead of standard 3+)
+        if bottom_up_eligible and len(paired_ratios) == 2:
+            projection_flags["fcf_bottom_up_sparse_paired_data"] = True
 
         # Sanity-guard analyst NI estimate: yfinance occasionally returns malformed
         # earnings_estimate values (wrong fiscal year, share-count mismatch). Reject
@@ -440,8 +470,13 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             # Sanity bounds: 0.3x (highly tax-heavy capital-light) ≤ ratio ≤ 4x (extreme D&A)
             ocf_to_ni_ratio = max(0.3, min(4.0, ocf_to_ni_ratio))
 
-            capex_intensity = sum(intensities) / len(intensities)
-            capex_intensity = max(0.01, min(0.50, capex_intensity))
+            if intensities:
+                capex_intensity = sum(intensities) / len(intensities)
+            else:
+                # Asset-light fallback: software/SaaS with no reported CapEx → 0.5% floor
+                capex_intensity = 0.005
+            # Lowered floor from 1% to 0.5% to better reflect pure-software economics
+            capex_intensity = max(0.005, min(0.50, capex_intensity))
 
             ocf_plus1y = ni_plus1y * ocf_to_ni_ratio
             capex_base = capex_intensity * revenue_plus1y
