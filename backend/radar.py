@@ -9,6 +9,7 @@ Mirrors screener.py: a single async job that
 """
 import os
 import re
+import urllib.parse
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -29,14 +30,26 @@ def _norm(name: str) -> str:
 
 
 def _build_radar_email_html(user_name: str, trends: List[Dict[str, Any]]) -> str:
+    base_url = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
     rows = []
     for t in trends:
         heat = t.get("heat")
         color = "#B32A22" if (heat or 0) >= 8 else "#B8860B"
+        name = t.get("name", "") or ""
+        # Pre-fill the trend explorer with the trend name; the user lands on the
+        # search box ready to click "Explorar tendencia". No auto-execution.
+        title_html = name
+        if base_url and name:
+            href = f"{base_url}/thesis?explore=" + urllib.parse.quote(name, safe="")
+            title_html = (
+                f'<a href="{href}" '
+                f'style="color:#052049;text-decoration:none;border-bottom:1px solid #05204940;" '
+                f'target="_blank" rel="noopener">{name}</a>'
+            )
         rows.append(f"""
             <tr>
                 <td style="padding:10px 12px;border-bottom:1px solid #00000010;vertical-align:top;">
-                    <div style="font-family:'Cormorant Garamond',serif;font-size:17px;font-weight:600;">{t.get('name','')}</div>
+                    <div style="font-family:'Cormorant Garamond',serif;font-size:17px;font-weight:600;">{title_html}</div>
                     <div style="font-family:sans-serif;font-size:11px;color:#4A4A4A;margin-top:2px;">{t.get('sector','') or ''}</div>
                     <div style="font-family:sans-serif;font-size:12px;color:#222;margin-top:6px;line-height:1.45;">{t.get('why_now','') or ''}</div>
                 </td>
@@ -60,7 +73,7 @@ def _build_radar_email_html(user_name: str, trends: List[Dict[str, Any]]) -> str
                 <table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #000;border-bottom:1px solid #000;">{rows_html}</table>
             </td></tr>
             <tr><td style="padding:16px;font-size:11px;color:#4A4A4A;line-height:1.5;">
-                Entra a la app y pulsa "Desarrollar tesis" para analizar cualquiera de ellas a fondo (cadena de valor, líderes vs. disruptores, TAM y probabilidad).
+                Pulsa sobre el nombre de una tendencia para abrirla directamente en la app con el buscador pre-rellenado, listo para pulsar "Explorar tendencia".
                 Para dejar de recibir el radar, desactívalo en la página de Tesis.
             </td></tr>
         </table>

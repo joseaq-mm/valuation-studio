@@ -97,7 +97,14 @@ export default function Thesis() {
         const co = searchParams.get("company");
         const tr = searchParams.get("trend");
         const auto = searchParams.get("auto");
+        const explore = searchParams.get("explore");
         if (co) { setMode("company"); setSubject(co); }
+        else if (explore) {
+            // Coming from the weekly Radar email: pre-fill the trend-explorer
+            // search box WITHOUT auto-executing — user must click "Explorar tendencia".
+            setMode("explore");
+            setSubject(explore);
+        }
         else if (tr && auto === "1") {
             const matched = searchParams.get("matched");
             const fromCompany = searchParams.get("from_company");
