@@ -18,6 +18,11 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ P1 verificado E2E (Jun 2026): emails Screener nocturno + Radar semanal funcionando con Resend:**
+  - Smoke test directo Resend → API key válida, sender `onboarding@resend.dev` autorizado para `joseaq.2m@gmail.com` (modo sandbox).
+  - Screener nocturno: ejecutado vía `POST /api/admin/run-screener`, detectó 1 cruce en la watchlist real (TSLA/MU/QCOM/REGN/META/LLY/COST/AVGO/BKNG/ANET/AMD/AMZN, etc.) → 1 email enviado y recibido en bandeja.
+  - Radar semanal: ejecutado vía `POST /api/admin/run-radar` con `radar_state.seen` limpiado para forzar tendencias nuevas → 5 candidatas LLM, 4 nuevas con heat ≥ 7, 1 email enviado y recibido.
+  - **Mejora añadida en el email del radar (Jun 2026)**: cada título de tendencia es ahora un **enlace clickable** que abre `/thesis?explore=<tendencia urlencoded>`. La página de Tesis detecta el parámetro, conmuta a modo "Tendencias → Empresas" y pre-rellena el buscador SIN auto-ejecutar — el usuario decide pulsar "Explorar tendencia". Nueva env var `PUBLIC_APP_URL` en backend/.env. Cambios: `radar.py` (URL encoding + `<a>` wrapper) + `Thesis.jsx` (handler `explore` en el useEffect existente). Verificado end-to-end con email real y test mock.
 - **✅ Empresa→Tesis · MODELO DE DRIVERS DE CRECIMIENTO (Jun 2026, e2e LLM real NVDA+DDOG + screenshot) — modelo vigente:**
   - Definición acordada con el usuario: una tesis = apuesta de ALTA CONVICCIÓN sobre un DRIVER DE CRECIMIENTO independiente (TAM propio, no solapado), etiquetada Actual (núcleo en expansión) o Futura (apuesta de futuro / adyacencia con sinergia+moat).
   - 3 pasadas: (1) `_map_growth_drivers` mapea drivers actuales (núcleo descompuesto en sub-drivers independientes) + futuros/adyacentes; (2) `_reconcile_drivers` fusiona drivers correlacionados/mismo pool de TAM, descarta baja convicción, garantiza TAMs mutuamente excluyentes (el más alto posible) sin reglas deterministas ni info de solapamiento visible; (3) `_synthesize_company_trends` puntúa. Convicción = juicio cualitativo del modelo (sin corte numérico, por petición del usuario).
