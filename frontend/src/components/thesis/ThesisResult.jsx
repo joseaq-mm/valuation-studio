@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Plus, Check, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
-import { thesisLinkSuggestions, thesisAddCompany, thesisEvaluateCompany, thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
+import { thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
 
 const DIMS = ["competitive_position", "sector_momentum", "management_quality", "financial_resilience"];
 
@@ -544,166 +544,11 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
     );
 }
 
-/** Bloque 1.1b — an EXISTING trend thesis the company fits but isn't a member of yet.
- *  Two-step add: "Calcular score" runs a no-persist evaluation and previews BOTH the
- *  Score global tendencia and the TAM Score; "Confirmar" then adds the company reusing
- *  that evaluation (no second LLM call). Anti-duplication: the company joins the
- *  existing thesis instead of spawning a near-duplicate. */
-function MatchedThesisRow({ match, company, fit, onAdded }) {
-    const [phase, setPhase] = useState("idle"); // idle | evaluating | preview | adding | adding-direct | added
-    const [preview, setPreview] = useState(null);
-    const companyLabel = company?.name || company?.ticker || "La empresa";
-    const showPreview = phase === "preview" || phase === "adding";
-
-    const directAdd = async () => {
-        if (!match?.thesis_id || !company?.ticker) return;
-        setPhase("adding-direct");
-        try {
-            await thesisAddCompany(match.thesis_id, company.ticker, company.name);
-            setPhase("added");
-            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
-            onAdded?.();
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
-            setPhase("idle");
-        }
-    };
-
-    const evaluate = async () => {
-        if (!match?.thesis_id || !company?.ticker) return;
-        setPhase("evaluating");
-        try {
-            const res = await thesisEvaluateCompany(match.thesis_id, company.ticker, company.name);
-            setPreview(res);
-            setPhase("preview");
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudo calcular el score.");
-            setPhase("idle");
-        }
-    };
-
-    const confirm = async () => {
-        setPhase("adding");
-        try {
-            await thesisAddCompany(match.thesis_id, company.ticker, company.name, preview?.entry || null);
-            setPhase("added");
-            toast.success(`${company.ticker} añadida a "${match.thesis_title}"`);
-            onAdded?.();
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudo añadir la empresa.");
-            setPhase("preview");
-        }
-    };
-
-    return (
-        <div className="border border-black/30 bg-white px-3 py-2.5" data-testid={`matched-thesis-${match.thesis_id}`}>
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0 text-sm">
-                    <Link to={`/thesis/${match.thesis_id}`} className="font-bold hover:underline inline-flex items-center gap-1" data-testid={`matched-thesis-link-${match.thesis_id}`}>
-                        <span className="truncate">{match.thesis_title}</span><ArrowRight size={12} className="shrink-0" />
-                    </Link>
-                    {fit
-                        ? <div className="text-xs text-[#1a1a1a] mt-1 leading-snug" data-testid={`matched-thesis-fit-${match.thesis_id}`}>{fit}</div>
-                        : <div className="text-xs text-[#4A4A4A] mt-0.5">{companyLabel} encaja aquí pero aún no está incluida.</div>}
-                </div>
-                {phase === "idle" && (
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            onClick={directAdd}
-                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors bg-black text-[#FDF1E6] hover:bg-[#052049]"
-                            data-testid={`matched-thesis-add-direct-${match.thesis_id}`}
-                        >
-                            <Plus size={12} /> Añadir a tesis
-                        </button>
-                        <button
-                            onClick={evaluate}
-                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors border border-black hover:bg-black hover:text-[#FDF1E6]"
-                            data-testid={`matched-thesis-eval-${match.thesis_id}`}
-                        >
-                            <Sparkles size={12} /> Calcular score
-                        </button>
-                    </div>
-                )}
-                {phase === "evaluating" && (
-                    <span className="text-xs text-[#4A4A4A] flex items-center gap-1.5 shrink-0" data-testid={`matched-thesis-evaluating-${match.thesis_id}`}>
-                        <Loader2 size={12} className="animate-spin" /> Calculando score…
-                    </span>
-                )}
-                {phase === "adding-direct" && (
-                    <span className="text-xs text-[#4A4A4A] flex items-center gap-1.5 shrink-0" data-testid={`matched-thesis-adding-${match.thesis_id}`}>
-                        <Loader2 size={12} className="animate-spin" /> Añadiendo…
-                    </span>
-                )}
-                {phase === "added" && (
-                    <span className="text-xs font-semibold text-[#1E7D45] flex items-center gap-1 shrink-0" data-testid={`matched-thesis-added-${match.thesis_id}`}>
-                        <Check size={12} /> Añadida
-                    </span>
-                )}
-            </div>
-
-            {showPreview && preview && (
-                <div className="mt-2.5 pt-2.5 border-t border-black/10 flex items-center justify-between gap-3 flex-wrap" data-testid={`matched-thesis-preview-${match.thesis_id}`}>
-                    <div className="flex items-center gap-5">
-                        <HoverTip text={SCORE_GLOBAL_TIP} maxWidth={320}>
-                            <div className="flex items-center gap-2 cursor-help">
-                                <span className="overline text-[#4A4A4A] leading-tight text-right">Score global<br />tesis</span>
-                                <ValueBox text={preview.overall_score ?? "—"} color={scoreColor(preview.overall_score)} testid={`preview-overall-${match.thesis_id}`} />
-                            </div>
-                        </HoverTip>
-                        <HoverTip text="TAM Score que tendría la empresa en esta tesis: (Score global tesis / 100 × TAM del eslabón) / Ingresos proyectados 2027 (USD). >1 = amplio recorrido." maxWidth={300}>
-                            <div className="flex items-center gap-2 cursor-help">
-                                <span className="overline text-[#4A4A4A] leading-tight text-right">TAM<br />Score</span>
-                                <ValueBox text={fmtTamScore(preview.tam_score) ?? "—"} color={tamColor(preview.tam_score)} testid={`preview-tam-${match.thesis_id}`} />
-                            </div>
-                        </HoverTip>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            onClick={confirm}
-                            disabled={phase === "adding"}
-                            className="text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-colors bg-black text-[#FDF1E6] hover:bg-[#052049] disabled:opacity-70"
-                            data-testid={`matched-thesis-add-${match.thesis_id}`}
-                        >
-                            {phase === "adding" ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                            {phase === "adding" ? "Añadiendo…" : `Confirmar · Añadir ${company?.ticker || "empresa"}`}
-                        </button>
-                        {phase !== "adding" && (
-                            <button onClick={() => { setPhase("idle"); setPreview(null); }} className="text-xs text-[#4A4A4A] hover:underline" data-testid={`matched-thesis-cancel-${match.thesis_id}`}>
-                                Cancelar
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
 export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop, onGeneratePlan, generatingPlan = false, onThesisUpdate }) {
-    const [linkData, setLinkData] = useState(null);
-    const [linkLoading, setLinkLoading] = useState(false);
     const [mutateTick, setMutateTick] = useState(0);
 
     const isTrend = thesis?.type === "trend";
     const planningLocked = !!thesis?.planning_locked;
-
-    // Company mode: classify the company's themes against the user's saved trend
-    // theses → matches (existing) vs. to_create (genuinely new). Re-run on add.
-    useEffect(() => {
-        let alive = true;
-        const run = async () => {
-            if (!thesis || thesis.type !== "company" || !thesis.id) { if (alive) setLinkData(null); return; }
-            if (alive) setLinkLoading(true);
-            try {
-                const d = await thesisLinkSuggestions(thesis.id);
-                if (alive) setLinkData(d);
-            } catch { if (alive) setLinkData(null); }
-            finally { if (alive) setLinkLoading(false); }
-        };
-        run();
-        return () => { alive = false; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [thesis?.id, thesis?.type, mutateTick]);
 
     const ticker = thesis?.company?.ticker;
 
@@ -764,32 +609,16 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
         } catch (e) { toast.error(e?.response?.data?.detail || "No se pudo marcar el plan."); }
     };
 
-    // 1.1b — existing theses the company fits but isn't a member of yet.
-    // Dedupe by thesis_id (several company trends can map to the same thesis).
-    const existingMatches = useMemo(() => {
-        const seen = new Set();
-        return (linkData?.to_add || []).filter((a) => {
-            if (a.already_in || !a.thesis_id || seen.has(a.thesis_id)) return false;
-            if (splitDevCores.has(_norm(a.trend_name))) return false; // shown as a split-note card instead
-            if (mergedNames.has(_norm(a.trend_name))) return false; // folded into another thesis
-            seen.add(a.thesis_id);
-            return true;
-        });
-    }, [linkData, splitDevCores, mergedNames]);
+    // 1.1b — existing-thesis match feature REMOVED (Jun 2026, per user request): no
+    // more "Tesis ya generadas que encajan" panel. The plan-generation flow is now the
+    // sole way to add TAM to a company, keeping the UX focused on one path.
 
-    // 1.2 — NEW themes only (those the matcher put in to_create), mapped back to the
-    // rich trend objects. Fallback to all themes while link data is unavailable.
-    // Always include cores that were split-developed so their note + pending parts show.
-    const newTrends = useMemo(() => {
-        const all = (thesis?.trends || []).filter((t) => !t.merged_into);
-        // Planning phase: show EVERY non-merged driver so each can be planned (or
-        // merged). This keeps the partition complete → 100% of the TAM is conserved
-        // and the list no longer depends on the LLM matcher (stable on reload).
-        if (!planningLocked) return all;
-        if (!linkData) return all;
-        const create = new Set((linkData.to_create || []).map((c) => _norm(c.trend_name)));
-        return all.filter((t) => create.has(_norm(t.name)) || splitDevCores.has(_norm(t.name)));
-    }, [thesis?.trends, linkData, splitDevCores, planningLocked]);
+    // 1.2 — All non-merged drivers are shown for planning. No more LLM-based
+    // duplicate-detection split between to_add/to_create — every driver is plannable.
+    const newTrends = useMemo(
+        () => (thesis?.trends || []).filter((t) => !t.merged_into),
+        [thesis?.trends]
+    );
 
     // How many theses "Generar plan" will create: split → its partitions, else 1.
     const planCount = useMemo(() => {
@@ -818,18 +647,6 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 return n + (d?.whole ? 0 : 1);
             }, 0);
     }, [thesis?.trends, planningLocked, splitDev]);
-
-    // Map a matched thesis to a short "why it fits" (the company-trend fit description
-    // / rationale, falling back to the matcher's reason) for the existing-matches rows.
-    const trendByName = useMemo(() => {
-        const m = {};
-        (thesis?.trends || []).forEach((t) => { m[_norm(t.name)] = t; });
-        return m;
-    }, [thesis?.trends]);
-    const fitFor = (match) => {
-        const t = trendByName[_norm(match.trend_name)];
-        return t?.fit_description || t?.rationale || match.reason || null;
-    };
 
     // After adding the company to an existing thesis: refresh this view (matches +
     // membership box) and tell the parent to reload the dashboard/sidebar.
@@ -945,26 +762,11 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                         />
                     )}
 
-                    {/* 1.1b — existing theses it fits but isn't included in yet → add */}
-                    {existingMatches.length > 0 && (
-                        <div className="mb-6" data-testid="existing-matches">
-                            <div className="overline text-[#4A4A4A] mb-2">Tesis ya generadas que encajan</div>
-                            <div className="space-y-2">
-                                {existingMatches.map((m) => (
-                                    <MatchedThesisRow key={m.thesis_id} match={m} company={thesis.company} fit={fitFor(m)} onAdded={handleAdded} />
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {/* 1.1b — existing-matches feature removed: only the plan flow remains */}
 
-                    {/* 1.2 — new suggested theses (not similar to the ones above) */}
+                    {/* 1.2 — new suggested theses (drivers de crecimiento) */}
                     <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="overline text-[#4A4A4A]">Drivers de crecimiento · nuevas tesis</div>
-                        {linkLoading && (
-                            <span className="text-[11px] text-[#4A4A4A] flex items-center gap-1" data-testid="trends-dup-checking">
-                                <Loader2 size={11} className="animate-spin" /> Comprobando duplicados…
-                            </span>
-                        )}
                     </div>
                     {/* Planning notice: mark each driver, merge what you don't want, THEN execute. */}
                     {!planningLocked ? (
@@ -993,11 +795,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             </div>
                         </div>
                     )}
-                    {thesis.id && linkLoading && !linkData ? (
-                        <div className="text-xs text-[#4A4A4A] flex items-center gap-2 border border-dashed border-black/20 p-4" data-testid="new-trends-loading">
-                            <Loader2 size={13} className="animate-spin" /> Analizando drivers de crecimiento…
-                        </div>
-                    ) : newTrends.length ? (
+                    {newTrends.length ? (
                         <div className="grid md:grid-cols-2 gap-4" data-testid="new-trends-list">
                             {newTrends.map((t, i) => {
                                 const d = splitDev[_norm(t.name)];
