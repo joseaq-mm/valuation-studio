@@ -21,13 +21,24 @@ const computeCombined = (r) => {
 const fmtPct = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
 const fmtN = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
 
-// ---------- Quadrant background labels ----------
+// ---------- Quadrant background labels (with subtitle) ----------
 const QuadrantLabels = () => (
     <>
-        <text x="92%" y="6%" textAnchor="end" className="quad-label" fill="#1D704430" fontSize={20} fontWeight={700}>🏆 JOYAS ESCONDIDAS</text>
-        <text x="92%" y="94%" textAnchor="end" className="quad-label" fill="#B32A2220" fontSize={20} fontWeight={700}>🚫 SOBREVALORADA</text>
-        <text x="8%" y="6%" textAnchor="start" className="quad-label" fill="#B8860B20" fontSize={20} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
-        <text x="8%" y="94%" textAnchor="start" className="quad-label" fill="#4A4A4A20" fontSize={20} fontWeight={700}>💎 PREMIUM</text>
+        {/* TL: low score + alto ratio compra (barata relativa) → trampa */}
+        <text x="8%" y="6%" textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={14} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
+        <text x="8%" y="6%" dy={16} textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + barata → auditar bien antes</text>
+
+        {/* TR: high score + alto ratio compra → joya */}
+        <text x="92%" y="6%" textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={14} fontWeight={700}>🏆 JOYAS ESCONDIDAS</text>
+        <text x="92%" y="6%" dy={16} textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + descuento → comprar</text>
+
+        {/* BL: low score + bajo ratio compra (cara) → sobrevalorada */}
+        <text x="8%" y="86%" textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={14} fontWeight={700}>🚫 SOBREVALORADA</text>
+        <text x="8%" y="86%" dy={14} textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + cara → ignorar</text>
+
+        {/* BR: high score + bajo ratio compra → premium, esperar */}
+        <text x="92%" y="86%" textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={14} fontWeight={700}>💎 PREMIUM</text>
+        <text x="92%" y="86%" dy={14} textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + cara → esperar entrada</text>
     </>
 );
 
@@ -147,6 +158,23 @@ export default function Visual() {
 
     const resetFilters = () => setFilters({ score: 0, tam: 0, rc: -10000, rv: -10000 });
 
+    // Dynamic quadrant divider: use median of MAP rows so dots end up balanced
+    // across the 4 quadrants regardless of dataset spread. Falls back to median
+    // of all rows when nothing is selected, then to (50, 0) when no data at all.
+    const { medianX, medianY } = useMemo(() => {
+        const base = mapRows.length ? mapRows : rows.filter((r) => r.avg_overall_score != null && r.ratio_compra_pct != null);
+        if (!base.length) return { medianX: 50, medianY: 0 };
+        const median = (arr) => {
+            const s = [...arr].sort((a, b) => a - b);
+            const m = Math.floor(s.length / 2);
+            return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+        };
+        return {
+            medianX: median(base.map((r) => r.avg_overall_score)),
+            medianY: median(base.map((r) => r.ratio_compra_pct)),
+        };
+    }, [mapRows, rows]);
+
     if (!user) {
         return (
             <div className="max-w-4xl mx-auto px-6 py-12 text-center">
@@ -186,16 +214,15 @@ export default function Visual() {
                         <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
                         <Tooltip content={<ScatterTooltip />} />
-                        <ReferenceLine x={70} stroke="#000" strokeDasharray="3 3" />
-                        <ReferenceLine y={0} stroke="#000" strokeDasharray="3 3" />
-                        <ReferenceLine y={20} stroke="#1D704460" strokeDasharray="2 4" />
+                        <ReferenceLine x={medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${medianX.toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                        <ReferenceLine y={medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${medianY >= 0 ? "+" : ""}${medianY.toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                         <QuadrantLabels />
                         <Scatter data={mapRows} shape={<Dot />} />
                     </ScatterChart>
                 </ResponsiveContainer>
-                <div className="text-[10px] text-[#4A4A4A] mt-2 font-sans flex items-center gap-4 flex-wrap">
-                    <span>📍 Tamaño = TAM Score · Color = Ratio Venta (<span className="text-[#1D7044]">verde ≥20%</span>, <span className="text-[#B8860B]">ámbar 0-20%</span>, <span className="text-[#B32A22]">rojo &lt;0%</span>)</span>
-                    <span>Línea Y=+20% = umbral BARATA · Línea X=70 = umbral calidad alta</span>
+                <div className="text-xs text-[#4A4A4A] mt-3 font-sans flex items-center gap-5 flex-wrap leading-relaxed">
+                    <span>📍 Tamaño = TAM Score · Color = Ratio Venta (<span className="text-[#1D7044] font-semibold">verde ≥20%</span>, <span className="text-[#B8860B] font-semibold">ámbar 0-20%</span>, <span className="text-[#B32A22] font-semibold">rojo &lt;0%</span>)</span>
+                    <span>Líneas discontinuas: <span className="font-mono">mediana</span> de las empresas visibles — el cruce divide los 4 cuadrantes dinámicamente.</span>
                 </div>
             </div>
 
