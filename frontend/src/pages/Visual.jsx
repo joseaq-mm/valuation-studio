@@ -97,14 +97,16 @@ export default function Visual() {
         rv: -10000,
     });
 
-    // Load on mount (and whenever user changes).
+    // Load on mount (and whenever user changes). All rows start SELECTED so the
+    // map shows everything immediately — user uncheck to narrow it down.
     const reload = useCallback(async () => {
-        if (!user) { setRows([]); return; }
+        if (!user) { setRows([]); setSelected(new Set()); return; }
         setLoading(true); setError(null);
         try {
             const d = await thesisVisualData();
             const enriched = (d.rows || []).map((r) => ({ ...r, combined: computeCombined(r) }));
             setRows(enriched);
+            setSelected(new Set(enriched.map((r) => r.ticker)));
         } catch (e) {
             setError(e?.response?.data?.detail || e.message);
         } finally {
