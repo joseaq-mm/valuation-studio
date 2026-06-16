@@ -163,3 +163,8 @@ export const thesisRefreshSubscribe = (enabled) =>
     api.post(`/thesis/refresh/subscribe`, { enabled }).then(r => r.data);
 export const thesisRefreshRun = ({ thesis_id = null, ticker = null } = {}) =>
     api.post(`/thesis/refresh/run`, { thesis_id, ticker }).then(r => r.data);
+
+
+// Visual page: aggregated rows for the BCG quadrant + opportunities table
+export const thesisVisualData = () =>
+    api.get(`/thesis/visual`).then(r => r.data);

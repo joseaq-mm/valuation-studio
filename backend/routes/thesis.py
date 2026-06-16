@@ -23,7 +23,7 @@ from services.thesis import (
     detect_parent_thesis, aggregate_folder_tam,
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
-from services.valuation import fetch_fundamentals_sync
+from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
 
@@ -1379,6 +1379,74 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"folders": folder_out, "trends": trends,
                 "companies": companies, "company_theses": company_theses,
                 "tendencias": tendencias_out, "convergence": convergence}
+
+    @router.get("/visual")
+    async def visual_data(user: Dict[str, Any] = Depends(auth_required)):
+        """Returns the universe of companies that are members of any of the user's
+        TREND theses (already fully developed), enriched with their POC/POV ratios
+        pulled from the fundamentals cache. Powers the /visual page (BCG quadrant
+        map + sortable opportunities table).
+
+        Each row: {ticker, name, avg_overall_score, sum_tam_score,
+                   ratio_compra_pct, ratio_venta_pct, current_price, currency,
+                   trends: [{thesis_id, title, overall_score, tam_score}],
+                   trend_count}
+        """
+        # Reuse the dashboard's company aggregation by calling it inline (cheap):
+        # this keeps the score/TAM aggregation logic in ONE place.
+        dash = await dashboard(user)  # type: ignore[arg-type]
+        companies = dash.get("companies") or []
+        if not companies:
+            return {"rows": []}
+
+        tickers = [c["ticker"] for c in companies if c.get("ticker")]
+        cached = await db.fundamentals.find(
+            {"ticker": {"$in": tickers}}, {"_id": 0, "ticker": 1, "data": 1}
+        ).to_list(length=len(tickers))
+        by_ticker: Dict[str, Dict[str, Any]] = {cd["ticker"]: cd.get("data") or {} for cd in cached}
+
+        rows: List[Dict[str, Any]] = []
+        for c in companies:
+            tk = c["ticker"]
+            d = by_ticker.get(tk) or {}
+            ratio_c: Optional[float] = None
+            ratio_v: Optional[float] = None
+            price: Optional[float] = None
+            currency: Optional[str] = None
+            try:
+                ap = d.get("auto_projections") or {}
+                ratios = compute_custom_ratios({
+                    "revenue_2y": ap.get("revenue_2y"),
+                    "fcf_2y": ap.get("fcf_2y"),
+                    "shares_outstanding": d.get("shares_outstanding"),
+                    "gross_margin": d.get("gross_margin"),
+                    "operating_margin": d.get("operating_margin"),
+                    "net_debt": d.get("net_debt"),
+                    "market_cap": d.get("market_cap"),
+                    "revenue_cagr_4y": ap.get("revenue_cagr_4y"),
+                    "fcf_cagr_4y": ap.get("fcf_cagr_4y"),
+                    "current_price": d.get("current_price"),
+                })
+                ratio_c = ratios.get("ratio_compra_pct")
+                ratio_v = ratios.get("ratio_venta_pct")
+                price = d.get("current_price")
+                currency = d.get("currency")
+            except Exception:
+                pass  # missing/incomplete fundamentals → ratios remain null
+            rows.append({
+                "ticker": tk,
+                "name": c.get("name"),
+                "avg_overall_score": c.get("avg_overall_score"),
+                "sum_tam_score": c.get("sum_tam_score"),
+                "ratio_compra_pct": ratio_c,
+                "ratio_venta_pct": ratio_v,
+                "current_price": price,
+                "currency": currency,
+                "trends": c.get("trends") or [],
+                "trend_count": c.get("trend_count") or 0,
+            })
+
+        return {"rows": rows}
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

@@ -119,6 +119,7 @@ export default function Layout({ children }) {
                             <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
                             <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">{t("nav.compare")}</Link>
                             <Link to="/thesis" className={navClass("/thesis")} data-testid="nav-link-thesis">{t("nav.thesis")}</Link>
+                            <Link to="/visual" className={navClass("/visual")} data-testid="nav-link-visual">Visual</Link>
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">
                             <ThresholdsDialog />

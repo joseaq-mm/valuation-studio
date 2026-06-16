@@ -10,6 +10,7 @@ import Portfolio from "@/pages/Portfolio";
 import Compare from "@/pages/Compare";
 import Thesis from "@/pages/Thesis";
 import ThesisDetail from "@/pages/ThesisDetail";
+import Visual from "@/pages/Visual";
 import AuthCallback from "@/pages/AuthCallback";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
@@ -33,6 +34,7 @@ function AppRouter() {
                 <Route path="/compare" element={<Compare />} />
                 <Route path="/thesis" element={<Thesis />} />
                 <Route path="/thesis/:id" element={<ThesisDetail />} />
+                <Route path="/visual" element={<Visual />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
             </Routes>
         </Layout>
