@@ -25,20 +25,20 @@ const fmtN = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
 const QuadrantLabels = () => (
     <>
         {/* TL: low score + alto ratio compra (barata relativa) → trampa */}
-        <text x="8%" y="6%" textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={14} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
-        <text x="8%" y="6%" dy={16} textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + barata → auditar bien antes</text>
+        <text x="12%" y="10%" textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={14} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
+        <text x="12%" y="10%" dy={14} textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + barata → auditar bien antes</text>
 
         {/* TR: high score + alto ratio compra → joya */}
-        <text x="92%" y="6%" textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={14} fontWeight={700}>🏆 JOYAS ESCONDIDAS</text>
-        <text x="92%" y="6%" dy={16} textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + descuento → comprar</text>
+        <text x="88%" y="10%" textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={14} fontWeight={700}>🏆 JOYAS ESCONDIDAS</text>
+        <text x="88%" y="10%" dy={14} textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + descuento → comprar</text>
 
         {/* BL: low score + bajo ratio compra (cara) → sobrevalorada */}
-        <text x="8%" y="86%" textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={14} fontWeight={700}>🚫 SOBREVALORADA</text>
-        <text x="8%" y="86%" dy={14} textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + cara → ignorar</text>
+        <text x="12%" y="80%" textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={14} fontWeight={700}>🚫 SOBREVALORADA</text>
+        <text x="12%" y="80%" dy={14} textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + cara → ignorar</text>
 
         {/* BR: high score + bajo ratio compra → premium, esperar */}
-        <text x="92%" y="86%" textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={14} fontWeight={700}>💎 PREMIUM</text>
-        <text x="92%" y="86%" dy={14} textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + cara → esperar entrada</text>
+        <text x="88%" y="80%" textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={14} fontWeight={700}>💎 PREMIUM</text>
+        <text x="88%" y="80%" dy={14} textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + cara → esperar entrada</text>
     </>
 );
 
@@ -175,6 +175,18 @@ export default function Visual() {
         };
     }, [mapRows, rows]);
 
+    // Dynamic X-axis domain: start at 50 by default (since most quality companies
+    // score >50, this avoids huge dead zone on the left). If any visible company
+    // has score < 50, extend the axis downward to include it (rounded to nearest 5).
+    const xDomain = useMemo(() => {
+        const base = mapRows.length ? mapRows : rows;
+        const scores = base.map((r) => r.avg_overall_score).filter((v) => v != null);
+        if (!scores.length) return [50, 100];
+        const minScore = Math.min(...scores);
+        if (minScore >= 50) return [50, 100];
+        return [Math.max(0, Math.floor(minScore / 5) * 5), 100];
+    }, [mapRows, rows]);
+
     if (!user) {
         return (
             <div className="max-w-4xl mx-auto px-6 py-12 text-center">
@@ -210,7 +222,7 @@ export default function Visual() {
                 <ResponsiveContainer width="100%" height={460}>
                     <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
                         <CartesianGrid stroke="#00000010" />
-                        <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={[0, 100]} tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={xDomain} tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
                         <Tooltip content={<ScatterTooltip />} />
