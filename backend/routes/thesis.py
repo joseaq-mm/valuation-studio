@@ -551,10 +551,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             await _record_usage(_cost)
             # Anchor the developed thesis to the company partition slice (Option A):
             # the origin company's TAM Score will use this, not the re-estimated chain.
+            # Also persist source_company_thesis_id so the company→thesis page can
+            # show ONLY the trends that were born from THIS company's plan (vs.
+            # auto-included memberships from other companies' plans).
             if kind == "trend" and origin_ticker:
                 thesis["origin_ticker"] = origin_ticker
                 if alloc_tam is not None:
                     thesis["allocated_tam_busd"] = alloc_tam
+            if kind == "trend" and from_company:
+                thesis["source_company_thesis_id"] = from_company
 
             # Anti-duplication: when generating "de todas formas" from a card that
             # matched an existing thesis, drop companies already present in that thesis
