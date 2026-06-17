@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
-import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
 import { thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
 
@@ -545,8 +544,6 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
 }
 
 export default function ThesisResult({ thesis, canGenerateContra = false, onGenerateContra, generatingContra = false, onMutated, onDevelop, onGeneratePlan, generatingPlan = false, onThesisUpdate }) {
-    const [mutateTick, setMutateTick] = useState(0);
-
     const isTrend = thesis?.type === "trend";
     const planningLocked = !!thesis?.planning_locked;
 
@@ -650,7 +647,8 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
 
     // After adding the company to an existing thesis: refresh this view (matches +
     // membership box) and tell the parent to reload the dashboard/sidebar.
-    const handleAdded = () => { setMutateTick((t) => t + 1); onMutated?.(); };
+    // (CompanyQualCard removed Jun 2026 — no longer used; kept signature in case
+    // future internal flows need a simple parent-notify hook.)
 
     if (!thesis) return null;
 
@@ -750,17 +748,10 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </>
             ) : (
                 <>
-                    {/* 1.1a — existing theses where the company already appears (reused box) */}
-                    {ticker && (
-                        <CompanyQualCard
-                            ticker={ticker}
-                            hideEmpty
-                            refreshKey={mutateTick}
-                            companyId={thesis.id}
-                            thesisMerges={thesis.thesis_merges || []}
-                            onMerged={(updated) => { onThesisUpdate?.(updated); handleAdded(); }}
-                        />
-                    )}
+                    {/* 1.1a — CompanyQualCard removed Jun 2026: too confusing in the
+                        company→thesis flow because LLM-auto-added memberships from
+                        previously generated theses appeared without the user having
+                        added them. The membership info is still available in /company/{TICKER}. */}
 
                     {/* 1.1b — existing-matches feature removed: only the plan flow remains */}
 
