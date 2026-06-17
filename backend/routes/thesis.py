@@ -1135,13 +1135,22 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return snap
 
     @router.get("/company/{ticker}/profile")
-    async def company_profile(ticker: str, user: Dict[str, Any] = Depends(auth_required)):
+    async def company_profile(ticker: str, from_company: Optional[str] = None, user: Dict[str, Any] = Depends(auth_required)):
         """All saved TREND theses where this ticker appears, each with its
         'score global tendencia' (overall_score) and TAM Score, plus aggregates:
-        average overall_score (overall quality) and sum of TAM Scores (potential)."""
+        average overall_score (overall quality) and sum of TAM Scores (potential).
+
+        Optional `from_company` query param: if provided, returns ONLY trend theses
+        whose `source_company_thesis_id` matches that company thesis id. Used by
+        the company→thesis planning view so only the trends BORN from this company
+        plan are shown (vs. auto-included memberships from other companies' plans).
+        """
         tk = ticker.upper().strip()
+        q: Dict[str, Any] = {"user_id": user["user_id"], "type": "trend", "companies.ticker": tk}
+        if from_company:
+            q["source_company_thesis_id"] = from_company
         cur = db.theses.find(
-            {"user_id": user["user_id"], "type": "trend", "companies.ticker": tk},
+            q,
             {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1},
         )
         theses = await cur.to_list(length=500)

@@ -20,7 +20,7 @@ import HoverTip from "@/components/HoverTip";
  * thesis into another the company belongs to, removing the company from it
  * (reversible via the "Tesis fusionadas" strip below).
  */
-export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey = 0, companyId = null, thesisMerges = [], onMerged }) {
+export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey = 0, companyId = null, thesisMerges = [], onMerged, fromCompanyId = null }) {
     const { user } = useAuth();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -35,7 +35,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
             if (!user || !ticker) { if (alive) { setProfile(null); setLoading(false); } return; }
             if (alive) setLoading(true);
             try {
-                const d = await thesisCompanyProfile(ticker);
+                const d = await thesisCompanyProfile(ticker, fromCompanyId);
                 if (alive) setProfile(d);
             } catch {
                 if (alive) setProfile(null);
@@ -45,7 +45,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
         };
         run();
         return () => { alive = false; };
-    }, [user, ticker, refreshKey]);
+    }, [user, ticker, refreshKey, fromCompanyId]);
 
     const resetMerge = () => { setMergeFor(null); setMergeTarget(""); setMergeStep("pick"); };
 
@@ -121,10 +121,12 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
     return (
         <div className="border border-black bg-white p-5 mb-6" data-testid="company-qual-card">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-                <div className="overline text-[#B32A22]">Tesis cualitativa · tesis guardadas</div>
-                <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
-                    <Sparkles size={12} /> Buscar más tesis
-                </Link>
+                <div className="overline text-[#B32A22]">{fromCompanyId ? "Tesis generadas desde este plan" : "Tesis cualitativa · tesis guardadas"}</div>
+                {!fromCompanyId && (
+                    <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
+                        <Sparkles size={12} /> Buscar más tesis
+                    </Link>
+                )}
             </div>
 
             {rows.length > 0 && (

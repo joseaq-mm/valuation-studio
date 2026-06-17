@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
+import CompanyQualCard from "./CompanyQualCard";
 import HoverTip from "@/components/HoverTip";
 import { thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
 
@@ -748,10 +749,17 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                 </>
             ) : (
                 <>
-                    {/* 1.1a — CompanyQualCard removed Jun 2026: too confusing in the
-                        company→thesis flow because LLM-auto-added memberships from
-                        previously generated theses appeared without the user having
-                        added them. The membership info is still available in /company/{TICKER}. */}
+                    {/* 1.1a — CompanyQualCard (restored Jun 2026, filtered by source_company_thesis_id):
+                        shows ONLY trend theses that were BORN from THIS company's plan,
+                        not auto-included memberships from other plans. Hidden when empty. */}
+                    {thesis.company?.ticker && (
+                        <CompanyQualCard
+                            ticker={thesis.company.ticker}
+                            hideEmpty
+                            fromCompanyId={thesis.id}
+                            refreshKey={thesis.updated_at || thesis.id}
+                        />
+                    )}
 
                     {/* 1.1b — existing-matches feature removed: only the plan flow remains */}
 

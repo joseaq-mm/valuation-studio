@@ -141,8 +141,10 @@ export const thesisRestore = (payload) => api.post(`/thesis/restore`, payload).t
 export const thesisDashboard = () => api.get(`/thesis/dashboard`).then(r => r.data);
 export const thesisCompanyQual = (ticker) =>
     api.get(`/thesis/company/${encodeURIComponent(ticker)}`).then(r => r.data);
-export const thesisCompanyProfile = (ticker) =>
-    api.get(`/thesis/company/${encodeURIComponent(ticker)}/profile`).then(r => r.data);
+export const thesisCompanyProfile = (ticker, fromCompany = null) =>
+    api.get(`/thesis/company/${encodeURIComponent(ticker)}/profile`, {
+        params: fromCompany ? { from_company: fromCompany } : undefined,
+    }).then(r => r.data);
 
 // F5: cross-linking company ↔ existing theses
 export const thesisLinkSuggestions = (id) =>

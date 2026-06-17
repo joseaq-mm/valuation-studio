@@ -347,3 +347,24 @@ Petición del usuario: en los gráficos Ingresos, FCF e Histórico POC/POV, toca
 - curl AAPL: 15 puntos rev/fcf TTM (2022Q3→2026Q1, 2 reales), ratio_ttm 15 puntos (último 2026Q1 real).
 - Screenshots (preview stock-fundamentals-13, same-origin): los 3 gráficos alternan ANUAL↔TTM en cada click, proyección hasta 2027Q3E, vuelta a anual sin regresión.
 - NOTA: el navegador headless contra `ai-valuation-desk.preview...` sirve la página estática "wake servers"; usar `https://stock-fundamentals-13.preview.emergentagent.com` (el de frontend/.env) para screenshots.
+
+## CHANGELOG — Filtro `source_company_thesis_id` en vista de plan (Feb 2026)
+Fix UX pedido por el usuario: en la vista de un plan de empresa (`/thesis/{co_id}`), el recuadro de "tesis cualitativa" mostraba tesis de tendencia donde la empresa aparece **automáticamente añadida por el LLM** en planes de OTRAS empresas — tesis "fantasma" sin contexto, confusas para el usuario.
+
+### Decisión (opción C, cerrada con el usuario)
+Rastrear de qué plan nace cada tesis de tendencia desarrollada → mostrar SOLO esas en la vista del plan; las membresías auto-añadidas siguen visibles en `/company/{TICKER}` (vista cuantitativa).
+
+### Backend
+- Nuevo campo `source_company_thesis_id` en `theses` (type=trend). Se persiste en `_run_generate_job` cuando `from_company` está presente (línea ~561, `routes/thesis.py`). El campo apunta al id de la tesis de empresa origen del plan que la generó.
+- `GET /api/thesis/company/{ticker}/profile` acepta query opcional `from_company`: si se pasa, devuelve SOLO trend theses con `source_company_thesis_id == from_company`. Sin el param, comportamiento idéntico al anterior (todas las membresías) — la vista `/company/{TICKER}` y el resto de la UI no cambian.
+- Backfill retroactivo: `backend/backfill_source_company_thesis.py` (idempotente). Recorre todas las `type=company` y para cada `split_dev[].developed_id` setea `source_company_thesis_id = <company_id>`. Ejecutado en este job: 25 tesis etiquetadas.
+
+### Frontend
+- `lib/api.js`: `thesisCompanyProfile(ticker, fromCompany=null)` → pasa `?from_company=` al backend.
+- `CompanyQualCard.jsx`: nueva prop `fromCompanyId`. Cuando se pasa, (1) la API se llama con filtro, (2) el título cambia a "Tesis generadas desde este plan", (3) se oculta el link "Buscar más tesis" (no aplica en el contexto del plan).
+- `ThesisResult.jsx`: en la vista de empresa (`!isTrend`), se monta `<CompanyQualCard ticker={...} hideEmpty fromCompanyId={thesis.id} />` ENCIMA de "Drivers de crecimiento · nuevas tesis". Solo renderiza si hay filas (hideEmpty), por lo que en planes nuevos sin tesis desarrolladas no aparece nada.
+
+### Pruebas (self-test, sin testing_agent)
+- curl con seed manipulado (ALNY con 1 tesis legítima `co_locked_ui` + 1 fantasma desde `co_other_unrelated`): sin filtro devuelve 2 rows; con `?from_company=co_locked_ui` devuelve 1 row (solo la legítima). ✅
+- Backend pytest: 63/63 pasan. Lint OK (Python + JS).
+- Backfill verificado: ALNY (caso real del usuario) tenía 4 trend theses, ahora con `source_company_thesis_id` solo se filtran a las 3 generadas desde su plan; la 4ª ("Alzheimer", generada desde otro plan) queda excluida correctamente.
