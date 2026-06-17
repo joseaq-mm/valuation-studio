@@ -368,3 +368,33 @@ Rastrear de qué plan nace cada tesis de tendencia desarrollada → mostrar SOLO
 - curl con seed manipulado (ALNY con 1 tesis legítima `co_locked_ui` + 1 fantasma desde `co_other_unrelated`): sin filtro devuelve 2 rows; con `?from_company=co_locked_ui` devuelve 1 row (solo la legítima). ✅
 - Backend pytest: 63/63 pasan. Lint OK (Python + JS).
 - Backfill verificado: ALNY (caso real del usuario) tenía 4 trend theses, ahora con `source_company_thesis_id` solo se filtran a las 3 generadas desde su plan; la 4ª ("Alzheimer", generada desde otro plan) queda excluida correctamente.
+
+## CHANGELOG — Coherencia total: dashboard ↔ plan ↔ ficha de empresa (Feb 2026)
+Petición del usuario tras detectar discrepancia 5,16 (treemap) vs 1,77 (plan) en Eli Lilly:
+
+> "el tam score suma debe ser solo la suma de los tam scores de las tesis que han nacido del plan de esa empresa, eso es lo que debe mandar también en el maptree, en company/{ticker}, donde aparezca en otras tesis desde otras empresas o desde tendencias estará ahí pero informativo. Siempre que apriete refrescar la aplicación debería refrescar datos y comprobar coherencia entre páginas."
+
+### Cambios backend (`routes/thesis.py`)
+- **`GET /thesis/company/{ticker}/profile`**: ahora devuelve DOS conjuntos:
+  - `trend_rows`: tesis de tendencia NACIDAS del plan de la empresa (autoresuelve `plan_id` = tesis de empresa más reciente del ticker; aceptable override con `?from_company=`).
+  - `other_rows`: tesis donde el ticker aparece pero NO nacieron de este plan (auto-añadidas por LLM desde otros planes / generadas como tesis-de-tendencia independiente). Solo informativo.
+  - `avg_overall_score` y `sum_tam_score` se calculan **solo sobre `trend_rows`** (suma del plan). Devuelve también `plan_id`.
+
+- **`GET /thesis/dashboard`**: la agregación por empresa (`comp_agg`) ahora gatea cada contribución de `tam_score` / `overall_score` por `trend.source_company_thesis_id == ticker_to_plan_id[tk]`. Construye el mapa `ticker → plan_id` (latest complete company thesis por ticker). Surface también las empresas completas que aún no tienen ningún developed (avg/sum = None) para no perder filas en el treemap. Pulla el `name` del propio doc de company como fallback.
+
+### Cambios frontend
+- **`CompanyQualCard.jsx`**: nueva sección "También aparece en (informativo · no suma)" debajo de los agregados, listando `other_rows` con estilo atenuado (opacity-70) y nota explicativa. Solo se renderiza si `fromCompanyId` es null (en `/company/{ticker}`) — en la vista de plan se oculta para no introducir confusión.
+- **`ThesisDetail.jsx` (botón refrescar)**: `refresh()` ahora llama a `thesisRefreshRun({})` (scope completo) en vez de `{thesis_id: id}`. El backend re-fetchea fundamentals de TODOS los tickers del usuario y dispara `recompute_and_store_tam(uid, None)` que repuntea los `tam_score` en todas las tesis. Resultado: pulsar refrescar garantiza coherencia entre las tres vistas (dashboard, plan, ficha de empresa).
+
+### Verificación (curl + Eli Lilly real)
+Caso real LLY antes del fix: 9 trend memberships, 5 nacidas del plan + 4 fantasma (Madrigal/Crinetics/Apellis).
+- Plan suma: 0.32+0.19+0.62+0.37+0.27 = **1.77** (correcto)
+- Fantasmas suma: 0.92+2.25+0.11+0.11 = 3.39
+- Total legacy (mal): 5.16 ← lo que mostraba el treemap
+
+Tras el fix:
+- `/thesis/{plan_lly}` → 1.77 ✅
+- Dashboard `/thesis` (treemap Empresas TAM) → 1.77 ✅
+- `/company/LLY` profile auto → 1.77 (plan) + 4 filas informativas con sus scores ✅
+
+Tests pytest: 63/63 ✅. Lint Python+JS ✅. Backfill anterior (25 tesis con `source_company_thesis_id`) sigue siendo el ancla del nuevo filtro.

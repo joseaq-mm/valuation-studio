@@ -1136,27 +1136,43 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.get("/company/{ticker}/profile")
     async def company_profile(ticker: str, from_company: Optional[str] = None, user: Dict[str, Any] = Depends(auth_required)):
-        """All saved TREND theses where this ticker appears, each with its
-        'score global tendencia' (overall_score) and TAM Score, plus aggregates:
-        average overall_score (overall quality) and sum of TAM Scores (potential).
+        """Coherent qualitative profile for a ticker: rows of saved trend theses
+        where this ticker appears, split in TWO groups:
 
-        Optional `from_company` query param: if provided, returns ONLY trend theses
-        whose `source_company_thesis_id` matches that company thesis id. Used by
-        the company→thesis planning view so only the trends BORN from this company
-        plan are shown (vs. auto-included memberships from other companies' plans).
+        - `trend_rows`: trend theses BORN from THIS ticker's own company plan
+          (source_company_thesis_id == the company thesis id). These are the
+          authoritative ones — `avg_overall_score` and `sum_tam_score` are
+          computed ONLY over them, so the totals match the planning view and
+          the dashboard "Empresas TAM".
+        - `other_rows`: informative-only rows where the ticker appears in trend
+          theses NOT born from its own plan (auto-included by the LLM matcher
+          from other companies' plans, or independent trend searches). They do
+          NOT contribute to the totals.
+
+        The plan id is auto-resolved from the latest company thesis for this
+        ticker if `from_company` is not explicit.
         """
         tk = ticker.upper().strip()
-        q: Dict[str, Any] = {"user_id": user["user_id"], "type": "trend", "companies.ticker": tk}
-        if from_company:
-            q["source_company_thesis_id"] = from_company
+        uid = user["user_id"]
+
+        # Resolve the implicit "own plan" id (latest company thesis for this ticker).
+        rev_doc = await db.theses.find_one(
+            {"user_id": uid, "type": "company", "company.ticker": tk},
+            {"_id": 0, "id": 1, "title": 1, "overall_relevance": 1},
+            sort=[("created_at", -1)],
+        )
+        plan_id = from_company or (rev_doc.get("id") if rev_doc else None)
+
         cur = db.theses.find(
-            q,
-            {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1},
+            {"user_id": uid, "type": "trend", "companies.ticker": tk},
+            {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1,
+             "tam": 1, "source_company_thesis_id": 1},
         )
         theses = await cur.to_list(length=500)
         rev_busd, currency = await _projected_revenue_usd_busd(tk)
 
-        rows = []
+        plan_rows: List[Dict[str, Any]] = []
+        other_rows: List[Dict[str, Any]] = []
         for t in theses:
             comp = next((c for c in (t.get("companies") or []) if (c.get("ticker") or "").upper() == tk), None)
             if not comp:
@@ -1165,25 +1181,26 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             role = comp.get("value_chain_role")
             stage_tam = effective_stage_tam(comp, t.get("value_chain"), (t.get("tam") or {}).get("global_busd"))
             stored = comp.get("tam_score")
-            rows.append({
+            row = {
                 "thesis_id": t.get("id"),
                 "thesis_title": t.get("title"),
                 "overall_score": overall,
                 "value_chain_role": role,
                 "tam_score": stored if stored is not None else compute_tam_score(overall, stage_tam, rev_busd),
-            })
-        rows.sort(key=lambda r: (r["overall_score"] is None, -(r["overall_score"] or 0)))
+            }
+            if plan_id and t.get("source_company_thesis_id") == plan_id:
+                plan_rows.append(row)
+            else:
+                other_rows.append(row)
 
-        overalls = [r["overall_score"] for r in rows if r["overall_score"] is not None]
-        tams = [r["tam_score"] for r in rows if r["tam_score"] is not None]
+        plan_rows.sort(key=lambda r: (r["overall_score"] is None, -(r["overall_score"] or 0)))
+        other_rows.sort(key=lambda r: (r["overall_score"] is None, -(r["overall_score"] or 0)))
+
+        overalls = [r["overall_score"] for r in plan_rows if r["overall_score"] is not None]
+        tams = [r["tam_score"] for r in plan_rows if r["tam_score"] is not None]
         avg_overall = round(sum(overalls) / len(overalls), 1) if overalls else None
         sum_tam = round(sum(tams), 2) if tams else None
 
-        rev_doc = await db.theses.find_one(
-            {"user_id": user["user_id"], "type": "company", "company.ticker": tk},
-            {"_id": 0, "id": 1, "title": 1, "overall_relevance": 1},
-            sort=[("created_at", -1)],
-        )
         reverse = None
         if rev_doc:
             reverse = {
@@ -1194,9 +1211,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         return {
             "ticker": tk,
+            "plan_id": plan_id,
             "projected_revenue_busd": round(rev_busd, 2) if rev_busd else None,
             "currency": currency,
-            "trend_rows": rows,
+            "trend_rows": plan_rows,
+            "other_rows": other_rows,
             "avg_overall_score": avg_overall,
             "sum_tam_score": sum_tam,
             "reverse": reverse,
@@ -1213,7 +1232,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         trend_docs = await db.theses.find(
             {"user_id": uid, "type": "trend"},
             {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "parent_id": 1, "tam": 1,
-             "value_chain": 1, "companies": 1, "created_at": 1},
+             "value_chain": 1, "companies": 1, "created_at": 1,
+             "source_company_thesis_id": 1},
         ).sort("created_at", -1).to_list(length=1000)
         company_docs = await db.theses.find(
             {"user_id": uid, "type": "company"},
@@ -1254,9 +1274,20 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         trends: List[Dict[str, Any]] = []
         comp_agg: Dict[str, Dict[str, Any]] = {}
         trend_id_set = {t.get("id") for t in trend_docs}
+        # Build ticker → own-plan-id map (latest complete company thesis per ticker)
+        # so we can roll up TAM/score per company ONLY from the trends BORN from its
+        # own plan — matching the planning view and the standalone company page.
+        ticker_to_plan_id: Dict[str, str] = {}
+        for d in company_docs:  # already sorted by created_at desc
+            tkc = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            if not tkc or tkc in ticker_to_plan_id:
+                continue
+            if company_is_complete(d):
+                ticker_to_plan_id[tkc] = d.get("id")
         for t in trend_docs:
             vc = t.get("value_chain") or []
             gtam = (t.get("tam") or {}).get("global_busd")
+            src = t.get("source_company_thesis_id")
             clist = []
             for c in (t.get("companies") or []):
                 tk = (c.get("ticker") or "").upper().strip()
@@ -1267,7 +1298,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     "value_chain_role": c.get("value_chain_role"),
                     "tam_score": tam_score, "category": c.get("category"),
                 })
-                if tk:
+                # Only roll this row into the company aggregate if the trend was BORN
+                # from this ticker's own plan. Otherwise it's an "informative" ghost
+                # membership that must not inflate the company's totals.
+                if tk and ticker_to_plan_id.get(tk) and src == ticker_to_plan_id[tk]:
                     a = comp_agg.setdefault(tk, {"ticker": tk, "name": c.get("name"),
                                                  "scores": [], "tams": [], "trends": []})
                     a["name"] = a["name"] or c.get("name")
@@ -1285,23 +1319,25 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "company_count": len(clist), "companies": clist,
             })
 
-        # Only surface companies that are FULLY planned + fully developed (per the user:
-        # the dashboard treemap shows completed companies only). Membership/scores still
-        # come from the developed trend theses, but we gate by the company thesis state.
-        complete_tickers = {
-            ((d.get("company") or {}).get("ticker") or "").upper().strip()
-            for d in company_docs if company_is_complete(d)
-        }
-        complete_tickers.discard("")
+        # Surface every complete company even if no trends rolled into its aggregate
+        # (e.g. plan generated but all developed theses still pending). Avoids empty
+        # rows vanishing from the dashboard treemap after the source-filter change.
+        complete_tickers = set(ticker_to_plan_id.keys())
+        # Pull canonical names from the company docs (works when no trend row rolled in).
+        ticker_to_name: Dict[str, Optional[str]] = {}
+        for d in company_docs:
+            tkc = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            if tkc and tkc in complete_tickers and tkc not in ticker_to_name:
+                ticker_to_name[tkc] = (d.get("company") or {}).get("name")
         companies = []
-        for tk, a in comp_agg.items():
-            if tk not in complete_tickers:
-                continue
+        for tk in complete_tickers:
+            a = comp_agg.get(tk, {"ticker": tk, "name": None, "scores": [], "tams": [], "trends": []})
             avg = round(sum(a["scores"]) / len(a["scores"]), 1) if a["scores"] else None
             stam = round(sum(a["tams"]), 2) if a["tams"] else None
             companies.append({
-                "ticker": tk, "name": a["name"], "avg_overall_score": avg,
-                "sum_tam_score": stam, "trends": a["trends"], "trend_count": len(a["trends"]),
+                "ticker": tk, "name": a["name"] or ticker_to_name.get(tk),
+                "avg_overall_score": avg, "sum_tam_score": stam,
+                "trends": a["trends"], "trend_count": len(a["trends"]),
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 

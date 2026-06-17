@@ -77,7 +77,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
 
     // Embedded inside the thesis result (hideEmpty): show nothing when logged out
     // or when there is no qualitative data — the surrounding page handles those.
-    if (hideEmpty && (!user || (!(profile?.trend_rows || []).length && !profile?.reverse && !(thesisMerges || []).length))) return null;
+    if (hideEmpty && (!user || (!(profile?.trend_rows || []).length && !(profile?.other_rows || []).length && !profile?.reverse && !(thesisMerges || []).length))) return null;
 
     // Not logged in → subtle prompt
     if (!user) {
@@ -95,6 +95,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
     }
 
     const rows = profile?.trend_rows || [];
+    const others = profile?.other_rows || [];
     const reverse = profile?.reverse;
     // Phase B merge removed: fusionar/partir happen ONLY in the planning phase
     // (before generating), so the TAM partition stays conserved. Existing merges can
@@ -102,7 +103,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
     const canMerge = false;
 
     // Logged in but the company is not part of any saved thesis → CTA to generate.
-    if (!rows.length && !reverse && !(thesisMerges || []).length) {
+    if (!rows.length && !others.length && !reverse && !(thesisMerges || []).length) {
         return (
             <div className="border border-dashed border-black/40 bg-white p-4 mb-6 flex items-center justify-between gap-4 flex-wrap" data-testid="company-qual-empty">
                 <div className="flex items-center gap-2 text-sm text-[#4A4A4A]">
@@ -211,6 +212,34 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                         </div>
                     </div>
                 </>
+            )}
+
+            {others.length > 0 && !fromCompanyId && (
+                <div className="mt-4 pt-3 border-t border-black/10" data-testid="qual-other-list">
+                    <div className="overline text-[#4A4A4A] mb-1">También aparece en (informativo · no suma)</div>
+                    <p className="text-[11px] text-[#9CA3AF] leading-snug mb-2">
+                        Tesis donde {ticker} fue añadida desde otros planes o tendencias. No cuentan en los totales de arriba para mantener la coherencia con tu plan.
+                    </p>
+                    <div className="space-y-0">
+                        {others.map((r) => (
+                            <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2 border-b border-black/10 opacity-70`} data-testid={`qual-other-row-${r.thesis_id}`}>
+                                <div className="min-w-0">
+                                    <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline inline-flex items-center gap-1 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
+                                        <span className="truncate">{r.thesis_title}</span>
+                                        <ArrowRight size={11} className="shrink-0" />
+                                    </Link>
+                                    {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}
+                                </div>
+                                <div className="flex justify-center">
+                                    <ValueBox text={r.overall_score ?? "—"} color={scoreColor(r.overall_score)} testid={`qual-other-overall-${r.thesis_id}`} />
+                                </div>
+                                <div className="flex justify-center">
+                                    <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-other-tam-${r.thesis_id}`} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
 
             {(thesisMerges || []).length > 0 && (

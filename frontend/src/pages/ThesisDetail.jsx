@@ -65,7 +65,11 @@ export default function ThesisDetail() {
     };
 
     const refresh = async () => {
-        const res = await thesisRefreshRun({ thesis_id: id });
+        // Full-scope refresh (no thesis_id / no ticker): re-fetches fundamentals for
+        // every ticker in the user's saved theses and recomputes every TAM Score in
+        // place. Guarantees coherence between this page, the dashboard treemap and
+        // the standalone company page when the user presses the refresh icon.
+        const res = await thesisRefreshRun({});
         if (res?.thesis) setThesis(res.thesis);
         else { const d = await thesisGet(id); setThesis(d); }
     };
