@@ -305,12 +305,23 @@ export default function Thesis() {
     };
 
     // Informational (structural-only) trend exploration.
-    const runExplore = async () => {
+    const runExplore = async (opts = {}) => {
         const s = subject.trim();
         if (!s) { toast.error("Escribe una tendencia"); return; }
+        // Dedup guard: warn BEFORE spending ~60s of LLM if the user already has a
+        // similar trend or company thesis (≥80% Sørensen-Dice match). Same warning
+        // UI as generate(), but tagged with origin="explore" so the action buttons
+        // resolve to the right flow (explore = lightweight; reescribir = heavy gen).
+        if (!opts.force) {
+            const dup = findDup("trend", s);
+            if (dup) {
+                setPendingDup({ type: "trend", subject: s, existing: dup, kind: dup._dup_kind || "trend", origin: "explore" });
+                return;
+            }
+        }
+        setPendingDup(null);
         setTrendLoading(true);
         setResult(null);
-        setPendingDup(null);
         try {
             const data = await thesisExplore(s);
             setResult(data);
@@ -656,7 +667,9 @@ export default function Thesis() {
                                 )}
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                {/* Primary action: rewrite (only when same-kind, NOT in cross-match). */}
+                                {/* Primary action: rewrite (only when same-kind, NOT in cross-match).
+                                    Always uses generate() because explore is lightweight/informational —
+                                    "machacar" implies a fresh full thesis (heavy LLM call). */}
                                 {!isCross && (
                                     <button
                                         onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
@@ -666,11 +679,14 @@ export default function Thesis() {
                                         Reescribir (machacar)
                                     </button>
                                 )}
-                                {/* Coexist action: generate alongside (trend search only — cross-match
-                                    or same-kind-trend; never for company search). */}
+                                {/* Coexist action: stays in the user's original flow. Explore stays
+                                    explore (informational), generate stays generate (heavy). */}
                                 {pendingDup.type === "trend" && (
                                     <button
-                                        onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true })}
+                                        onClick={() => {
+                                            if (pendingDup.origin === "explore") runExplore({ force: true });
+                                            else generate(pendingDup.type, pendingDup.subject, null, { force: true });
+                                        }}
                                         className={`text-xs uppercase tracking-[0.1em] font-semibold px-3 py-1.5 transition-colors ${isCross ? "bg-[#B8860B] text-white hover:bg-[#946c09]" : "border border-[#B8860B] text-[#7a5a10] hover:bg-[#B8860B] hover:text-white"}`}
                                         data-testid="dedup-generate-new-btn"
                                     >

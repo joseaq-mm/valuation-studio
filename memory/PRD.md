@@ -453,3 +453,17 @@ Implementación en `Thesis.jsx`:
 - `dedup-rewrite-btn`: sólo aparece si NO es cross-match (la tesis de empresa solo se sobreescribe desde el flujo Empresa → Tesis).
 - `dedup-generate-new-btn`: aparece para cualquier búsqueda en modo trend (same-kind o cross). Llama a `generate(..., { force: true })` SIN `overwriteId` → crea una tendencia nueva que coexiste con la existente.
 - En modo company search, se mantiene solo el botón Reescribir (un segundo plan para el mismo ticker no tiene sentido).
+
+## CHANGELOG · Bug crítico: `runExplore` se saltaba el dedup-warning (Feb 2026)
+**Reporte usuario**: tecleó "computación cuántica" en "Tendencias → Empresas" (que tenía guardada con título ≥80% similar) y la app gastó ~60s de LLM sin disparar el aviso de duplicado introducido en el changelog anterior.
+
+**Causa**: el dedup `findDup` solo se invocaba dentro de `generate()`. El modo "Tendencias → Empresas" llama a `runExplore()` (una función distinta, exploración informativa estructural), que nunca consultaba `findDup`. El fuzzy 80% del changelog previo cubría la mitad del flujo.
+
+**Fix** en `Thesis.jsx`:
+- `runExplore(opts)` ahora hace el check `findDup("trend", subject)` al inicio. Si hay match ≥80% → `setPendingDup({ ..., origin: "explore" })` y `return` sin llamar al LLM.
+- Botones del dedup-warning ahora usan `pendingDup.origin`:
+  - **Reescribir (machacar)** → siempre dispara `generate(...)` heavy (porque machacar tendencia guardada exige LLM completo, no la exploración informativa).
+  - **Generar como nueva / Generar como tendencia**: si `origin === "explore"` → `runExplore({ force: true })` (mantiene el flujo ligero original del usuario). Si `origin === "generate"` → `generate(..., { force: true })` (heavy).
+- `runAutoTrend` no necesita dedup (no acepta texto del usuario).
+
+Verificación: lint OK, 62/62 pytest. Mismo warning eslint pre-existente.
