@@ -1453,6 +1453,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         # Planning is editable (merge/split markers) only before the plan is executed.
         if doc.get("type") == "company":
             doc["planning_locked"] = await _company_locked(user["user_id"], thesis_id, doc.get("split_dev"))
+            # In-flight generations launched FROM this company (plan execution still
+            # running): exposed so the UI can keep polling until the whole plan finishes
+            # instead of only waiting on the first job.
+            doc["inflight_count"] = await db.thesis_jobs.count_documents({
+                "user_id": user["user_id"], "kind": "generate",
+                "status": {"$in": ["processing", "queued"]},
+                "params.from_company": thesis_id,
+            })
         return doc
 
     @router.put("/{thesis_id}/folder")

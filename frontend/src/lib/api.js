@@ -125,6 +125,21 @@ export const thesisSetPlan = (id, core, plan) =>
     api.post(`/thesis/${id}/plan`, { core, plan }).then(r => r.data);
 export const thesisGeneratePlan = (id) =>
     api.post(`/thesis/${id}/generate-plan`).then(r => r.data);
+// Wait for a company plan execution to FULLY finish (every queued job done), not just
+// the first one. Polls the company thesis every `intervalMs` and pushes each fresh doc
+// to `onProgress`; resolves when `inflight_count` drops to 0. Falls back gracefully on
+// transient errors and gives up after `timeoutMs`.
+export const thesisWaitPlanDone = async (companyId, { intervalMs = 4000, timeoutMs = 1800000, onProgress } = {}) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, intervalMs));
+        let doc;
+        try { doc = await thesisGet(companyId); } catch { continue; }
+        if (onProgress) onProgress(doc);
+        if ((doc?.inflight_count ?? 0) === 0) return doc;
+    }
+    return null;
+};
 export const thesisMerge = (id, source, target) =>
     api.post(`/thesis/${id}/merge`, { source, target }).then(r => r.data);
 export const thesisUnmerge = (id, source) =>

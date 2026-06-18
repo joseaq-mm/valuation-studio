@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { thesisGet, thesisGenerateContra, thesisRefreshRun, thesisGeneratePlan, thesisPollJob } from "@/lib/api";
+import { thesisGet, thesisGenerateContra, thesisRefreshRun, thesisGeneratePlan, thesisWaitPlanDone } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -43,7 +43,9 @@ export default function ThesisDetail() {
     const isTendencia = thesis?.type === "tendencia";
 
     // "Generar plan": execute the whole plan (enqueue every non-merged driver, serial).
-    // Reloads the thesis to show locked planning + pending states; polls the first job.
+    // Reloads the thesis immediately to show locked planning + pending states, then
+    // keeps polling until EVERY queued job lands (not just the first) so the UI reflects
+    // each new "✓ generada" as it happens without needing a manual refresh.
     const generatePlan = async (companyId) => {
         if (!companyId) return;
         setGeneratingPlan(true);
@@ -52,11 +54,9 @@ export default function ThesisDetail() {
             toast.success(`Plan en marcha: ${res.count} tesis (1ª generándose, el resto en cola).`);
             const fresh = await thesisGet(companyId);
             setThesis(fresh);
-            if (res.first_job_id) {
-                thesisPollJob(res.first_job_id)
-                    .then(async () => { const f2 = await thesisGet(companyId); setThesis(f2); })
-                    .catch(() => {});
-            }
+            thesisWaitPlanDone(companyId, {
+                onProgress: (doc) => { if (doc) setThesis(doc); },
+            }).catch(() => {});
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar el plan.");
         } finally {

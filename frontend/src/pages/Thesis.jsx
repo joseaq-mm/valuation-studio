@@ -4,10 +4,10 @@ import { toast } from "sonner";
 import { Sparkles, FolderPlus, Loader2, TrendingUp, Building2, Folder, Radar, Undo2, Redo2, RefreshCw, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
-    thesisGenerate, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
+    thesisGenerate, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
     thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisRadarSendNow, thesisDashboard,
-    thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan,
+    thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan, thesisWaitPlanDone,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -301,8 +301,9 @@ export default function Thesis() {
 
     // "Generar plan": execute the whole plan — enqueue a generation for every
     // non-merged driver (whole → 1 thesis; split → its partitions), all serial.
-    // Planning locks; we reload the company thesis to show the pending/generating
-    // states, and poll the first job to update once it lands.
+    // Planning locks; we reload the company thesis to show pending/generating states
+    // and keep polling until EVERY queued job lands (not just the first) so the UI
+    // updates as each "✓ generada" appears without forcing a manual refresh.
     const generatePlan = async (companyId) => {
         if (!companyId) return;
         setGeneratingPlan(true);
@@ -312,11 +313,9 @@ export default function Thesis() {
             const fresh = await thesisGet(companyId);   // planning_locked + pending states
             setResult(fresh);
             reload();
-            if (res.first_job_id) {
-                thesisPollJob(res.first_job_id)
-                    .then(async () => { const f2 = await thesisGet(companyId); setResult(f2); reload(); })
-                    .catch(() => {});
-            }
+            thesisWaitPlanDone(companyId, {
+                onProgress: (doc) => { if (doc) { setResult(doc); reload(); } },
+            }).catch(() => {});
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar el plan.");
         } finally {
