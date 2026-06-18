@@ -347,7 +347,7 @@ Petición del usuario: en los gráficos Ingresos, FCF e Histórico POC/POV, toca
 ### Pruebas (self-test, sin testing_agent, sin gasto LLM)
 - curl AAPL: 15 puntos rev/fcf TTM (2022Q3→2026Q1, 2 reales), ratio_ttm 15 puntos (último 2026Q1 real).
 - Screenshots (preview stock-fundamentals-13, same-origin): los 3 gráficos alternan ANUAL↔TTM en cada click, proyección hasta 2027Q3E, vuelta a anual sin regresión.
-- NOTA: el navegador headless contra `ai-valuation-desk.preview...` sirve la página estática "wake servers"; usar `https://stock-fundamentals-13.preview.emergentagent.com` (el de frontend/.env) para screenshots.
+- NOTA: el navegador headless contra `ai-valuation-desk.preview...` sirve la página estática "wake servers"; usar `https://valuation-studio.preview.emergentagent.com` (el de frontend/.env) para screenshots.
 
 ## CHANGELOG — Filtro `source_company_thesis_id` en vista de plan (Feb 2026)
 Fix UX pedido por el usuario: en la vista de un plan de empresa (`/thesis/{co_id}`), el recuadro de "tesis cualitativa" mostraba tesis de tendencia donde la empresa aparece **automáticamente añadida por el LLM** en planes de OTRAS empresas — tesis "fantasma" sin contexto, confusas para el usuario.

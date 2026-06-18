@@ -65,7 +65,7 @@ await page.context.add_cookies([{
     "secure": True,
     "sameSite": "None"
 }])
-await page.goto("https://stock-fundamentals-13.preview.emergentagent.com/watchlist")
+await page.goto("https://valuation-studio.preview.emergentagent.com/watchlist")
 ```
 
 ## Checklist
