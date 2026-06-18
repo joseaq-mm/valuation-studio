@@ -454,7 +454,15 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
                     {splits && (
                         <div className="mt-3 border-2 border-[#B8860B] bg-[#FBF3E0] p-3">
                             <button
-                                onClick={() => setShowSplits((v) => !v)}
+                                onClick={() => setShowSplits((v) => {
+                                    const next = !v;
+                                    // Si el usuario despliega las particiones, demuestra interés:
+                                    // auto-marcamos el plan como "split" (sólo en fase de planificación).
+                                    if (next && !planningLocked && t.plan !== "split") {
+                                        onSetPlan?.(coreName, "split");
+                                    }
+                                    return next;
+                                })}
                                 className="w-full flex items-center justify-between gap-2 text-left"
                                 data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
                             >
