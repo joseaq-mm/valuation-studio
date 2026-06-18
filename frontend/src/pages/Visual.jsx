@@ -4,6 +4,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { Loader2, RotateCcw, ArrowUp, ArrowDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData } from "@/lib/api";
+import { signalFor } from "@/lib/thresholds";
 
 // ---------- Helpers ----------
 const clamp01 = (v) => (v == null ? 0 : Math.max(0, Math.min(1, v)));
@@ -43,12 +44,11 @@ const QuadrantLabels = () => (
 );
 
 // ---------- Custom dot ----------
-const colorForRv = (rv) => {
-    if (rv == null) return "#9ca3af";
-    if (rv >= 20) return "#1D7044";   // green: strong upside
-    if (rv >= 0)  return "#B8860B";   // amber: modest
-    return "#B32A22";                 // red: negative
-};
+// Colour is driven by the user's Ratio Venta thresholds (Umbrales cara/justa/barata)
+// so that the visual quadrant matches the rest of the app (portfolio, company page).
+// The chart subscribes to `vs:thresholds-changed` so when the user opens the dialog
+// and edits cheap/fair, the dots re-paint immediately without a full reload.
+const colorForRv = (rv) => signalFor(rv, "venta").color;
 
 const Dot = (props) => {
     const { cx, cy, payload } = props;
@@ -115,6 +115,16 @@ export default function Visual() {
     }, [user]);
 
     useEffect(() => { reload(); }, [reload]);
+
+    // Live-update dot colours when the user edits the cheap/fair thresholds.
+    // ThresholdsDialog dispatches `vs:thresholds-changed`; we bump a tick to force
+    // recharts to re-render the Scatter dots (signalFor reads localStorage on demand).
+    const [, setThresholdsTick] = useState(0);
+    useEffect(() => {
+        const onChange = () => setThresholdsTick((n) => n + 1);
+        window.addEventListener("vs:thresholds-changed", onChange);
+        return () => window.removeEventListener("vs:thresholds-changed", onChange);
+    }, []);
 
     // Sorting (table) — always over ALL rows
     const sortedRows = useMemo(() => {
@@ -235,7 +245,21 @@ export default function Visual() {
                     </ScatterChart>
                 </ResponsiveContainer>
                 <div className="text-xs text-[#4A4A4A] mt-3 font-sans flex items-center gap-5 flex-wrap leading-relaxed">
-                    <span>📍 Tamaño = TAM Score · Color = Ratio Venta (<span className="text-[#1D7044] font-semibold">verde ≥20%</span>, <span className="text-[#B8860B] font-semibold">ámbar 0-20%</span>, <span className="text-[#B32A22] font-semibold">rojo &lt;0%</span>)</span>
+                    {(() => {
+                        // Read live thresholds via signalFor probe values so the legend
+                        // reflects whatever the user has configured in Umbrales.
+                        const t = (typeof window !== "undefined" && JSON.parse(window.localStorage.getItem("vs.thresholds.v1") || "null"))?.venta;
+                        const cheap = t?.cheap ?? 20;
+                        const fair = t?.fair ?? 0;
+                        return (
+                            <span>📍 Tamaño = TAM Score · Color = Ratio Venta (
+                                <span className="text-[#1D7044] font-semibold">verde ≥{cheap}%</span>,{" "}
+                                <span className="text-[#B8860B] font-semibold">ámbar {fair}% a {cheap}%</span>,{" "}
+                                <span className="text-[#B32A22] font-semibold">rojo &lt;{fair}%</span>
+                                ) · configurable en <em>Umbrales</em>
+                            </span>
+                        );
+                    })()}
                     <span>Líneas discontinuas: <span className="font-mono">mediana</span> de las empresas visibles — el cruce divide los 4 cuadrantes dinámicamente.</span>
                 </div>
             </div>
@@ -287,8 +311,8 @@ export default function Visual() {
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
-                                    <td className={`p-2 text-right ${r.ratio_compra_pct > 0 ? "text-[#1D7044]" : r.ratio_compra_pct < 0 ? "text-[#B32A22]" : ""}`}>{fmtPct(r.ratio_compra_pct)}</td>
-                                    <td className={`p-2 text-right ${r.ratio_venta_pct > 0 ? "text-[#1D7044]" : r.ratio_venta_pct < 0 ? "text-[#B32A22]" : ""}`}>{fmtPct(r.ratio_venta_pct)}</td>
+                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
+                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
                                 </tr>
                             );

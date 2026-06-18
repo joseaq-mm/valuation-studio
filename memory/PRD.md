@@ -567,3 +567,17 @@ Sidebar muestra "Día (Lunes…)" + "Hora (CEST/EDT/…)" usando la zona horaria
 ### Verificación E2E
 - pytest 62/62, lint Python+JS OK.
 - Send-now real → email entregado con 5 noticias datadas (2026-05-29 TEM FDA, 2026-05-20 NVDA Q1, 2026-04-30 LLY guidance, 2026-05-07 DDOG/NET resultados). Screenshot capturado en `/tmp/radar_v2.png`.
+
+## CHANGELOG · Bug: /visual ignoraba los umbrales del usuario (Feb 2026)
+**Reporte**: usuario cambió "justa" a −20% en Umbrales y Eli Lilly no cambió a ámbar en `/visual`.
+
+**Causa**: `Visual.jsx` tenía colores hardcoded en dos sitios:
+- `colorForRv` (línea 47): `>=20` verde, `>=0` ámbar, `<0` rojo — ignoraba localStorage.
+- Tabla de empresas (líneas 314-315): clases tailwind con thresholds fijos (`>0` verde, `<0` rojo).
+
+**Fix**: reemplazado todo por `signalFor(pct, kind)` de `lib/thresholds.js`, que ya lee localStorage en cada llamada. Además:
+- Suscripción al evento `vs:thresholds-changed` para re-render automático cuando el usuario edita umbrales sin recargar la página.
+- Leyenda del gráfico ahora muestra los thresholds dinámicos (lee `vs.thresholds.v1` de localStorage).
+- Celdas de tabla `ratio_compra_pct` y `ratio_venta_pct` usan cada una su umbral correspondiente.
+
+Tests 62/62, lint OK.
