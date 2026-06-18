@@ -156,7 +156,10 @@ def _build_radar_email_html(user_name: str,
             if news_items:
                 news_html = "".join(
                     f'<div style="margin-top:8px;padding:8px 10px;background:#FBF3E0;border-left:3px solid #B8860B;">'
+                    f'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">'
                     f'<div style="font-size:13px;font-weight:600;color:#222;">{n.get("headline","")}</div>'
+                    + (f'<div style="font-family:monospace;font-size:10px;color:#7a5a10;white-space:nowrap;">{n.get("published_at")}</div>' if n.get("published_at") else "")
+                    + '</div>'
                     f'<div style="font-size:12px;color:#4A4A4A;margin-top:3px;line-height:1.45;">{n.get("summary","")}</div>'
                     f'<div style="font-size:11px;color:#7a5a10;margin-top:4px;line-height:1.45;"><strong>Por qué importa:</strong> {n.get("why_it_matters","")}</div>'
                     + (f'<div style="font-size:11px;margin-top:4px;"><a href="{n.get("url")}" style="color:#052049;" target="_blank" rel="noopener">Fuente →</a></div>' if n.get("url") else "")
@@ -180,10 +183,11 @@ def _build_radar_email_html(user_name: str,
             stale_banner = (
                 '<div style="margin:8px 0 12px;padding:10px 12px;background:#FBE9E7;border:1px solid #B32A22;font-size:12px;color:#7a1810;line-height:1.5;">'
                 '<strong>Aviso:</strong> alguna(s) de tus empresas llevan más de '
-                f'{STALE_DAYS} días desde que se generó su plan. Si hay noticias materiales o el flujo es viejo, '
-                'considera <strong>regenerar la empresa</strong> (Empresa → Tesis → Reescribir) para que sus scores '
-                'cualitativos, TAM y narrativa se actualicen. El refresco semanal de la app solo toca lo cuantitativo '
-                '(fundamentales, TAM Score), nunca el componente cualitativo.'
+                f'{STALE_DAYS} días desde que se generó su plan. Compara la <strong>fecha de la noticia</strong> '
+                'con la antigüedad del plan: si la noticia es <em>anterior</em> al plan, probablemente ya estaba reflejada en él y no hace falta regenerar. '
+                'Si la noticia es <em>posterior</em> y material, considera <strong>regenerar la empresa</strong> '
+                '(Empresa → Tesis → Reescribir) para que sus scores cualitativos, TAM y narrativa se actualicen. '
+                'El refresco diario solo toca lo cuantitativo (fundamentales, TAM Score), nunca el componente cualitativo.'
                 '</div>'
             )
         section_companies_html = f"""

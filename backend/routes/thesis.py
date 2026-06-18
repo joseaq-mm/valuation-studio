@@ -1860,12 +1860,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         _spawn(_run())
         return {"job_id": job_id, "status": "pending"}
 
-    @router.get("/refresh/status")
-    async def refresh_status(user: Dict[str, Any] = Depends(auth_required)):
-        u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "thesis_refresh": 1})
-        tr = (u or {}).get("thesis_refresh") or {}
-        return {"enabled": bool(tr.get("enabled")), "last_refresh_at": tr.get("last_refresh_at")}
-
     @router.post("/refresh/run")
     async def refresh_run(req: RefreshRunRequest, user: Dict[str, Any] = Depends(auth_required)):
         """Manual data refresh (no LLM): re-fetch fundamentals for the scoped tickers
@@ -1912,14 +1906,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if primary:
             out["thesis"] = await db.theses.find_one({"id": primary, "user_id": uid}, {"_id": 0})
         return out
-
-    @router.post("/refresh/subscribe")
-    async def refresh_subscribe(req: RadarSubscribeRequest, user: Dict[str, Any] = Depends(auth_required)):
-        await db.users.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"thesis_refresh": {"enabled": bool(req.enabled), "updated_at": datetime.now(timezone.utc).isoformat()}}},
-        )
-        return {"enabled": bool(req.enabled)}
 
     @router.post("/{thesis_id}/contra")
     async def generate_contra(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

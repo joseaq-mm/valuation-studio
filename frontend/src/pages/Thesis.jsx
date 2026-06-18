@@ -7,7 +7,7 @@ import {
     thesisGenerate, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
     thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisRadarSendNow, thesisDashboard,
-    thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan,
+    thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
 import TendenciaResult from "@/components/thesis/TendenciaResult";
@@ -38,7 +38,6 @@ export default function Thesis() {
     const [newFolder, setNewFolder] = useState("");
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [radarSchedule, setRadarSchedule] = useState({ weekday: 0, hour_utc: 7, last_sent_at: null, next_send_at: null });
-    const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
     const [overwriteTendenciaId, setOverwriteTendenciaId] = useState(null);  // armed by Reescribir on a tendencia match → saveTendencia replaces in place
     const [undoStack, setUndoStack] = useState([]);
@@ -116,7 +115,7 @@ export default function Thesis() {
     const reload = useCallback(async () => {
         if (!user) { setDash(null); return; }
         try {
-            const [d, r, rf] = await Promise.all([thesisDashboard(), thesisRadarStatus(), thesisRefreshStatus()]);
+            const [d, r] = await Promise.all([thesisDashboard(), thesisRadarStatus()]);
             setDash(d);
             setRadarEnabled(!!r.enabled);
             setRadarSchedule({
@@ -125,7 +124,6 @@ export default function Thesis() {
                 last_sent_at: r.last_sent_at || null,
                 next_send_at: r.next_send_at || null,
             });
-            setRefreshEnabled(!!rf.enabled);
         } catch { /* ignore */ }
     }, [user]);
 
@@ -214,18 +212,6 @@ export default function Thesis() {
             toast.success("Envío manual en curso · llegará en 1-2 minutos");
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo disparar el envío");
-        }
-    };
-
-    const toggleRefresh = async () => {
-        const next = !refreshEnabled;
-        setRefreshEnabled(next);
-        try {
-            await thesisRefreshSubscribe(next);
-            toast.success(next ? "Refresco semanal activado" : "Refresco semanal desactivado");
-        } catch {
-            setRefreshEnabled(!next);
-            toast.error("No se pudo actualizar el refresco");
         }
     };
 
@@ -845,8 +831,6 @@ export default function Thesis() {
                             radarSchedule={radarSchedule}
                             onUpdateRadarSchedule={updateRadarSchedule}
                             onSendRadarNow={sendRadarNow}
-                            refreshEnabled={refreshEnabled}
-                            onToggleRefresh={toggleRefresh}
                         />
                     )}
                 </div>

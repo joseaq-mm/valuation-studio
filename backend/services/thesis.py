@@ -822,8 +822,9 @@ async def run_company_news_watch(companies: list) -> dict:
         "\n\nDevuelve SOLO JSON con esta forma exacta:\n"
         '{"important":[{"ticker":"<TICKER EXACTO de la lista>","headline":"titular breve",'
         '"summary":"2-3 frases describiendo el hecho","why_it_matters":"impacto en la tesis (puede afectar a scores cualitativos, TAM, narrativa o ratios)",'
+        '"published_at":"YYYY-MM-DD (fecha real de la noticia, no inventes; si no la sabes con seguridad omite el campo)",'
         '"url":"link de la fuente más relevante de las pasadas"}]}\n'
-        "Si nada material esta semana, devuelve {\"important\":[]}. NUNCA inventes noticias."
+        "Si nada material esta semana, devuelve {\"important\":[]}. NUNCA inventes noticias ni fechas."
     )
     raw = await _llm(*_inv_model(), f"company-news-{datetime.now(timezone.utc).timestamp()}",
                      COMPANY_NEWS_WATCH_SYS, user_text)
@@ -839,6 +840,7 @@ async def run_company_news_watch(companies: list) -> dict:
             "headline": (it.get("headline") or "").strip(),
             "summary": (it.get("summary") or "").strip(),
             "why_it_matters": (it.get("why_it_matters") or "").strip(),
+            "published_at": (it.get("published_at") or "").strip(),
             "url": (it.get("url") or "").strip(),
         })
     return {"important": out}

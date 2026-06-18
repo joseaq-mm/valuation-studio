@@ -7,6 +7,42 @@ const _norm = (s) => (s || "").trim().toLowerCase();
 // Radar schedule helpers: weekday labels (0=Mon … 6=Sun, mirror of Python's
 // datetime.weekday()) and an ISO→localized formatter for the "next send" line.
 const WEEKDAYS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+// We always STORE the schedule in UTC (backend cron is UTC), but show LOCAL in
+// the UI so the user picks "Lunes 09:00" in their own timezone without doing
+// math. localToUtc/utcToLocal map between the two using the current offset.
+const tzLabel = (() => {
+    try {
+        const long = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+            .formatToParts(new Date()).find(p => p.type === "timeZoneName")?.value;
+        return long || Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+    } catch { return "local"; }
+})();
+function localToUtc(weekday, hour_local) {
+    // Build a Date for the next occurrence of (weekday, hour_local) in local time,
+    // then read its UTC weekday/hour. Reliable across DST edges because we anchor
+    // on the actual wall clock the user picked.
+    const now = new Date();
+    const days = ((weekday - now.getDay() + 7) % 7);  // js: 0=Sun, our: 0=Mon
+    const offset = (weekday + 1) % 7;                  // map Mon=0 → js Mon=1
+    const d = new Date(now);
+    d.setDate(now.getDate() + ((offset - now.getDay() + 7) % 7 || 0) + (days === 0 ? 7 : 0));
+    d.setHours(hour_local, 0, 0, 0);
+    // js getDay(): 0=Sun..6=Sat → convert to python convention 0=Mon..6=Sun
+    const utcWd = (d.getUTCDay() + 6) % 7;
+    return { weekday: utcWd, hour_utc: d.getUTCHours() };
+}
+function utcToLocal(weekday_utc, hour_utc) {
+    const now = new Date();
+    // js day index for our python weekday (Mon=0..Sun=6) → js (Sun=0..Sat=6): +1 % 7
+    const targetJsDow = (weekday_utc + 1) % 7;
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour_utc, 0, 0));
+    const days = ((targetJsDow - d.getUTCDay() + 7) % 7);
+    d.setUTCDate(d.getUTCDate() + days);
+    // Read back as local
+    const localWdJs = d.getDay();
+    const localWd = (localWdJs + 6) % 7;  // back to Mon=0..Sun=6
+    return { weekday: localWd, hour_local: d.getHours() };
+}
 function fmtNextSend(iso) {
     if (!iso) return "—";
     try {
@@ -146,7 +182,6 @@ export default function ThesisSidebar({
     radarEnabled, onToggleRadar,
     radarSchedule = { weekday: 0, hour_utc: 7, last_sent_at: null, next_send_at: null },
     onUpdateRadarSchedule, onSendRadarNow,
-    refreshEnabled, onToggleRefresh,
 }) {
     const [q, setQ] = useState("");
 
@@ -227,14 +262,19 @@ export default function ThesisSidebar({
                         <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${radarEnabled ? "translate-x-5" : ""}`} />
                     </button>
                 </div>
-                {radarEnabled && (
+                {radarEnabled && (() => {
+                    const local = utcToLocal(radarSchedule.weekday ?? 0, radarSchedule.hour_utc ?? 7);
+                    return (
                     <div className="mt-3 space-y-2" data-testid="radar-schedule">
                         <div className="grid grid-cols-2 gap-2">
                             <label className="block">
-                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Día (UTC)</span>
+                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Día</span>
                                 <select
-                                    value={radarSchedule.weekday}
-                                    onChange={(e) => onUpdateRadarSchedule?.(parseInt(e.target.value, 10), radarSchedule.hour_utc)}
+                                    value={local.weekday}
+                                    onChange={(e) => {
+                                        const u = localToUtc(parseInt(e.target.value, 10), local.hour_local);
+                                        onUpdateRadarSchedule?.(u.weekday, u.hour_utc);
+                                    }}
                                     className="w-full border border-black/30 px-1.5 py-1 text-xs outline-none focus:border-black"
                                     data-testid="radar-weekday-select"
                                 >
@@ -242,10 +282,13 @@ export default function ThesisSidebar({
                                 </select>
                             </label>
                             <label className="block">
-                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Hora (UTC)</span>
+                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Hora ({tzLabel})</span>
                                 <select
-                                    value={radarSchedule.hour_utc}
-                                    onChange={(e) => onUpdateRadarSchedule?.(radarSchedule.weekday, parseInt(e.target.value, 10))}
+                                    value={local.hour_local}
+                                    onChange={(e) => {
+                                        const u = localToUtc(local.weekday, parseInt(e.target.value, 10));
+                                        onUpdateRadarSchedule?.(u.weekday, u.hour_utc);
+                                    }}
                                     className="w-full border border-black/30 px-1.5 py-1 text-xs outline-none focus:border-black"
                                     data-testid="radar-hour-select"
                                 >
@@ -267,26 +310,8 @@ export default function ThesisSidebar({
                             Enviar ahora
                         </button>
                     </div>
-                )}
-            </div>
-
-            {/* Weekly data refresh (same logic & effect as the manual Refresh button) */}
-            <div className="mt-4 pt-4 border-t border-black/10" data-testid="refresh-toggle-wrap">
-                <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                        <div className="overline text-black flex items-center gap-1"><RefreshCw size={12} /> Refresco semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza automáticamente los <strong>fundamentales y precios</strong> de tus empresas (revenue, FCF, deuda…) y recalcula los TAM Scores con esos números frescos. Una vez por semana, contando desde tu último refresco (manual o semanal). Lo <strong>cualitativo</strong> (overall_score, TAM global de la tendencia, narrativa) NO se toca — eso solo cambia al regenerar la tesis o la empresa desde el buscador.</p>
-                    </div>
-                    <button
-                        onClick={onToggleRefresh}
-                        role="switch"
-                        aria-checked={refreshEnabled}
-                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${refreshEnabled ? "bg-[#1E7D45]" : "bg-black/20"}`}
-                        data-testid="refresh-toggle"
-                    >
-                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${refreshEnabled ? "translate-x-5" : ""}`} />
-                    </button>
-                </div>
+                    );
+                })()}
             </div>
         </aside>
     );

@@ -548,3 +548,22 @@ Preview real ejecutado contra user_f2b26c58510b (11 empresas, plan reciente 0-9 
 - pytest 62/62. Lint Python+JS OK.
 
 Cron horario activo desde el restart del backend (Feb 2026). El radar enriquecido (sección noticias-empresas + banner stale) se entrega automáticamente según la config de cada usuario.
+
+## CHANGELOG · Limpieza refresco semanal + hora local radar + fechas noticias (Feb 2026)
+### Punto 1: borrado del refresco semanal redundante
+El refresco semanal opcional (`thesis_refresh.run_thesis_refresh`) solo hacía fundamentals + TAM, idéntico al cron diario del screener (06:00 UTC) y al botón manual de arriba a la derecha. Eliminado para reducir superficie:
+- Backend: borrado `run_thesis_refresh` (la función), scheduler job `_scheduled_thesis_refresh_run`, rutas `GET /refresh/status` y `POST /refresh/subscribe`, endpoint admin `POST /admin/run-thesis-refresh`, import `from thesis_refresh import run_thesis_refresh`.
+- Frontend: borrado toggle "Refresco semanal" del sidebar, `thesisRefreshStatus`/`thesisRefreshSubscribe` de api.js, state `refreshEnabled`, función `toggleRefresh`, props relacionadas.
+- Mantenido `refresh_user_data` y `recompute_and_store_tam` porque los usa el botón manual (`POST /thesis/refresh/run`) y otros flujos internos.
+
+### Punto 2: hora local en selectores del radar
+Sidebar muestra "Día (Lunes…)" + "Hora (CEST/EDT/…)" usando la zona horaria del navegador. Backend sigue almacenando UTC; helpers JS `localToUtc/utcToLocal` traducen en ambas direcciones anclando en el wall clock del usuario (robusto a DST). Label de TZ se infiere con `Intl.DateTimeFormat.formatToParts`.
+
+### Punto 3: fecha de noticia en email + banner reescrito
+- Prompt LLM `COMPANY_NEWS_WATCH_SYS` ahora pide `published_at` (YYYY-MM-DD) en cada noticia; instrucción explícita de NO inventar fechas.
+- Render email: fecha en monospace dorado arriba a la derecha de cada news block (`#7a5a10`).
+- Banner stale reescrito: ahora pide al usuario comparar fecha de noticia vs antigüedad del plan: si la noticia es anterior al plan, no hace falta regenerar; si es posterior y material, sí.
+
+### Verificación E2E
+- pytest 62/62, lint Python+JS OK.
+- Send-now real → email entregado con 5 noticias datadas (2026-05-29 TEM FDA, 2026-05-20 NVDA Q1, 2026-04-30 LLY guidance, 2026-05-07 DDOG/NET resultados). Screenshot capturado en `/tmp/radar_v2.png`.
