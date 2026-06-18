@@ -187,15 +187,15 @@ export default function Visual() {
         };
     }, [mapRows, rows]);
 
-    // Dynamic X-axis domain: start at 50 by default (since most quality companies
-    // score >50, this avoids huge dead zone on the left). If any visible company
-    // has score < 50, extend the axis downward to include it (rounded to nearest 5).
+    // Dynamic X-axis domain: start at 60 by default (most quality companies score >60,
+    // and 60 is also the threshold above which we consider a thesis "investable"). If
+    // any visible company has score <60, extend the axis downward to include it.
     const xDomain = useMemo(() => {
         const base = mapRows.length ? mapRows : rows;
         const scores = base.map((r) => r.avg_overall_score).filter((v) => v != null);
-        if (!scores.length) return [50, 100];
+        if (!scores.length) return [60, 100];
         const minScore = Math.min(...scores);
-        if (minScore >= 50) return [50, 100];
+        if (minScore >= 60) return [60, 100];
         return [Math.max(0, Math.floor(minScore / 5) * 5), 100];
     }, [mapRows, rows]);
 
