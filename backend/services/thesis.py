@@ -785,6 +785,65 @@ async def run_news_watch(trend_titles: list) -> dict:
     return {"important": out}
 
 
+COMPANY_NEWS_WATCH_SYS = (
+    "Eres un analista de equity research que vigila NOTICIAS MATERIALES sobre empresas con tesis "
+    "de inversión activa. Recibes la lista de empresas que sigue el inversor (con plan completo "
+    "ya generado) y resultados REALES de búsqueda web recientes. Identifica SOLO desarrollos "
+    "verdaderamente importantes y materiales de los últimos días para cada empresa: cambios de "
+    "management, regulación significativa (FDA, antitrust), M&A, resultados sorpresa (positivos o "
+    "negativos), litigios relevantes, lanzamiento de productos clave, pérdida/ganancia de cliente "
+    "principal, catalizador binario (aprobación / fallo), ruptura o refuerzo claro de la tesis. "
+    "Si una empresa no tiene noticias materiales esta semana, NO la incluyas. Sé MUY exigente — "
+    "es mejor devolver lista vacía que ruido. Usa el TICKER EXACTO de la lista. "
+    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
+)
+
+
+async def run_company_news_watch(companies: list) -> dict:
+    """LLM classification of important news per company (one batch call across ALL companies).
+    Returns {"important": [{ticker, headline, summary, why_it_matters, url}]}.
+    Empty if nothing material this week. Caller pre-de-duplicates the company list."""
+    items = [c for c in (companies or []) if c.get("ticker")][:8]
+    if not items:
+        return {"important": []}
+    year = datetime.now(timezone.utc).year
+    # ONE query per company to keep DDG iteration bounded. Each query is
+    # cheap (≤2 results) and the LLM sifts the noise.
+    queries = []
+    for c in items:
+        tk = c.get("ticker")
+        name = c.get("name") or tk
+        queries.append(f"{tk} {name} news earnings regulation {year}")
+    sources = _run_searches(queries, max_results=2, cap=30)
+    company_list = "\n".join(f"- {c.get('ticker')}: {c.get('name') or ''}" for c in items)
+    user_text = (
+        "EMPRESAS QUE SIGUE EL INVERSOR (todas con plan completo y tesis desarrolladas):\n" + company_list +
+        "\n\nRESULTADOS DE BÚSQUEDA WEB RECIENTES:\n" + _sources_block(sources) +
+        "\n\nDevuelve SOLO JSON con esta forma exacta:\n"
+        '{"important":[{"ticker":"<TICKER EXACTO de la lista>","headline":"titular breve",'
+        '"summary":"2-3 frases describiendo el hecho","why_it_matters":"impacto en la tesis (puede afectar a scores cualitativos, TAM, narrativa o ratios)",'
+        '"url":"link de la fuente más relevante de las pasadas"}]}\n'
+        "Si nada material esta semana, devuelve {\"important\":[]}. NUNCA inventes noticias."
+    )
+    raw = await _llm(*_inv_model(), f"company-news-{datetime.now(timezone.utc).timestamp()}",
+                     COMPANY_NEWS_WATCH_SYS, user_text)
+    data = _extract_json(raw)
+    valid = {(c.get("ticker") or "").upper(): c for c in items}
+    out = []
+    for it in (data.get("important") or [])[:20]:
+        tk = (it.get("ticker") or "").upper().strip()
+        if tk not in valid:
+            continue
+        out.append({
+            "ticker": tk,
+            "headline": (it.get("headline") or "").strip(),
+            "summary": (it.get("summary") or "").strip(),
+            "why_it_matters": (it.get("why_it_matters") or "").strip(),
+            "url": (it.get("url") or "").strip(),
+        })
+    return {"important": out}
+
+
 # ---------------------- Flow B: Company → growth-driver theses (3 passes) ----------------------
 # A thesis = a HIGH-CONVICTION bet on an INDEPENDENT growth driver (own, non-overlapping
 # TAM), tagged Actual (core in expansion) or Futura (future bet / adjacency).

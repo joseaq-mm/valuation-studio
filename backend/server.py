@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+import asyncio
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -169,6 +170,52 @@ async def admin_run_screener():
 async def admin_run_radar():
     """Manual trigger for the weekly trend radar — useful for QA."""
     return {"ok": True, **(await run_radar(db))}
+
+
+@api_router.post("/admin/preview-radar/{user_id}")
+async def admin_preview_radar_start(user_id: str):
+    """Kick off a radar email PREVIEW job for one user (no email sent). Returns a
+    job_id; poll /admin/preview-radar/job/{job_id} for the rendered HTML when
+    `status: done`. Async because the news-watch step hits DDG + LLM (~60-120s)."""
+    import uuid
+    from radar import build_preview_for_user
+    job_id = f"radarprev_{uuid.uuid4().hex[:12]}"
+    await db.thesis_jobs.insert_one({
+        "id": job_id, "kind": "radar_preview", "user_id": user_id,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    async def _run():
+        try:
+            preview = await build_preview_for_user(db, user_id, trends=None)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": preview,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception as e:
+            logger.error(f"radar preview job failed ({job_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "error", "error": str(e)}},
+            )
+
+    asyncio.create_task(_run())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api_router.get("/admin/preview-radar/job/{job_id}")
+async def admin_preview_radar_status(job_id: str, html: bool = False):
+    """Poll status of a radar preview job. If `html=true` and status=done,
+    returns the HTML body directly (for opening in a browser/screenshot)."""
+    from fastapi.responses import HTMLResponse, JSONResponse
+    job = await db.thesis_jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        return JSONResponse({"detail": "job not found"}, status_code=404)
+    if html and job.get("status") == "done":
+        return HTMLResponse(content=(job.get("result") or {}).get("html") or "")
+    return job
 
 
 @api_router.post("/admin/run-thesis-refresh")

@@ -496,3 +496,29 @@ El dashboard los expone como `dash.tendencias`, `dash.trends`, `dash.company_the
 ### Verificación
 - curl test backend: creada tendencia A, llamada save con `overwrite_id=A` + nueva tendencia B → A queda eliminada, B creada. ✅
 - pytest: 62/62. Lint Python+JS limpio (warning eslint-disable pre-existente, no relacionado).
+
+## CHANGELOG · Radar semanal: sección "Noticias de tus empresas" (Feb 2026)
+**Petición del usuario**: añadir al radar semanal una segunda sección con noticias relevantes sobre sus empresas con plan completo (las que ve en el maptree), con días desde generación del plan, y un aviso de que si la noticia es material o han pasado >60 días, debería regenerar la empresa para refrescar lo cualitativo.
+
+### Backend
+- **`services/thesis.py`** · nueva función `run_company_news_watch(companies)`. Una llamada LLM batch que clasifica noticias materiales solo (sé exigente, NO inventes) sobre la unión de tickers. Cap 8 empresas, 1 query DDG por empresa, max_results=2. Retorna `{important: [{ticker, headline, summary, why_it_matters, url}]}`.
+- **`radar.py` reescrito**:
+  - `collect_user_companies(db, user_id)` — empresas con plan completo (= con al menos un developed driver). Mirror del `complete_tickers` del dashboard.
+  - `_build_radar_email_html(name, trends, companies, news_by_ticker)` — render con DOS secciones, intro adaptativo, banner rojo si alguna empresa ≥60 días.
+  - `run_radar(db)` — agrega todas las empresas de los suscriptores opt-in en una sola llamada `run_company_news_watch` para coste mínimo. Cada email solo lleva las empresas del usuario y sus noticias filtradas.
+  - `build_preview_for_user(db, user_id, trends=None)` — helper para QA.
+- **`server.py`** · endpoints:
+  - `POST /api/admin/preview-radar/{user_id}` → lanza un job de preview (no envía email). Devuelve `{job_id, status}`.
+  - `GET /api/admin/preview-radar/job/{job_id}?html=true` → polling; con `html=true` y status=done devuelve el body renderizado.
+
+### Verificación E2E
+Preview real ejecutado contra user_f2b26c58510b (11 empresas, plan reciente 0-9 días). Resultado:
+- 6 empresas con noticias materiales verificables: TEM (guidance up Q1), NVDA (+85% YoY Q1 FY27), LLY (guidance up 82-85B), REGN (+19%), DDOG (>$1B Q1), NET (+34%).
+- 5 empresas sin noticias materiales (ALNY, IOVA, HIMS, NBIX, CRWD) — aparecen igualmente con su antigüedad.
+- Screenshot del email renderizado en `/tmp/radar_email_full.png`.
+- Test simulado de banner stale (199 días): banner rojo aparece sobre la lista.
+- Tests pytest 62/62. Lint OK. Backend supervisorctl restart ✅.
+
+### Decisión pendiente del usuario (a discutir)
+- ¿Activar este radar enriquecido en el cron actual de lunes 07:00 UTC para tu cuenta o esperar?
+- El email ahora puede ser largo (11 empresas). ¿Limitamos a las N más antiguas o con noticias materiales solamente?
