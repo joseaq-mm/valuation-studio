@@ -467,3 +467,32 @@ Implementación en `Thesis.jsx`:
 - `runAutoTrend` no necesita dedup (no acepta texto del usuario).
 
 Verificación: lint OK, 62/62 pytest. Mismo warning eslint pre-existente.
+
+## CHANGELOG · Bug crítico: findDup ignoraba dash.tendencias (Feb 2026)
+**Reporte usuario**: tecleó "computación cuántica" en "Tendencias → Empresas" (que ya tenía guardada como TENDENCIA informativa) y el aviso fuzzy ≥80% siguió sin saltar.
+
+**Causa raíz**: confusión de terminología en el código. El modelo de datos tiene 3 tipos:
+- `type="tendencia"` → tendencia informativa (botón "Tendencias → Empresas" + Guardar).
+- `type="trend"` → tesis-tendencia (desarrollada desde un driver del plan).
+- `type="company"` → tesis de empresa (plan completo).
+
+El dashboard los expone como `dash.tendencias`, `dash.trends`, `dash.company_theses`. La función `findDup` introducida en el fix anterior **solo miraba en `dash.trends` y `dash.company_theses`**, ignorando `dash.tendencias`. La tendencia "Computación Cuántica" del usuario está en `tendencias` → invisible al check → la app gastaba ~60s de LLM regenerando sin avisar.
+
+**Terminología pactada con el usuario** (importante para futuras conversaciones):
+- "tendencia" = type=tendencia (informativa)
+- "tesis" = type=trend O type=company (developed o plan)
+
+**Fixes en este turno**:
+1. `findDup("trend", s)` ahora itera las 3 listas (`tendencias`, `trends`, `company_theses`) y devuelve el mejor match con `_dup_kind ∈ {"tendencia","trend","company"}`.
+2. Matriz de botones del dedup-warning actualizada con la regla `isSameKind`:
+   - same-kind = type==company AND kind==company → reescribir OK.
+   - same-kind = type==trend AND origin==explore AND kind==tendencia → reescribir OK.
+   - same-kind = type==trend AND origin==generate AND kind==trend → reescribir OK.
+   - resto → cross-match, solo "Generar como (tendencia) nueva" + Abrir + Cancelar.
+3. Backend `POST /thesis/tendencia/save` extendido con `overwrite_id` opcional → si se pasa, borra el doc antiguo de type=tendencia antes de insertar el nuevo. Implementación atómica (delete + insert) y solo aplica si el id existe para ese user_id+type=tendencia.
+4. Frontend: nuevo state `overwriteTendenciaId` que viaja entre `runExplore({force:true, overwriteTendenciaId})` y `saveTendencia()` → la próxima Guardar machaca la vieja. Toast cambia a "Tendencia reescrita" cuando aplica.
+5. Mensaje del aviso usa la terminología del usuario ("tendencia parecida", "tesis parecida", "tesis de empresa").
+
+### Verificación
+- curl test backend: creada tendencia A, llamada save con `overwrite_id=A` + nueva tendencia B → A queda eliminada, B creada. ✅
+- pytest: 62/62. Lint Python+JS limpio (warning eslint-disable pre-existente, no relacionado).

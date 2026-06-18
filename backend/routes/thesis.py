@@ -262,6 +262,7 @@ class AutoTrendRequest(BaseModel):
 
 class SaveTendenciaRequest(BaseModel):
     tendencia: Dict[str, Any]
+    overwrite_id: Optional[str] = None  # if set: delete the existing tendencia first (machacar)
 
 
 class SetModelRequest(BaseModel):
@@ -902,10 +903,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     @router.post("/tendencia/save")
     async def save_tendencia(req: SaveTendenciaRequest, user: Dict[str, Any] = Depends(auth_required)):
         """Persist an informational trend ('tendencia') so it shows in the sidebar.
-        Discard is purely client-side (the ephemeral result is just dropped)."""
+        If `overwrite_id` is set, the existing tendencia is deleted first (so the
+        Reescribir/machacar flow from the dedup-warning replaces it cleanly without
+        leaving a duplicate). Discard is purely client-side (the ephemeral result is
+        just dropped)."""
         t = req.tendencia or {}
         if not (t.get("title") or t.get("query")):
             raise HTTPException(status_code=400, detail="tendencia inválida")
+        if req.overwrite_id:
+            await db.theses.delete_one({"id": req.overwrite_id, "user_id": user["user_id"], "type": "tendencia"})
         tid = f"thesis_{uuid.uuid4().hex[:12]}"
         doc = {
             "id": tid,

@@ -103,8 +103,8 @@ export const thesisExplore = (subject) =>
     api.post(`/thesis/explore`, { subject }).then(r => startAndPoll(r.data));
 export const thesisAutoTrend = (exclude = []) =>
     api.post(`/thesis/auto-trend`, { exclude }).then(r => startAndPoll(r.data));
-export const thesisSaveTendencia = (tendencia) =>
-    api.post(`/thesis/tendencia/save`, { tendencia }).then(r => r.data);
+export const thesisSaveTendencia = (tendencia, overwriteId = null) =>
+    api.post(`/thesis/tendencia/save`, overwriteId ? { tendencia, overwrite_id: overwriteId } : { tendencia }).then(r => r.data);
 export const thesisModels = () =>
     api.get(`/thesis/models`).then(r => r.data);
 export const thesisSetModel = (preset) =>

@@ -39,6 +39,7 @@ export default function Thesis() {
     const [radarEnabled, setRadarEnabled] = useState(false);
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
+    const [overwriteTendenciaId, setOverwriteTendenciaId] = useState(null);  // armed by Reescribir on a tendencia match → saveTendencia replaces in place
     const [undoStack, setUndoStack] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
     const [folderToDelete, setFolderToDelete] = useState(null);
@@ -79,9 +80,19 @@ export default function Thesis() {
     const findDup = (type, s) => {
         if (!dash) return null;
         if (type === "trend") {
-            // Best fuzzy match across trend titles AND company-thesis titles.
-            // We return one of two shapes: { kind: "trend" | "company", existing, score }.
+            // Best fuzzy match across:
+            //   - dash.tendencias (informativas, saved from "Tendencias → Empresas")
+            //   - dash.trends (tesis-tendencia developed from drivers)
+            //   - dash.company_theses (cross-match with company plans)
+            // We surface ONE: { kind: "tendencia" | "trend" | "company", existing, score }.
+            // In the user's terminology: "tendencia" = informativa; "trend" = tesis.
             let best = null;
+            for (const t of (dash.tendencias || [])) {
+                const score = similarity(s, t.title);
+                if (score >= SIM_THRESHOLD && (!best || score > best.score)) {
+                    best = { kind: "tendencia", existing: t, score };
+                }
+            }
             for (const t of (dash.trends || [])) {
                 const score = similarity(s, t.title);
                 if (score >= SIM_THRESHOLD && (!best || score > best.score)) {
@@ -309,9 +320,7 @@ export default function Thesis() {
         const s = subject.trim();
         if (!s) { toast.error("Escribe una tendencia"); return; }
         // Dedup guard: warn BEFORE spending ~60s of LLM if the user already has a
-        // similar trend or company thesis (≥80% Sørensen-Dice match). Same warning
-        // UI as generate(), but tagged with origin="explore" so the action buttons
-        // resolve to the right flow (explore = lightweight; reescribir = heavy gen).
+        // similar tendencia, tesis-tendencia or tesis de empresa (≥80% Sørensen-Dice).
         if (!opts.force) {
             const dup = findDup("trend", s);
             if (dup) {
@@ -320,6 +329,10 @@ export default function Thesis() {
             }
         }
         setPendingDup(null);
+        // If Reescribir was clicked on a TENDENCIA match, arm the save call to delete
+        // the old doc before inserting the new one. The id travels via state so it
+        // survives the explore→show-result→user-clicks-save async gap.
+        setOverwriteTendenciaId(opts.overwriteTendenciaId || null);
         setTrendLoading(true);
         setResult(null);
         try {
@@ -360,9 +373,10 @@ export default function Thesis() {
         if (!result || result.type !== "tendencia") return;
         setTendenciaSaving(true);
         try {
-            const res = await thesisSaveTendencia(result);
+            const res = await thesisSaveTendencia(result, overwriteTendenciaId);
             setResult({ ...result, id: res.id, saved: true });
-            toast.success("Tendencia guardada");
+            toast.success(overwriteTendenciaId ? "Tendencia reescrita" : "Tendencia guardada");
+            setOverwriteTendenciaId(null);  // consumed
             reload();
         } catch {
             toast.error("No se pudo guardar la tendencia");
@@ -634,63 +648,75 @@ export default function Thesis() {
                         )}
                     </div>
 
-                    {/* Dedup / overwrite warning. Three flavors:
-                          - trend search ↔ existing trend (same kind) → Reescribir | Generar como nueva | Cancelar
-                          - trend search ↔ existing company thesis (cross-match) → Generar tendencia | Cancelar
-                          - company search ↔ existing company (ticker match) → Reescribir | Cancelar
-                            (a second company thesis for the same ticker doesn't make sense, so we
-                            never offer "Generar como nueva" in company search). */}
+                    {/* Dedup / overwrite warning. The "kind" tag uses the user's
+                        terminology: TENDENCIA = informativa (from "Tendencias → Empresas"),
+                        TESIS = tesis-tendencia (developed from a driver). The buttons
+                        adapt to make machacar only available when same-kind. */}
                     {pendingDup && (() => {
-                        const isCross = pendingDup.kind && pendingDup.kind !== pendingDup.type;
-                        const isTrendSameKind = pendingDup.type === "trend" && !isCross;
+                        const k = pendingDup.kind;
+                        const origin = pendingDup.origin;
+                        // "Same kind" = can be overwritten in place:
+                        //   • company search (k=company) → ok.
+                        //   • explore origin (creates a tendencia) matching another tendencia (k=tendencia) → ok.
+                        //   • generate origin (creates a tesis-tendencia, type=trend) matching a tesis (k=trend) → ok.
+                        const isSameKind = (
+                            (pendingDup.type === "company" && k === "company") ||
+                            (pendingDup.type === "trend" && origin === "explore" && k === "tendencia") ||
+                            (pendingDup.type === "trend" && origin === "generate" && k === "trend")
+                        );
+                        const existingNoun = k === "tendencia" ? "tendencia" : (k === "company" ? "tesis de empresa" : "tesis");
                         return (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
-                                {isCross ? (
-                                    <>
-                                        Ya tienes una <strong>tesis de empresa</strong> con un nombre parecido:{" "}
-                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                        Si lo que buscas es información de la empresa, ábrela. Si realmente quieres explorar esto como <strong>tendencia</strong> (con un matiz distinto), puedes generarla; las dos coexistirán. La tesis de empresa <strong>NO se puede sobreescribir desde aquí</strong> (eso solo se hace desde Empresa → Tesis).
-                                    </>
-                                ) : isTrendSameKind ? (
-                                    <>
-                                        Ya tienes una <strong>tendencia parecida</strong> guardada:{" "}
-                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                        Si quieres <strong>actualizarla</strong> con datos frescos → reescríbela (la machaca). Si hay un <strong>matiz distinto</strong> que merece su propia tendencia → genera una nueva y conviven las dos. Si fue un error, cancela.
-                                    </>
-                                ) : (
+                                {isSameKind && pendingDup.type === "company" ? (
                                     <>
                                         Ya tienes esta empresa guardada:{" "}
                                         <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
                                         Si continúas, se <strong>reescribirá desde cero</strong> el contenido cualitativo y se <strong>borrarán las tesis de tendencia generadas previamente desde este plan</strong>. La parte cuantitativa (fundamentales, TAM Score) se refresca aparte con el botón <em>Refrescar</em>; <strong>regenerar es lo único que actualiza lo cualitativo</strong>.
                                     </>
+                                ) : isSameKind ? (
+                                    <>
+                                        Ya tienes una <strong>{existingNoun} parecida</strong> guardada:{" "}
+                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                        Si quieres <strong>actualizarla</strong> con datos frescos → reescríbela (la machaca). Si hay un <strong>matiz distinto</strong> que merece su propia {existingNoun} → genera una nueva y conviven las dos. Si fue un error, cancela.
+                                    </>
+                                ) : (
+                                    <>
+                                        Ya tienes una <strong>{existingNoun}</strong> con un nombre parecido:{" "}
+                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                        Si lo que buscas es información ábrela. Si realmente quieres explorar esto como <strong>tendencia nueva</strong> (con un matiz distinto), puedes generarla; las dos coexistirán. La {existingNoun} <strong>NO se sobreescribe desde aquí</strong> (sólo desde su flujo propio).
+                                    </>
                                 )}
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                {/* Primary action: rewrite (only when same-kind, NOT in cross-match).
-                                    Always uses generate() because explore is lightweight/informational —
-                                    "machacar" implies a fresh full thesis (heavy LLM call). */}
-                                {!isCross && (
+                                {/* Reescribir (machacar) — only when same kind. Route to the right
+                                    flow: explore→tendencia (set overwriteId for save) vs generate→tesis. */}
+                                {isSameKind && (
                                     <button
-                                        onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
+                                        onClick={() => {
+                                            if (pendingDup.type === "trend" && origin === "explore") {
+                                                runExplore({ force: true, overwriteTendenciaId: pendingDup.existing.id });
+                                            } else {
+                                                generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id });
+                                            }
+                                        }}
                                         className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
                                         data-testid="dedup-rewrite-btn"
                                     >
                                         Reescribir (machacar)
                                     </button>
                                 )}
-                                {/* Coexist action: stays in the user's original flow. Explore stays
-                                    explore (informational), generate stays generate (heavy). */}
+                                {/* Generar como nueva — keeps origin flow (explore stays explore). */}
                                 {pendingDup.type === "trend" && (
                                     <button
                                         onClick={() => {
-                                            if (pendingDup.origin === "explore") runExplore({ force: true });
+                                            if (origin === "explore") runExplore({ force: true });
                                             else generate(pendingDup.type, pendingDup.subject, null, { force: true });
                                         }}
-                                        className={`text-xs uppercase tracking-[0.1em] font-semibold px-3 py-1.5 transition-colors ${isCross ? "bg-[#B8860B] text-white hover:bg-[#946c09]" : "border border-[#B8860B] text-[#7a5a10] hover:bg-[#B8860B] hover:text-white"}`}
+                                        className={`text-xs uppercase tracking-[0.1em] font-semibold px-3 py-1.5 transition-colors ${isSameKind ? "border border-[#B8860B] text-[#7a5a10] hover:bg-[#B8860B] hover:text-white" : "bg-[#B8860B] text-white hover:bg-[#946c09]"}`}
                                         data-testid="dedup-generate-new-btn"
                                     >
-                                        {isCross ? "Generar como tendencia" : "Generar como nueva"}
+                                        {isSameKind ? "Generar como nueva" : "Generar como tendencia"}
                                     </button>
                                 )}
                                 <Link to={`/thesis/${pendingDup.existing.id}`} className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-3 py-1.5 hover:bg-[#B8860B] hover:text-white transition-colors" data-testid="dedup-open-btn">
