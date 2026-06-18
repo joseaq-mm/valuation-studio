@@ -439,3 +439,17 @@ El antiguo matcher usaba `includes` substring (demasiado agresivo y a la vez no 
   - "Hims & Hers" → 0.833 contra "Hims & Hers Health" → cross-match warning.
   - Tickers: NVDA, BRK.B, 7203.T, 9988.HK, VOD.L → válidos; "obesidad", "APPLE INC" → rechazados.
 - Smoke test: app arranca sin errores en consola; CompanyThesisLinker eliminado sin imports rotos.
+
+## CHANGELOG · Punto 4b3 refinado (Feb 2026)
+Tras feedback del usuario, el dedup-warning ahora tiene la matriz de botones correcta:
+
+| Escenario | Botones |
+|---|---|
+| Trend search ↔ trend (≥80%) | Reescribir (machacar) · Generar como nueva · Abrir · Cancelar |
+| Trend search ↔ company (cross, ≥80%) | Generar como tendencia · Abrir · Cancelar (no se permite sobreescribir el plan desde aquí) |
+| Company search ↔ ticker exact | Reescribir (machacar) · Abrir · Cancelar |
+
+Implementación en `Thesis.jsx`:
+- `dedup-rewrite-btn`: sólo aparece si NO es cross-match (la tesis de empresa solo se sobreescribe desde el flujo Empresa → Tesis).
+- `dedup-generate-new-btn`: aparece para cualquier búsqueda en modo trend (same-kind o cross). Llama a `generate(..., { force: true })` SIN `overwriteId` → crea una tendencia nueva que coexiste con la existente.
+- En modo company search, se mantiene solo el botón Reescribir (un segundo plan para el mismo ticker no tiene sentido).

@@ -623,10 +623,15 @@ export default function Thesis() {
                         )}
                     </div>
 
-                    {/* Dedup / overwrite warning: same KIND → can rewrite; cross-match
-                        (trend search → company thesis) → only "Generar igualmente". */}
+                    {/* Dedup / overwrite warning. Three flavors:
+                          - trend search ↔ existing trend (same kind) → Reescribir | Generar como nueva | Cancelar
+                          - trend search ↔ existing company thesis (cross-match) → Generar tendencia | Cancelar
+                          - company search ↔ existing company (ticker match) → Reescribir | Cancelar
+                            (a second company thesis for the same ticker doesn't make sense, so we
+                            never offer "Generar como nueva" in company search). */}
                     {pendingDup && (() => {
                         const isCross = pendingDup.kind && pendingDup.kind !== pendingDup.type;
+                        const isTrendSameKind = pendingDup.type === "trend" && !isCross;
                         return (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
@@ -634,24 +639,44 @@ export default function Thesis() {
                                     <>
                                         Ya tienes una <strong>tesis de empresa</strong> con un nombre parecido:{" "}
                                         <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                        Si continúas, se generará una <strong>tendencia nueva</strong> con este texto; la tesis de empresa <strong>NO se toca</strong> (pueden coexistir).
+                                        Si lo que buscas es información de la empresa, ábrela. Si realmente quieres explorar esto como <strong>tendencia</strong> (con un matiz distinto), puedes generarla; las dos coexistirán. La tesis de empresa <strong>NO se puede sobreescribir desde aquí</strong> (eso solo se hace desde Empresa → Tesis).
+                                    </>
+                                ) : isTrendSameKind ? (
+                                    <>
+                                        Ya tienes una <strong>tendencia parecida</strong> guardada:{" "}
+                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                        Si quieres <strong>actualizarla</strong> con datos frescos → reescríbela (la machaca). Si hay un <strong>matiz distinto</strong> que merece su propia tendencia → genera una nueva y conviven las dos. Si fue un error, cancela.
                                     </>
                                 ) : (
                                     <>
-                                        Ya tienes esta {pendingDup.type === "trend" ? "tendencia" : "empresa"} guardada:{" "}
+                                        Ya tienes esta empresa guardada:{" "}
                                         <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                        Si continúas, se <strong>reescribirá desde cero</strong> el contenido cualitativo{pendingDup.type === "company" && <> y se <strong>borrarán las tesis de tendencia generadas previamente desde este plan</strong></>}. La parte cuantitativa (fundamentales, TAM Score) se refresca aparte con el botón <em>Refrescar</em>; <strong>regenerar es lo único que actualiza lo cualitativo</strong>.
+                                        Si continúas, se <strong>reescribirá desde cero</strong> el contenido cualitativo y se <strong>borrarán las tesis de tendencia generadas previamente desde este plan</strong>. La parte cuantitativa (fundamentales, TAM Score) se refresca aparte con el botón <em>Refrescar</em>; <strong>regenerar es lo único que actualiza lo cualitativo</strong>.
                                     </>
                                 )}
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                <button
-                                    onClick={() => generate(pendingDup.type, pendingDup.subject, null, isCross ? { force: true } : { force: true, overwriteId: pendingDup.existing.id })}
-                                    className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
-                                    data-testid="dedup-rewrite-btn"
-                                >
-                                    {isCross ? "Generar tendencia igualmente" : "Reescribir igualmente"}
-                                </button>
+                                {/* Primary action: rewrite (only when same-kind, NOT in cross-match). */}
+                                {!isCross && (
+                                    <button
+                                        onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
+                                        className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
+                                        data-testid="dedup-rewrite-btn"
+                                    >
+                                        Reescribir (machacar)
+                                    </button>
+                                )}
+                                {/* Coexist action: generate alongside (trend search only — cross-match
+                                    or same-kind-trend; never for company search). */}
+                                {pendingDup.type === "trend" && (
+                                    <button
+                                        onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true })}
+                                        className={`text-xs uppercase tracking-[0.1em] font-semibold px-3 py-1.5 transition-colors ${isCross ? "bg-[#B8860B] text-white hover:bg-[#946c09]" : "border border-[#B8860B] text-[#7a5a10] hover:bg-[#B8860B] hover:text-white"}`}
+                                        data-testid="dedup-generate-new-btn"
+                                    >
+                                        {isCross ? "Generar como tendencia" : "Generar como nueva"}
+                                    </button>
+                                )}
                                 <Link to={`/thesis/${pendingDup.existing.id}`} className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-3 py-1.5 hover:bg-[#B8860B] hover:text-white transition-colors" data-testid="dedup-open-btn">
                                     Abrir la existente
                                 </Link>
