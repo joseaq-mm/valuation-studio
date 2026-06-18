@@ -7,6 +7,7 @@ import ThemeToggle from "./ThemeToggle";
 import AuthButton from "./AuthButton";
 import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
+import HelpChat from "./HelpChat";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -122,6 +123,7 @@ export default function Layout({ children }) {
                             <Link to="/visual" className={navClass("/visual")} data-testid="nav-link-visual">Visual</Link>
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">
+                            <HelpChat />
                             <ThresholdsDialog />
                             <LanguageToggle />
                             <ThemeToggle />

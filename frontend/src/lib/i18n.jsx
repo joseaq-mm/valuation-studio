@@ -34,6 +34,8 @@ const DICT = {
         "common.discard": "Descartar cambios",
         // Home
         "home.tag": "Equity research · Análisis fundamental",
+        "home.instructions": "Instrucciones",
+        "home.tour": "Tour",
         "home.hero_title_pre": "Calcula si una acción está",
         "home.hero_title_em_cara": "cara",
         "home.hero_title_or": "o",
@@ -169,6 +171,8 @@ const DICT = {
         "common.discard": "Discard changes",
         // Home
         "home.tag": "Equity research · Fundamental analysis",
+        "home.instructions": "Instructions",
+        "home.tour": "Tour",
         "home.hero_title_pre": "Find out whether a stock is",
         "home.hero_title_em_cara": "expensive",
         "home.hero_title_or": "or",

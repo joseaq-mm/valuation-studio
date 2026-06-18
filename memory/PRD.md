@@ -582,3 +582,12 @@ Sidebar muestra "Día (Lunes…)" + "Hora (CEST/EDT/…)" usando la zona horaria
 - Celdas de tabla `ratio_compra_pct` y `ratio_venta_pct` usan cada una su umbral correspondiente.
 
 Tests 62/62, lint OK.
+
+## CHANGELOG — Onboarding: Instrucciones + Tour + Ayuda (18 jun 2026)
+Objetivo del usuario: facilitar el arranque de usuarios principiantes con 3 botones.
+- **Botones**: Inicio (hero, `home-help-buttons`) → "Instrucciones" (`home-btn-instructions`, link a `/instrucciones`) + "Tour" (`home-btn-tour`, lanza el tour). Cabecera (Layout) → "Ayuda" (`help-chat-open`).
+- **Instrucciones** (`pages/Instructions.jsx`, ruta `/instrucciones`): guía de ~2 páginas con conmutador ES/EN (`instructions-lang-es|en`, independiente del idioma global) y descarga PDF (`instructions-download-pdf`) vía `html2pdf.js` (import dinámico, genera desde el DOM `instructions-doc`). CONTENIDO PROVISIONAL en el objeto `CONTENT` (es/en) — el usuario entregará el documento final y solo hay que sustituir ese objeto.
+- **Tour** (`lib/tour.jsx`, `TourProvider` envuelve `AppRouter` en App.js): tour personalizado (sin deps, React 19) cross-page con spotlight (box-shadow) + tarjeta (`tour-card`, `tour-next/prev/skip/close`). 8 pasos navegando por Inicio→Empresa(AAPL)→Watchlist→Cartera→Comparar→Tesis→Inicio. Bilingüe (usa `lang` de i18n). Navega y hace polling del target (selector data-testid) hasta 6s; fallback a tarjeta centrada. Escape cierra.
+- **Ayuda** (`components/HelpChat.jsx` + backend `routes/help.py`): chat interno (`help-chat-dialog`) que responde dudas sobre la app. Backend `POST /api/help/chat` {session_id, message} usa Emergent LLM Key con **Gemini Flash `gemini-2.5-flash`** (NOTA: `gemini-2.5-flash-lite` ya NO es válido para la key; verificar con /v1/models). Memoria de conversación POR SESIÓN in-process (instancia LlmChat cacheada por session_id en `_sessions`). Bilingüe (es/en según i18n). Sugerencias iniciales. Errores LLM traducidos (budget/rate/genérico).
+- Verificado: curl (chat con memoria: POC→POV en relación a lo anterior, OK) + screenshot (los 3 botones, dialog Ayuda, tour 1/8 y 2/8 con spotlight, Instrucciones ES/EN). Frontend compila (solo warning benigno de source-map de html2pdf).
+- PENDIENTE: el usuario entregará el documento final de Instrucciones para sustituir el contenido provisional de `CONTENT` en `Instructions.jsx`.

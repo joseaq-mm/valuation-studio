@@ -176,3 +176,7 @@ export const thesisRefreshRun = ({ thesis_id = null, ticker = null } = {}) =>
 // Visual page: aggregated rows for the BCG quadrant + opportunities table
 export const thesisVisualData = () =>
     api.get(`/thesis/visual`).then(r => r.data);
+
+// In-app help assistant chat (Gemini Flash, keeps per-session memory backend-side)
+export const helpChat = (session_id, message) =>
+    api.post(`/help/chat`, { session_id, message }, { timeout: 60000 }).then(r => r.data);

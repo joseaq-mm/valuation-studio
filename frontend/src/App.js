@@ -12,9 +12,11 @@ import Thesis from "@/pages/Thesis";
 import ThesisDetail from "@/pages/ThesisDetail";
 import Visual from "@/pages/Visual";
 import AuthCallback from "@/pages/AuthCallback";
+import Instructions from "@/pages/Instructions";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
 import { I18nProvider } from "@/lib/i18n";
+import { TourProvider } from "@/lib/tour";
 import WatchlistCloudSync from "@/components/WatchlistCloudSync";
 
 // Detect OAuth callback synchronously during render — running this in useEffect
@@ -35,6 +37,7 @@ function AppRouter() {
                 <Route path="/thesis" element={<Thesis />} />
                 <Route path="/thesis/:id" element={<ThesisDetail />} />
                 <Route path="/visual" element={<Visual />} />
+                <Route path="/instrucciones" element={<Instructions />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
             </Routes>
         </Layout>
@@ -49,7 +52,9 @@ function App() {
                     <FxProvider>
                         <I18nProvider>
                             <WatchlistCloudSync />
-                            <AppRouter />
+                            <TourProvider>
+                                <AppRouter />
+                            </TourProvider>
                             <Toaster position="bottom-right" toastOptions={{ style: { borderRadius: 0, border: "1px solid #111", fontFamily: "IBM Plex Sans" } }} />
                         </I18nProvider>
                     </FxProvider>
