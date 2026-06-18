@@ -148,8 +148,10 @@ export const thesisCompanyProfile = (ticker, fromCompany = null) =>
 
 // Weekly trend radar (email)
 export const thesisRadarStatus = () => api.get(`/thesis/radar/status`).then(r => r.data);
-export const thesisRadarSubscribe = (enabled) =>
-    api.post(`/thesis/radar/subscribe`, { enabled }).then(r => r.data);
+export const thesisRadarSubscribe = (payload) =>
+    api.post(`/thesis/radar/subscribe`, payload).then(r => r.data);
+export const thesisRadarSendNow = () =>
+    api.post(`/thesis/radar/send-now`).then(r => r.data);
 
 // Weekly thesis refresh (data + TAM). Manual run shares the same logic.
 export const thesisRefreshStatus = () => api.get(`/thesis/refresh/status`).then(r => r.data);

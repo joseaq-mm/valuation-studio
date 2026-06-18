@@ -522,3 +522,29 @@ Preview real ejecutado contra user_f2b26c58510b (11 empresas, plan reciente 0-9 
 ### Decisión pendiente del usuario (a discutir)
 - ¿Activar este radar enriquecido en el cron actual de lunes 07:00 UTC para tu cuenta o esperar?
 - El email ahora puede ser largo (11 empresas). ¿Limitamos a las N más antiguas o con noticias materiales solamente?
+
+## CHANGELOG · Radar semanal: schedule configurable + envío manual (Feb 2026)
+**Petición usuario**: activar el cron del nuevo radar enriquecido, permitir saber/configurar día y hora de envío, y añadir botón de envío único manual sin alterar la frecuencia.
+
+### Backend
+- `RadarSubscribeRequest`: ahora acepta `weekday` (0=Lun…6=Dom UTC) y `hour_utc` (0-23) opcionales.
+- `GET /api/thesis/radar/status` devuelve `{enabled, weekday, hour_utc, last_sent_at, next_send_at}`. `next_send_at` se calcula sobre la marcha desde la configuración del usuario.
+- `POST /api/thesis/radar/subscribe` actualiza enabled+weekday+hour_utc atómicamente (cualquier omisión conserva el valor previo).
+- `POST /api/thesis/radar/send-now` lanza job background `radarsend_*` que reutiliza el cache de candidatos (≤7 días) y dispara `run_radar_for_user`.
+- `radar.py` refactor: `run_radar(db, target_user_ids=None)` ahora puede limitar a un subconjunto de suscriptores. Cache de discovery (skip si `last_run` <6 días). Helpers `compute_next_send_at`, `_dispatch_to_users`, `run_radar_for_user`. Persiste `users.radar.last_sent_at` tras cada envío.
+- `server.py`: scheduler radar pasa de `CronTrigger(day_of_week="mon", hour=7)` a `CronTrigger(minute=0)` (cada hora). El job interno filtra usuarios por `radar.weekday == now.weekday() AND radar.hour_utc == now.hour`.
+
+### Frontend
+- `ThesisSidebar`: la sección Radar incluye, cuando está activado:
+  - Selectores Día (Lunes-Domingo) y Hora (00:00-23:00) UTC.
+  - "Próximo envío: ..." con formato es-ES.
+  - "Último envío: ..." (si hay historial).
+  - Botón "Enviar ahora" → toast "Envío manual en curso · llegará en 1-2 min".
+- `Thesis.jsx`: nuevo state `radarSchedule`, función `updateRadarSchedule(weekday, hour_utc)` que llama al endpoint y actualiza la UI con la respuesta canónica.
+- `lib/api.js`: `thesisRadarSubscribe(payload)` ahora acepta el objeto entero (no solo `enabled`).
+
+### Verificación
+- curl: subscribe → status → subscribe (weekday=2, hour_utc=14) → next_send_at calculado al miércoles 14:00 UTC → send-now → job done sent=1 → email entregado vía Resend (id 62272d91...) → last_sent_at persistido.
+- pytest 62/62. Lint Python+JS OK.
+
+Cron horario activo desde el restart del backend (Feb 2026). El radar enriquecido (sección noticias-empresas + banner stale) se entrega automáticamente según la config de cada usuario.

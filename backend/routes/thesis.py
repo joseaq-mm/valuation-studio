@@ -233,6 +233,8 @@ class RestoreRequest(BaseModel):
 
 class RadarSubscribeRequest(BaseModel):
     enabled: bool
+    weekday: Optional[int] = None     # 0=Mon … 6=Sun, UTC. None → keep stored / default 0.
+    hour_utc: Optional[int] = None    # 0-23. None → keep stored / default 7.
 
 class RefreshRunRequest(BaseModel):
     thesis_id: Optional[str] = None   # refresh this thesis (trend) or company thesis
@@ -1799,16 +1801,64 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.get("/radar/status")
     async def radar_status(user: Dict[str, Any] = Depends(auth_required)):
+        from radar import compute_next_send_at  # local import: avoid cycle on startup
         u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "radar": 1})
-        return {"enabled": bool(((u or {}).get("radar") or {}).get("enabled"))}
+        r = (u or {}).get("radar") or {}
+        weekday = int(r.get("weekday", 0))
+        hour_utc = int(r.get("hour_utc", 7))
+        next_at = compute_next_send_at(weekday, hour_utc) if r.get("enabled") else None
+        return {
+            "enabled": bool(r.get("enabled")),
+            "weekday": weekday,
+            "hour_utc": hour_utc,
+            "last_sent_at": r.get("last_sent_at"),
+            "next_send_at": next_at,
+        }
 
     @router.post("/radar/subscribe")
     async def radar_subscribe(req: RadarSubscribeRequest, user: Dict[str, Any] = Depends(auth_required)):
-        await db.users.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"radar": {"enabled": bool(req.enabled), "updated_at": datetime.now(timezone.utc).isoformat()}}},
-        )
-        return {"enabled": bool(req.enabled)}
+        u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "radar": 1})
+        cur = (u or {}).get("radar") or {}
+        new = {
+            "enabled": bool(req.enabled),
+            "weekday": int(req.weekday) if req.weekday is not None else int(cur.get("weekday", 0)),
+            "hour_utc": int(req.hour_utc) if req.hour_utc is not None else int(cur.get("hour_utc", 7)),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if "last_sent_at" in cur:
+            new["last_sent_at"] = cur["last_sent_at"]
+        # Sanity clamp.
+        new["weekday"] = max(0, min(6, new["weekday"]))
+        new["hour_utc"] = max(0, min(23, new["hour_utc"]))
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"radar": new}})
+        return await radar_status(user)
+
+    @router.post("/radar/send-now")
+    async def radar_send_now(user: Dict[str, Any] = Depends(auth_required)):
+        """One-off manual send (does NOT alter the user's weekly schedule). Spawns a
+        background job that re-uses the cached trend discovery (if recent <6 days)
+        and runs a fresh per-user news_watch. Returns immediately with job_id."""
+        from radar import run_radar_for_user
+        job_id = f"radarsend_{uuid.uuid4().hex[:12]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "kind": "radar_send_now", "user_id": user["user_id"],
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        async def _run():
+            try:
+                res = await run_radar_for_user(db, user["user_id"])
+                await db.thesis_jobs.update_one(
+                    {"id": job_id},
+                    {"$set": {"status": "done", "result": res,
+                              "updated_at": datetime.now(timezone.utc).isoformat()}},
+                )
+            except Exception as e:
+                logger.error(f"radar send-now job {job_id} failed: {e}")
+                await db.thesis_jobs.update_one(
+                    {"id": job_id}, {"$set": {"status": "error", "error": str(e)}},
+                )
+        _spawn(_run())
+        return {"job_id": job_id, "status": "pending"}
 
     @router.get("/refresh/status")
     async def refresh_status(user: Dict[str, Any] = Depends(auth_required)):

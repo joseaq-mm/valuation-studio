@@ -4,6 +4,21 @@ import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, Refres
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
+// Radar schedule helpers: weekday labels (0=Mon … 6=Sun, mirror of Python's
+// datetime.weekday()) and an ISO→localized formatter for the "next send" line.
+const WEEKDAYS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+function fmtNextSend(iso) {
+    if (!iso) return "—";
+    try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "—";
+        return d.toLocaleString("es-ES", {
+            weekday: "long", year: "numeric", month: "short", day: "numeric",
+            hour: "2-digit", minute: "2-digit",
+        });
+    } catch { return "—"; }
+}
+
 /** Dropdown for a saved company: lists ONLY the trend theses already generated where
  *  the company actually appears (membership). Each row links to that thesis. */
 function CompanyTrendsDropdown({ company }) {
@@ -129,6 +144,8 @@ export default function ThesisSidebar({
     tendencias = [], companyTheses = [], folders = [],
     onAssignFolder, onRemoveThesis,
     radarEnabled, onToggleRadar,
+    radarSchedule = { weekday: 0, hour_utc: 7, last_sent_at: null, next_send_at: null },
+    onUpdateRadarSchedule, onSendRadarNow,
     refreshEnabled, onToggleRefresh,
 }) {
     const [q, setQ] = useState("");
@@ -198,7 +215,7 @@ export default function ThesisSidebar({
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><Bell size={12} /> Radar semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Recibe un email cuando la IA detecte una tendencia emergente con fuerte momentum.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Email con tendencias emergentes y noticias materiales sobre tus empresas con plan completo.</p>
                     </div>
                     <button
                         onClick={onToggleRadar}
@@ -210,6 +227,47 @@ export default function ThesisSidebar({
                         <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${radarEnabled ? "translate-x-5" : ""}`} />
                     </button>
                 </div>
+                {radarEnabled && (
+                    <div className="mt-3 space-y-2" data-testid="radar-schedule">
+                        <div className="grid grid-cols-2 gap-2">
+                            <label className="block">
+                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Día (UTC)</span>
+                                <select
+                                    value={radarSchedule.weekday}
+                                    onChange={(e) => onUpdateRadarSchedule?.(parseInt(e.target.value, 10), radarSchedule.hour_utc)}
+                                    className="w-full border border-black/30 px-1.5 py-1 text-xs outline-none focus:border-black"
+                                    data-testid="radar-weekday-select"
+                                >
+                                    {WEEKDAYS_ES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="text-[10px] uppercase tracking-wider text-[#4A4A4A]">Hora (UTC)</span>
+                                <select
+                                    value={radarSchedule.hour_utc}
+                                    onChange={(e) => onUpdateRadarSchedule?.(radarSchedule.weekday, parseInt(e.target.value, 10))}
+                                    className="w-full border border-black/30 px-1.5 py-1 text-xs outline-none focus:border-black"
+                                    data-testid="radar-hour-select"
+                                >
+                                    {Array.from({ length: 24 }).map((_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+                                </select>
+                            </label>
+                        </div>
+                        <div className="text-[11px] text-[#4A4A4A] leading-snug" data-testid="radar-next-send">
+                            <div><strong>Próximo envío:</strong> {fmtNextSend(radarSchedule.next_send_at)}</div>
+                            {radarSchedule.last_sent_at && (
+                                <div><strong>Último envío:</strong> {fmtNextSend(radarSchedule.last_sent_at)}</div>
+                            )}
+                        </div>
+                        <button
+                            onClick={onSendRadarNow}
+                            className="text-[11px] uppercase tracking-[0.1em] font-semibold border border-black px-2.5 py-1 hover:bg-black hover:text-white transition-colors"
+                            data-testid="radar-send-now-btn"
+                        >
+                            Enviar ahora
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Weekly data refresh (same logic & effect as the manual Refresh button) */}

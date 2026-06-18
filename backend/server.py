@@ -744,8 +744,18 @@ async def _scheduled_screener_run():
 
 
 async def _scheduled_radar_run():
+    """Hourly tick: dispatch to users whose schedule matches the current UTC
+    weekday/hour. Discovery is reused from cache if fresh (≤6 days)."""
     try:
-        await run_radar(db)
+        now = datetime.now(timezone.utc)
+        cursor = db.users.find(
+            {"radar.enabled": True, "radar.weekday": now.weekday(), "radar.hour_utc": now.hour},
+            {"_id": 0, "user_id": 1},
+        )
+        matching = [u["user_id"] async for u in cursor if u.get("user_id")]
+        if not matching:
+            return  # no one scheduled this hour → cheap no-op
+        await run_radar(db, target_user_ids=matching)
     except Exception as e:
         logger.error(f"scheduled radar crashed: {e}")
 
@@ -772,10 +782,12 @@ async def _startup_scheduler():
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
-        _scheduler.add_job(_scheduled_radar_run, CronTrigger(day_of_week="mon", hour=7, minute=0))
+        # Hourly tick: dispatches the radar to users whose configured (weekday, hour_utc)
+        # match the current UTC moment. Discovery is cached and reused inside run_radar.
+        _scheduler.add_job(_scheduled_radar_run, CronTrigger(minute=0))
         _scheduler.add_job(_scheduled_thesis_refresh_run, CronTrigger(day_of_week="tue", hour=7, minute=0))
         _scheduler.start()
-        logger.info("Schedulers started (screener 06:00 UTC daily, radar Mon 07:00 UTC, thesis-refresh Tue 07:00 UTC).")
+        logger.info("Schedulers started (screener 06:00 UTC daily, radar hourly per-user schedule, thesis-refresh Tue 07:00 UTC).")
 
 
 @app.on_event("shutdown")

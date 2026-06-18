@@ -247,6 +247,101 @@ async def _send_email_resend(to_addr: str, subject: str, html: str) -> bool:
         return False
 
 
+def compute_next_send_at(weekday: int, hour_utc: int) -> str:
+    """Returns ISO-8601 of the next UTC datetime matching (weekday, hour:00).
+    weekday 0=Monday … 6=Sunday. If now is exactly that slot, returns the next
+    week (avoids the "0 days/0 hours" ambiguity in the UI)."""
+    from datetime import timedelta
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    days_ahead = (weekday - now.weekday()) % 7
+    target = now + timedelta(days=days_ahead)
+    target = target.replace(hour=hour_utc)
+    if target <= now:
+        target += timedelta(days=7)
+    return target.isoformat()
+
+
+async def _dispatch_to_users(db, users: List[Dict[str, Any]], new_trends: List[Dict[str, Any]]) -> int:
+    """Send the radar email to the given subset of opted-in users. Reuses ONE
+    company-news-watch call for the union of all their companies."""
+    per_user_companies: Dict[str, List[Dict[str, Any]]] = {}
+    union: Dict[str, Dict[str, Any]] = {}
+    for u in users:
+        uid = u.get("user_id")
+        if not uid:
+            continue
+        cs = await collect_user_companies(db, uid)
+        per_user_companies[uid] = cs
+        for c in cs:
+            union.setdefault(c["ticker"], {"ticker": c["ticker"], "name": c["name"]})
+    news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
+    if union:
+        try:
+            news = await run_company_news_watch(list(union.values()))
+            for it in (news.get("important") or []):
+                news_by_ticker.setdefault(it["ticker"], []).append(it)
+        except Exception as e:
+            logger.error(f"company news watch failed: {e}")
+
+    sent = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for u in users:
+        uid = u.get("user_id")
+        email = u.get("email")
+        if not (uid and email):
+            continue
+        cs = sorted(per_user_companies.get(uid, []), key=lambda c: -(c.get("days_since") or 0))
+        if not new_trends and not cs:
+            continue
+        user_news_keys = {c["ticker"] for c in cs}
+        user_news = {tk: items for tk, items in news_by_ticker.items() if tk in user_news_keys}
+        n_news = sum(len(v) for v in user_news.values())
+        subject_bits = []
+        if new_trends:
+            subject_bits.append(f"{len(new_trends)} tendencia{'s' if len(new_trends) != 1 else ''} emergente{'s' if len(new_trends) != 1 else ''}")
+        if n_news:
+            subject_bits.append(f"{n_news} noticia{'s' if n_news != 1 else ''} de tus empresas")
+        subject = "Radar · " + " · ".join(subject_bits) if subject_bits else "Radar semanal"
+        html = _build_radar_email_html(u.get("name") or "", new_trends, cs, user_news)
+        if await _send_email_resend(email, subject, html):
+            sent += 1
+            # Persist last_sent_at into the user's radar config so the UI can show it.
+            await db.users.update_one(
+                {"user_id": uid},
+                {"$set": {"radar.last_sent_at": now_iso}},
+            )
+    return sent
+
+
+async def run_radar_for_user(db, user_id: str) -> Dict[str, Any]:
+    """One-off send for a single user (manual "Enviar ahora" button). Skips the
+    expensive discovery pipeline and reuses the most recent cached candidates
+    from radar_state (if any). If the cache is empty, sends with no trend
+    section — only the company news + stale-banner sections."""
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1, "email": 1, "name": 1, "radar": 1})
+    if not user or not user.get("email"):
+        return {"sent": 0, "error": "user not found or no email"}
+    state = await db.radar_state.find_one({"id": RADAR_STATE_ID}, {"_id": 0}) or {}
+    seen = set(state.get("seen", []))
+    candidates = state.get("last_candidates") or []
+    # Only show "new" trends if the cache is fresh-ish (≤7 days).
+    last_run_at = state.get("last_run")
+    cache_fresh = False
+    if last_run_at:
+        try:
+            dt = datetime.fromisoformat(last_run_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            cache_fresh = (datetime.now(timezone.utc) - dt).days <= 7
+        except Exception:
+            cache_fresh = False
+    new_trends = []
+    if cache_fresh:
+        new_trends = [c for c in candidates if (c.get("heat") or 0) >= RADAR_HEAT_MIN and _norm(c.get("name")) not in seen]
+    sent = await _dispatch_to_users(db, [user], new_trends)
+    return {"sent": sent, "candidates_cached_fresh": cache_fresh, "new_trends_count": len(new_trends)}
+
+
 async def build_preview_for_user(db, user_id: str, trends: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Render the radar email body for ONE user without sending. Used by the
     admin preview endpoint so the user can eyeball the layout before any cron
@@ -272,83 +367,74 @@ async def build_preview_for_user(db, user_id: str, trends: Optional[List[Dict[st
     }
 
 
-async def run_radar(db) -> Dict[str, Any]:
+async def run_radar(db, target_user_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Full weekly pipeline: discovery + dispatch.
+      • Called by the HOURLY scheduler with `target_user_ids` = users whose
+        (radar.weekday, radar.hour_utc) match the current UTC hour.
+      • Called by /admin/run-radar (manual) with `target_user_ids=None` →
+        sends to ALL opted-in users (legacy QA path).
+    Reuses the cached candidates if the last discovery is fresh (≤6 days) to
+    avoid burning the LLM hourly."""
     summary = {"candidates": 0, "new_trends": 0, "subscribers": 0, "emails_sent": 0}
 
-    # 1. Discovery (blocking pipeline → run in a worker thread).
-    try:
-        result = await asyncio.to_thread(lambda: asyncio.run(run_discover()))
-    except Exception as e:
-        logger.error(f"radar discovery failed: {e}")
-        return {**summary, "error": str(e)}
-    candidates = result.get("candidates", [])
-    summary["candidates"] = len(candidates)
-
-    # 2. New high-heat trends vs. previously seen.
     state = await db.radar_state.find_one({"id": RADAR_STATE_ID}, {"_id": 0}) or {}
     seen = set(state.get("seen", []))
+    last_candidates = state.get("last_candidates") or []
+    last_run = state.get("last_run")
+    fresh = False
+    if last_run:
+        try:
+            dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            fresh = (datetime.now(timezone.utc) - dt).days < 6
+        except Exception:
+            fresh = False
+
+    if fresh:
+        candidates = last_candidates
+    else:
+        try:
+            result = await asyncio.to_thread(lambda: asyncio.run(run_discover()))
+        except Exception as e:
+            logger.error(f"radar discovery failed: {e}")
+            return {**summary, "error": str(e)}
+        candidates = result.get("candidates", [])
+    summary["candidates"] = len(candidates)
+
     new_trends = [c for c in candidates if (c.get("heat") or 0) >= RADAR_HEAT_MIN and _norm(c.get("name")) not in seen]
     summary["new_trends"] = len(new_trends)
 
-    # 3. Per-user company news (union of all opted-in users → single LLM call).
-    cursor = db.users.find({"radar.enabled": True}, {"_id": 0})
+    # Subscribers (filtered by target_user_ids if given by the hourly scheduler).
+    q: Dict[str, Any] = {"radar.enabled": True}
+    if target_user_ids is not None:
+        q["user_id"] = {"$in": list(target_user_ids)}
+    cursor = db.users.find(q, {"_id": 0})
     users = [u async for u in cursor]
     summary["subscribers"] = len(users)
+    if not users:
+        # Still persist seen set if we re-ran discovery.
+        if not fresh:
+            updated_seen = list(seen | {_norm(c.get("name")) for c in candidates})[-SEEN_CAP:]
+            await db.radar_state.update_one(
+                {"id": RADAR_STATE_ID},
+                {"$set": {"id": RADAR_STATE_ID, "seen": updated_seen, "last_candidates": candidates,
+                          "last_run": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+        logger.info(f"Radar run summary: {summary}")
+        return summary
 
-    per_user_companies: Dict[str, List[Dict[str, Any]]] = {}
-    union: Dict[str, Dict[str, Any]] = {}
-    for u in users:
-        uid = u.get("user_id")
-        if not uid:
-            continue
-        cs = await collect_user_companies(db, uid)
-        per_user_companies[uid] = cs
-        for c in cs:
-            union.setdefault(c["ticker"], {"ticker": c["ticker"], "name": c["name"]})
-    news_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
-    if union:
-        try:
-            news = await run_company_news_watch(list(union.values()))
-            for it in (news.get("important") or []):
-                news_by_ticker.setdefault(it["ticker"], []).append(it)
-        except Exception as e:
-            logger.error(f"company news watch failed: {e}")
+    summary["emails_sent"] = await _dispatch_to_users(db, users, new_trends)
 
-    # 4. Send. Email is dispatched if EITHER the user has new trends OR they
-    # have any subscribed companies (so the stale-flow reminder also lands).
-    if new_trends or per_user_companies:
-        for u in users:
-            uid = u.get("user_id")
-            email = u.get("email")
-            if not (uid and email):
-                continue
-            cs = sorted(per_user_companies.get(uid, []), key=lambda c: -(c.get("days_since") or 0))
-            user_news_keys = {c["ticker"] for c in cs}
-            user_news = {tk: items for tk, items in news_by_ticker.items() if tk in user_news_keys}
-            if not new_trends and not cs:
-                continue  # nothing to say to this user
-            n_news = sum(len(v) for v in user_news.values())
-            subject_bits = []
-            if new_trends:
-                subject_bits.append(f"{len(new_trends)} tendencia{'s' if len(new_trends) != 1 else ''} emergente{'s' if len(new_trends) != 1 else ''}")
-            if n_news:
-                subject_bits.append(f"{n_news} noticia{'s' if n_news != 1 else ''} de tus empresas")
-            subject = "Radar · " + " · ".join(subject_bits) if subject_bits else "Radar semanal"
-            html = _build_radar_email_html(u.get("name") or "", new_trends, cs, user_news)
-            if await _send_email_resend(email, subject, html):
-                summary["emails_sent"] += 1
-
-    # 5. Persist the updated seen set (cap size).
-    updated_seen = list(seen | {_norm(c.get("name")) for c in candidates})[-SEEN_CAP:]
-    await db.radar_state.update_one(
-        {"id": RADAR_STATE_ID},
-        {"$set": {
-            "id": RADAR_STATE_ID,
-            "seen": updated_seen,
-            "last_candidates": candidates,
-            "last_run": datetime.now(timezone.utc).isoformat(),
-        }},
-        upsert=True,
-    )
+    # Persist the updated seen set ONLY when we ran a fresh discovery.
+    if not fresh:
+        updated_seen = list(seen | {_norm(c.get("name")) for c in candidates})[-SEEN_CAP:]
+        await db.radar_state.update_one(
+            {"id": RADAR_STATE_ID},
+            {"$set": {"id": RADAR_STATE_ID, "seen": updated_seen, "last_candidates": candidates,
+                      "last_run": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
     logger.info(f"Radar run summary: {summary}")
     return summary

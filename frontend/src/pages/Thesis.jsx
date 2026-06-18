@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import {
     thesisGenerate, thesisPollJob, thesisExplore, thesisAutoTrend, thesisSaveTendencia,
     thesisGenerateContra, thesisCreateFolder, thesisDeleteFolder, thesisAssignFolder,
-    thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisDashboard,
+    thesisDelete, thesisRadarStatus, thesisRadarSubscribe, thesisRadarSendNow, thesisDashboard,
     thesisRefreshStatus, thesisRefreshSubscribe, thesisRefreshRun, thesisRestore, thesisGet, thesisGeneratePlan,
 } from "@/lib/api";
 import ThesisResult from "@/components/thesis/ThesisResult";
@@ -37,6 +37,7 @@ export default function Thesis() {
     const [dash, setDash] = useState(null);
     const [newFolder, setNewFolder] = useState("");
     const [radarEnabled, setRadarEnabled] = useState(false);
+    const [radarSchedule, setRadarSchedule] = useState({ weekday: 0, hour_utc: 7, last_sent_at: null, next_send_at: null });
     const [refreshEnabled, setRefreshEnabled] = useState(false);
     const [pendingDup, setPendingDup] = useState(null);
     const [overwriteTendenciaId, setOverwriteTendenciaId] = useState(null);  // armed by Reescribir on a tendencia match → saveTendencia replaces in place
@@ -118,6 +119,12 @@ export default function Thesis() {
             const [d, r, rf] = await Promise.all([thesisDashboard(), thesisRadarStatus(), thesisRefreshStatus()]);
             setDash(d);
             setRadarEnabled(!!r.enabled);
+            setRadarSchedule({
+                weekday: r.weekday ?? 0,
+                hour_utc: r.hour_utc ?? 7,
+                last_sent_at: r.last_sent_at || null,
+                next_send_at: r.next_send_at || null,
+            });
             setRefreshEnabled(!!rf.enabled);
         } catch { /* ignore */ }
     }, [user]);
@@ -173,11 +180,40 @@ export default function Thesis() {
         const next = !radarEnabled;
         setRadarEnabled(next);
         try {
-            await thesisRadarSubscribe(next);
+            const r = await thesisRadarSubscribe({ enabled: next });
+            setRadarSchedule({
+                weekday: r.weekday ?? 0,
+                hour_utc: r.hour_utc ?? 7,
+                last_sent_at: r.last_sent_at || null,
+                next_send_at: r.next_send_at || null,
+            });
             toast.success(next ? "Radar semanal activado" : "Radar semanal desactivado");
         } catch {
             setRadarEnabled(!next);
             toast.error("No se pudo actualizar el radar");
+        }
+    };
+
+    const updateRadarSchedule = async (weekday, hour_utc) => {
+        try {
+            const r = await thesisRadarSubscribe({ enabled: radarEnabled, weekday, hour_utc });
+            setRadarSchedule({
+                weekday: r.weekday ?? weekday,
+                hour_utc: r.hour_utc ?? hour_utc,
+                last_sent_at: r.last_sent_at || null,
+                next_send_at: r.next_send_at || null,
+            });
+        } catch {
+            toast.error("No se pudo actualizar el horario del radar");
+        }
+    };
+
+    const sendRadarNow = async () => {
+        try {
+            await thesisRadarSendNow();
+            toast.success("Envío manual en curso · llegará en 1-2 minutos");
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo disparar el envío");
         }
     };
 
@@ -806,6 +842,9 @@ export default function Thesis() {
                             onRemoveThesis={removeThesis}
                             radarEnabled={radarEnabled}
                             onToggleRadar={toggleRadar}
+                            radarSchedule={radarSchedule}
+                            onUpdateRadarSchedule={updateRadarSchedule}
+                            onSendRadarNow={sendRadarNow}
                             refreshEnabled={refreshEnabled}
                             onToggleRefresh={toggleRefresh}
                         />
