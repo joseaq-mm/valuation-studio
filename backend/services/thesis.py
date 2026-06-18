@@ -1300,57 +1300,6 @@ async def match_company_to_theses(company: str, company_trends: list, existing: 
     return {"to_add": to_add, "to_create": to_create}
 
 
-EVALUATOR_SYS = (
-    "Eres un analista de equity research senior. Evalúas una empresa cotizada DENTRO de una "
-    "tendencia concreta y su cadena de valor: su rol, si es líder o disruptor, sus scores "
-    "cualitativos (0-100, mayor = mejor), y su EXPOSICIÓN a la tendencia (0-100: qué % del valor "
-    "de la empresa depende de esta tendencia). El score global debe ponderar la exposición "
-    "(a menor exposición, menor score global). Sé exigente. "
-    "Responde SIEMPRE en español y SOLO con un objeto JSON válido."
-)
-
-
-async def evaluate_company_for_trend(trend_title: str, summary: str, value_chain: list,
-                                     company_name: str, company_ticker: str) -> dict:
-    stages = "; ".join(s.get("stage") for s in (value_chain or []) if s.get("stage")) or "(sin definir)"
-    user = (
-        f"TENDENCIA: {trend_title}\nCONTEXTO: {summary}\nESLABONES DE LA CADENA DE VALOR: {stages}\n\n"
-        f"EMPRESA A EVALUAR: {company_name} ({company_ticker})\n\n"
-        "Evalúa la empresa dentro de esta tendencia. Devuelve un JSON con esta forma EXACTA:\n"
-        "{\n"
-        '  "name": "Nombre", "ticker": "TICKER",\n'
-        '  "value_chain_role": "uno de los eslabones (o el más cercano)",\n'
-        '  "category": "leader|competitor|disruptor",\n'
-        '  "scores": {"competitive_position": 0-100, "sector_momentum": 0-100, "management_quality": 0-100, "financial_resilience": 0-100},\n'
-        '  "trend_exposure": 0-100,\n'
-        '  "overall_score": 0-100,\n'
-        '  "thesis": "2-3 frases sobre su encaje en la tendencia",\n'
-        '  "key_risks": "1-2 riesgos clave"\n'
-        "}\n"
-        "Recuerda: 'overall_score' debe ponderar 'trend_exposure' (a menor exposición, menor score global). "
-        "Usa 'disruptor' SOLO si supone un cambio de paradigma frente al líder, una apuesta arriesgada que "
-        "amenaza al líder, o un enfoque radicalmente distinto con evidencias de ser superior; si no, usa 'competitor'."
-    )
-    raw = await _llm(*_syn_model(), f"thesis-eval-{datetime.now(timezone.utc).timestamp()}",
-                     EVALUATOR_SYS, user)
-    d = _extract_json(raw)
-    cat = (d.get("category") or "competitor").strip().lower()
-    if cat not in ("leader", "competitor", "disruptor"):
-        cat = "competitor"
-    return {
-        "name": d.get("name") or company_name,
-        "ticker": (d.get("ticker") or company_ticker).upper().strip(),
-        "value_chain_role": d.get("value_chain_role"),
-        "category": cat,
-        "scores": {dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS},
-        "trend_exposure": _clamp_score(d.get("trend_exposure")),
-        "overall_score": _mean_score({dim: _clamp_score((d.get("scores") or {}).get(dim)) for dim in SCORE_DIMENSIONS}),
-        "thesis": d.get("thesis"),
-        "key_risks": d.get("key_risks"),
-        "added_manually": True,
-    }
-
-
 # ---------------- TAM hierarchy: detect a parent (superset) thesis ----------------
 
 PARENT_DETECTOR_SYS = (

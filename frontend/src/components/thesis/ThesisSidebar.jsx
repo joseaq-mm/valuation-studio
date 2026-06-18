@@ -217,7 +217,7 @@ export default function ThesisSidebar({
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="overline text-black flex items-center gap-1"><RefreshCw size={12} /> Refresco semanal</div>
-                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza automáticamente precios, fundamentales y TAM de tus empresas y tesis una vez por semana, contando desde tu último refresco (manual o semanal). Mismo efecto que el botón de refrescar.</p>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1 leading-snug">Actualiza automáticamente los <strong>fundamentales y precios</strong> de tus empresas (revenue, FCF, deuda…) y recalcula los TAM Scores con esos números frescos. Una vez por semana, contando desde tu último refresco (manual o semanal). Lo <strong>cualitativo</strong> (overall_score, TAM global de la tendencia, narrativa) NO se toca — eso solo cambia al regenerar la tesis o la empresa desde el buscador.</p>
                     </div>
                     <button
                         onClick={onToggleRefresh}

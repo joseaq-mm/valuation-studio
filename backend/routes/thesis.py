@@ -18,7 +18,7 @@ from services.thesis import (
     gather_sources, run_trend_thesis, run_company_thesis,
     run_trend_contra, run_company_contra, run_discover,
     run_trend_explore, run_auto_trend, run_costed,
-    match_company_to_theses, evaluate_company_for_trend, compute_tam_score,
+    match_company_to_theses, compute_tam_score,
     stage_tam_for_role, effective_stage_tam,
     detect_parent_thesis, aggregate_folder_tam,
     MODEL_PRESETS, get_model_preset, set_model_preset,
@@ -191,15 +191,6 @@ def _match_sync(company: str, company_trends: list, existing: list) -> dict:
     return asyncio.run(match_company_to_theses(company, company_trends, existing))
 
 
-def _eval_company_sync(trend_doc: dict, ticker: str, name: str) -> dict:
-    return asyncio.run(evaluate_company_for_trend(
-        trend_doc.get("title") or trend_doc.get("query") or "",
-        trend_doc.get("summary") or "",
-        trend_doc.get("value_chain") or [],
-        name, ticker,
-    ))
-
-
 def _detect_parent_sync(new_title: str, new_summary: str, new_tam, existing: list) -> dict:
     return asyncio.run(detect_parent_thesis(new_title, new_summary, new_tam, existing))
 
@@ -238,17 +229,6 @@ class RestoreRequest(BaseModel):
     folders: Optional[List[Dict[str, Any]]] = None
     theses: Optional[List[Dict[str, Any]]] = None
     reassign: Optional[List[Dict[str, Any]]] = None  # [{id, folder_id}]
-
-
-class AddCompanyRequest(BaseModel):
-    ticker: str
-    name: Optional[str] = None
-    entry: Optional[Dict[str, Any]] = None  # precomputed evaluation (from /evaluate-company) → skip LLM
-
-
-class EvaluateCompanyRequest(BaseModel):
-    ticker: str
-    name: Optional[str] = None
 
 
 class RadarSubscribeRequest(BaseModel):
@@ -754,75 +734,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             logger.error(f"auto-trend failed: {e}")
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error generando la tendencia automática: {e}"}})
-
-    async def _run_addcompany_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str, precomputed: Optional[dict] = None):
-        try:
-            doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id, "type": "trend"}, {"_id": 0})
-            if not doc:
-                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
-                return
-            # Reuse the score preview computed by /evaluate-company (no second LLM call).
-            if precomputed and (precomputed.get("ticker") or "").upper().strip() == ticker:
-                entry = precomputed
-            else:
-                entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
-            tk = (entry.get("ticker") or "").upper().strip()
-            companies = doc.get("companies") or []
-            companies = [c for c in companies if (c.get("ticker") or "").upper() != tk]  # de-dupe
-            companies.append(entry)
-            await db.theses.update_one({"id": thesis_id, "user_id": user_id}, {"$set": {"companies": companies}})
-            await recompute_and_store_tam(db, user_id, [thesis_id])
-            await db.qual_snapshots.update_one(
-                {"user_id": user_id, "ticker": tk},
-                {"$set": {
-                    "user_id": user_id, "ticker": tk, "name": entry.get("name"),
-                    "trend": doc.get("title"), "value_chain_role": entry.get("value_chain_role"),
-                    "scores": entry.get("scores"), "trend_exposure": entry.get("trend_exposure"),
-                    "overall_score": entry.get("overall_score"),
-                    "thesis": entry.get("thesis"), "key_risks": entry.get("key_risks"),
-                    "thesis_id": thesis_id, "updated_at": datetime.now(timezone.utc).isoformat(),
-                }},
-                upsert=True,
-            )
-            await db.thesis_jobs.update_one(
-                {"id": job_id},
-                {"$set": {"status": "done", "result": {"thesis_id": thesis_id, "thesis_title": doc.get("title"), "company": entry},
-                          "updated_at": datetime.now(timezone.utc).isoformat()}},
-            )
-        except Exception as e:
-            logger.error(f"add-company failed ({thesis_id}/{ticker}): {e}")
-            await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error añadiendo la empresa: {e}"}})
-
-    async def _run_eval_company_job(job_id: str, thesis_id: str, user_id: str, ticker: str, name: str):
-        """Score PREVIEW: evaluate the company inside the trend (LLM) WITHOUT persisting,
-        returning both the 'Score global tendencia' (overall_score) and the TAM Score so
-        the user can decide before confirming the add."""
-        try:
-            doc = await db.theses.find_one({"id": thesis_id, "user_id": user_id, "type": "trend"}, {"_id": 0})
-            if not doc:
-                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Tesis de tendencia no encontrada"}})
-                return
-            entry = await asyncio.to_thread(_eval_company_sync, doc, ticker, name or ticker)
-            stage_tam = effective_stage_tam(entry, doc.get("value_chain"), (doc.get("tam") or {}).get("global_busd"))
-            rev_busd, currency = await _projected_revenue_usd_busd(ticker)
-            tam_score = compute_tam_score(entry.get("overall_score"), stage_tam, rev_busd)
-            await db.thesis_jobs.update_one(
-                {"id": job_id},
-                {"$set": {"status": "done", "result": {
-                    "entry": entry,
-                    "overall_score": entry.get("overall_score"),
-                    "tam_score": tam_score,
-                    "stage_tam_busd": stage_tam,
-                    "projected_revenue_busd": round(rev_busd, 2) if rev_busd else None,
-                    "currency": currency,
-                    "thesis_title": doc.get("title"),
-                }, "updated_at": datetime.now(timezone.utc).isoformat()}},
-            )
-        except Exception as e:
-            logger.error(f"evaluate-company failed ({thesis_id}/{ticker}): {e}")
-            await db.thesis_jobs.update_one(
-                {"id": job_id}, {"$set": {"status": "error", "error": f"Error calculando el score: {e}"}})
 
     async def _enqueue_generation(uid, kind, subject, *, matched_thesis_id=None,
                                   overwrite_thesis_id=None, from_company=None, core=None,
@@ -1880,107 +1791,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"thesis_merges": merges}})
         await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
-
-    @router.post("/{thesis_id}/link-suggestions")
-    async def link_suggestions(thesis_id: str, refresh: bool = False, user: Dict[str, Any] = Depends(auth_required)):
-        doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0})
-        if not doc:
-            raise HTTPException(status_code=404, detail="Tesis de empresa no encontrada")
-        company = (doc.get("company") or {}).get("name") or doc.get("title") or doc.get("query")
-        company_trends = [t.get("name") for t in (doc.get("trends") or []) if t.get("name")]
-        if not company_trends:
-            return {"to_add": [], "to_create": []}
-        existing = await db.theses.find(
-            {"user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1, "title": 1}
-        ).to_list(length=300)
-        # Cache keyed on the set of existing trend theses → recompute only when it
-        # changes (avoids repeating the LLM matcher cost on every page load/refresh).
-        sig = sorted([e.get("id") for e in existing if e.get("id")])
-        cached = doc.get("link_matches")
-        if not refresh and cached and cached.get("sig") == sig and cached.get("v") == 2:
-            result = {"to_add": list(cached.get("to_add", [])), "to_create": cached.get("to_create", [])}
-        else:
-            if not existing:
-                result = {"to_add": [], "to_create": [{"trend_name": tn, "why": ""} for tn in company_trends]}
-            else:
-                try:
-                    result = await asyncio.to_thread(_match_sync, company, company_trends, existing)
-                except Exception as e:
-                    logger.error(f"link-suggestions failed ({thesis_id}): {e}")
-                    raise HTTPException(status_code=502, detail="No se pudieron calcular las sugerencias.")
-            await db.theses.update_one(
-                {"id": thesis_id, "user_id": user["user_id"]},
-                {"$set": {"link_matches": {
-                    "v": 2,
-                    "sig": sig,
-                    "to_add": result.get("to_add", []),
-                    "to_create": result.get("to_create", []),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }}},
-            )
-
-        # Flag whether the company is ALREADY "covered" by each matched thesis — i.e.
-        # present in that thesis OR in any sibling thesis generated "de todas formas"
-        # from it (trend_match_id). Computed fresh (membership changes over time). The
-        # UI uses this to show either the "add to thesis" button or an "already there"
-        # notice, guaranteeing the company lives in only ONE thesis per trend.
-        to_add = result.get("to_add", [])
-        ticker = ((doc.get("company") or {}).get("ticker") or "").upper().strip()
-        ids = [a.get("thesis_id") for a in to_add if a.get("thesis_id")]
-        membership: Dict[str, bool] = {}
-        if ticker and ids:
-            covered_docs = await db.theses.find(
-                {"user_id": user["user_id"], "$or": [
-                    {"id": {"$in": ids}},
-                    {"trend_match_id": {"$in": ids}},
-                ]},
-                {"_id": 0, "id": 1, "trend_match_id": 1, "companies": 1},
-            ).to_list(length=400)
-            covered: Dict[str, set] = {i: set() for i in ids}
-            for td in covered_docs:
-                tickers = {(c.get("ticker") or "").upper() for c in (td.get("companies") or [])}
-                key = td.get("id") if td.get("id") in covered else td.get("trend_match_id")
-                if key in covered:
-                    covered[key].update(tickers)
-            for i in ids:
-                membership[i] = ticker in covered.get(i, set())
-        for a in to_add:
-            a["already_in"] = bool(membership.get(a.get("thesis_id"), False))
-        return result
-
-    @router.post("/{thesis_id}/evaluate-company")
-    async def evaluate_company(thesis_id: str, req: EvaluateCompanyRequest, user: Dict[str, Any] = Depends(auth_required)):
-        """Score preview (job): evaluates the company in this trend without saving it.
-        Returns overall_score + TAM Score so the UI can show both before confirming."""
-        ticker = (req.ticker or "").upper().strip()
-        if not ticker:
-            raise HTTPException(status_code=400, detail="ticker requerido")
-        exists = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1})
-        if not exists:
-            raise HTTPException(status_code=404, detail="Tesis de tendencia no encontrada")
-        job_id = f"job_{uuid.uuid4().hex[:14]}"
-        await db.thesis_jobs.insert_one({
-            "id": job_id, "user_id": user["user_id"], "kind": "evaluate_company",
-            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        _spawn(_run_eval_company_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker))
-        return {"job_id": job_id}
-
-    @router.post("/{thesis_id}/add-company")
-    async def add_company(thesis_id: str, req: AddCompanyRequest, user: Dict[str, Any] = Depends(auth_required)):
-        ticker = (req.ticker or "").upper().strip()
-        if not ticker:
-            raise HTTPException(status_code=400, detail="ticker requerido")
-        exists = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"], "type": "trend"}, {"_id": 0, "id": 1})
-        if not exists:
-            raise HTTPException(status_code=404, detail="Tesis de tendencia no encontrada")
-        job_id = f"job_{uuid.uuid4().hex[:14]}"
-        await db.thesis_jobs.insert_one({
-            "id": job_id, "user_id": user["user_id"], "kind": "add_company",
-            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        _spawn(_run_addcompany_job(job_id, thesis_id, user["user_id"], ticker, req.name or ticker, req.entry))
-        return {"job_id": job_id}
 
     @router.get("/radar/status")
     async def radar_status(user: Dict[str, Any] = Depends(auth_required)):

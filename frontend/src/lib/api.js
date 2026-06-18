@@ -146,14 +146,6 @@ export const thesisCompanyProfile = (ticker, fromCompany = null) =>
         params: fromCompany ? { from_company: fromCompany } : undefined,
     }).then(r => r.data);
 
-// F5: cross-linking company ↔ existing theses
-export const thesisLinkSuggestions = (id) =>
-    api.post(`/thesis/${id}/link-suggestions`).then(r => r.data);
-export const thesisAddCompany = (id, ticker, name, entry = null) =>
-    api.post(`/thesis/${id}/add-company`, { ticker, name, entry }).then(r => startAndPoll(r.data));
-export const thesisEvaluateCompany = (id, ticker, name) =>
-    api.post(`/thesis/${id}/evaluate-company`, { ticker, name }).then(r => startAndPoll(r.data));
-
 // Weekly trend radar (email)
 export const thesisRadarStatus = () => api.get(`/thesis/radar/status`).then(r => r.data);
 export const thesisRadarSubscribe = (enabled) =>

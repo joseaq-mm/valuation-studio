@@ -4,13 +4,16 @@ import { toast } from "sonner";
 import HoverTip from "@/components/HoverTip";
 
 /** Shared "Refrescar" control used on the Tesis dashboard, a thesis page and a
- *  company page. Pressing it re-fetches fundamentals and recomputes the TAM Scores
- *  on the spot; fresh data travels both ways (company ↔ theses) because they share
- *  the same cache. The hover tooltip explains exactly what a refresh does. */
+ *  company page. Pressing it re-fetches fundamentals (Yahoo) and recomputes the TAM
+ *  Scores with the fresh numbers; the data travels both ways (company ↔ theses)
+ *  because they share the same cache. It only updates QUANTITATIVE data — the
+ *  qualitative scores (overall_score, value-chain TAM) are frozen at generation
+ *  time and only change when you regenerate the thesis from the search box. */
 export const REFRESH_LEGEND =
-    "Refrescar: actualiza precios, fundamentales y TAM de tus empresas y tesis (de cada eslabón y empresa). " +
-    "Al pulsar aquí se hace al instante; los datos frescos viajan entre la empresa y sus tesis. " +
-    "Automáticamente se repite cada semana desde tu último refresco.";
+    "Refrescar: actualiza fundamentales (revenue, FCF, deuda…) desde Yahoo y recalcula los TAM Scores. " +
+    "Al pulsar aquí se hace al instante; los datos viajan entre la empresa y sus tesis. " +
+    "Automáticamente se repite cada semana desde tu último refresco. " +
+    "Lo CUALITATIVO (scores cualitativos, narrativa, TAM global de la tendencia) NO se actualiza aquí.";
 
 export default function RefreshButton({ onRefresh, label, testid = "refresh-btn", className = "" }) {
     const [busy, setBusy] = useState(false);

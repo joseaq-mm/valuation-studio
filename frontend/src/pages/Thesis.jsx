@@ -48,21 +48,57 @@ export default function Thesis() {
     const [queueAsk, setQueueAsk] = useState(null);      // { active, retry } when a generation is already running
 
     const folders = dash?.folders || [];
-    const _norm = (s) => (s || "").trim().toLowerCase();
+    const _norm = (s) => (s || "").trim().toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");   // strip accents for fuzzy
+
+    // Sørensen-Dice similarity over character bigrams. Returns 0..1.
+    // Used by the dedup-warning to flag "you already have something very similar"
+    // when the user re-types a saved title in the trend search box.
+    const _bigrams = (s) => {
+        const set = new Set();
+        for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+        return set;
+    };
+    const similarity = (a, b) => {
+        const na = _norm(a); const nb = _norm(b);
+        if (!na || !nb) return 0;
+        if (na === nb) return 1;
+        if (na.length < 2 || nb.length < 2) return 0;
+        const ba = _bigrams(na); const bb = _bigrams(nb);
+        let inter = 0;
+        for (const x of ba) if (bb.has(x)) inter++;
+        return (2 * inter) / (ba.size + bb.size);
+    };
+    const SIM_THRESHOLD = 0.80;
+
+    // Strict ticker validator. Accepts plain letters (NVDA), numeric Asian codes
+    // (7203.T, 9988.HK), exchange suffixes (.TO, .HK, .L…) and class suffix (BRK.B).
+    // Empty and free-text inputs return false so the company search box can refuse them.
+    const isValidTicker = (s) => /^[A-Z0-9]{1,6}(\.[A-Z]{1,3})?(-[A-Z])?$/.test((s || "").trim().toUpperCase());
 
     const findDup = (type, s) => {
         if (!dash) return null;
-        const n = _norm(s);
         if (type === "trend") {
-            return (dash.trends || []).find((t) => {
-                const tt = _norm(t.title);
-                if (!tt) return false;
-                if (tt === n) return true;
-                return n.length >= 6 && (tt.includes(n) || n.includes(tt));
-            });
+            // Best fuzzy match across trend titles AND company-thesis titles.
+            // We return one of two shapes: { kind: "trend" | "company", existing, score }.
+            let best = null;
+            for (const t of (dash.trends || [])) {
+                const score = similarity(s, t.title);
+                if (score >= SIM_THRESHOLD && (!best || score > best.score)) {
+                    best = { kind: "trend", existing: t, score };
+                }
+            }
+            for (const c of (dash.company_theses || [])) {
+                const score = similarity(s, c.title);
+                if (score >= SIM_THRESHOLD && (!best || score > best.score)) {
+                    best = { kind: "company", existing: c, score };
+                }
+            }
+            return best ? { ...best.existing, _dup_kind: best.kind } : null;
         }
+        // Company search: exact-ticker match only (the box rejects free text upstream).
         const up = (s || "").trim().toUpperCase();
-        return (dash.company_theses || []).find((c) => (c.ticker || "").toUpperCase() === up || _norm(c.title) === n);
+        return (dash.company_theses || []).find((c) => (c.ticker || "").toUpperCase() === up);
     };
 
     const reload = useCallback(async () => {
@@ -150,15 +186,26 @@ export default function Thesis() {
     const generate = async (overrideType, overrideSubject, matchedThesisId = null, opts = {}) => {
         const t = overrideType || "company";
         const s = (overrideSubject ?? subject).trim();
-        if (!s) { toast.error("Escribe una empresa"); return; }
+        if (!s) { toast.error(t === "company" ? "Escribe un ticker" : "Escribe una tendencia"); return; }
+        // Hard gate: company mode accepts ONLY valid tickers — never free text.
+        if (t === "company" && !opts.force && !isValidTicker(s)) {
+            toast.error("Introduce un ticker válido (p.ej. HIMS, LLY, BRK.B). Para buscar por nombre o concepto usa el modo Tendencia.");
+            return;
+        }
         // Dedup guard: if a saved thesis already matches, warn before rewriting.
         if (!opts.force && !matchedThesisId) {
             const dup = findDup(t, s);
             if (dup) {
                 if (pendingDup && pendingDup.type === t && pendingDup.subject === s) {
-                    opts = { ...opts, overwriteId: dup.id };
+                    // Second confirm pass: only set overwriteId when the dup is the
+                    // same KIND as what we're generating (trend→trend or company→company).
+                    // A cross-match (trend search hitting a company thesis) must NEVER
+                    // overwrite the company plan — we generate the new trend alongside it.
+                    if (!dup._dup_kind || dup._dup_kind === t) {
+                        opts = { ...opts, overwriteId: dup.id };
+                    }
                 } else {
-                    setPendingDup({ type: t, subject: s, existing: dup });
+                    setPendingDup({ type: t, subject: s, existing: dup, kind: dup._dup_kind || t });
                     return;
                 }
             }
@@ -466,7 +513,7 @@ export default function Thesis() {
                                         className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                     <Redo2 size={16} />
                                 </button>
-                                <button onClick={manualRefresh} disabled={refreshing} title="Refrescar: actualiza precios, fundamentales y TAM de todas tus empresas y tesis al instante (los datos viajan entre empresa y tesis)." data-testid="refresh-data-btn"
+                                <button onClick={manualRefresh} disabled={refreshing} title="Refrescar: vuelve a leer los fundamentales de Yahoo (revenue, FCF…) y recalcula los TAM Scores con los números frescos. No toca los scores cualitativos." data-testid="refresh-data-btn"
                                         className="border border-black p-2 hover:bg-[#F5E4D4] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                     <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
                                 </button>
@@ -516,15 +563,20 @@ export default function Thesis() {
                                     <div className="flex-1">
                                         <TickerAutocomplete
                                             value={subject}
-                                            onChange={setSubject}
-                                            onPick={(r) => setSubject(r.symbol)}
+                                            onChange={(v) => setSubject((v || "").toUpperCase())}
+                                            onPick={(r) => setSubject((r.symbol || "").toUpperCase())}
                                             onEnter={() => !loading && generate()}
-                                            placeholder="Ej.: NVDA, ASML, Inditex…"
+                                            placeholder="Ej.: NVDA, ASML, BRK.B…"
                                             testid="thesis-input"
                                             disabled={loading}
                                         />
+                                        {subject.trim() && !isValidTicker(subject) && (
+                                            <div className="mt-1 text-[11px] text-[#B32A22]" data-testid="thesis-input-hint">
+                                                Solo tickers (p.ej. NVDA, BRK.B). Para buscar por nombre o concepto usa <strong>Tendencias → Empresas</strong>.
+                                            </div>
+                                        )}
                                     </div>
-                                    <button onClick={() => generate()} disabled={busy} className="btn-primary flex items-center justify-center gap-2 !px-5" data-testid="thesis-generate-btn">
+                                    <button onClick={() => generate()} disabled={busy || !isValidTicker(subject)} className="btn-primary flex items-center justify-center gap-2 !px-5 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="thesis-generate-btn">
                                         {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                                         {loading ? (genStatus === "queued" ? "En cola…" : "Generando…") : "Generar tesis"}
                                     </button>
@@ -571,21 +623,34 @@ export default function Thesis() {
                         )}
                     </div>
 
-                    {/* Dedup / overwrite warning (company): right below the search box. */}
-                    {pendingDup && (
+                    {/* Dedup / overwrite warning: same KIND → can rewrite; cross-match
+                        (trend search → company thesis) → only "Generar igualmente". */}
+                    {pendingDup && (() => {
+                        const isCross = pendingDup.kind && pendingDup.kind !== pendingDup.type;
+                        return (
                         <div className="border border-[#B8860B] bg-[#FBF3E0] p-4 mb-6" data-testid="dedup-warning">
                             <div className="text-sm text-[#7a5a10] leading-relaxed">
-                                Ya tienes esta {pendingDup.type === "trend" ? "tesis" : "empresa"} guardada:{" "}
-                                <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
-                                El <strong>Thesis Engine la refresca automáticamente cada semana</strong>, así que normalmente no necesitas regenerarla. Si continúas, se <strong>reescribirá desde cero</strong> el resultado actual {pendingDup.type === "trend" ? "" : <>y se <strong>borrarán las tesis generadas previamente a partir de esta empresa</strong></>}.
+                                {isCross ? (
+                                    <>
+                                        Ya tienes una <strong>tesis de empresa</strong> con un nombre parecido:{" "}
+                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                        Si continúas, se generará una <strong>tendencia nueva</strong> con este texto; la tesis de empresa <strong>NO se toca</strong> (pueden coexistir).
+                                    </>
+                                ) : (
+                                    <>
+                                        Ya tienes esta {pendingDup.type === "trend" ? "tendencia" : "empresa"} guardada:{" "}
+                                        <Link to={`/thesis/${pendingDup.existing.id}`} className="font-bold underline" data-testid="dedup-existing-link">{pendingDup.existing.title}</Link>.{" "}
+                                        Si continúas, se <strong>reescribirá desde cero</strong> el contenido cualitativo{pendingDup.type === "company" && <> y se <strong>borrarán las tesis de tendencia generadas previamente desde este plan</strong></>}. La parte cuantitativa (fundamentales, TAM Score) se refresca aparte con el botón <em>Refrescar</em>; <strong>regenerar es lo único que actualiza lo cualitativo</strong>.
+                                    </>
+                                )}
                             </div>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                                 <button
-                                    onClick={() => generate(pendingDup.type, pendingDup.subject, null, { force: true, overwriteId: pendingDup.existing.id })}
+                                    onClick={() => generate(pendingDup.type, pendingDup.subject, null, isCross ? { force: true } : { force: true, overwriteId: pendingDup.existing.id })}
                                     className="text-xs uppercase tracking-[0.1em] font-semibold bg-[#B8860B] text-white px-3 py-1.5 hover:bg-[#946c09] transition-colors"
                                     data-testid="dedup-rewrite-btn"
                                 >
-                                    Reescribir igualmente
+                                    {isCross ? "Generar tendencia igualmente" : "Reescribir igualmente"}
                                 </button>
                                 <Link to={`/thesis/${pendingDup.existing.id}`} className="text-xs uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-3 py-1.5 hover:bg-[#B8860B] hover:text-white transition-colors" data-testid="dedup-open-btn">
                                     Abrir la existente
@@ -595,7 +660,8 @@ export default function Thesis() {
                                 </button>
                             </div>
                         </div>
-                    )}
+                        );
+                    })()}
 
                     {/* Megatendencias management */}
                     {user && (

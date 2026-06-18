@@ -398,3 +398,44 @@ Tras el fix:
 - `/company/LLY` profile auto → 1.77 (plan) + 4 filas informativas con sus scores ✅
 
 Tests pytest: 63/63 ✅. Lint Python+JS ✅. Backfill anterior (25 tesis con `source_company_thesis_id`) sigue siendo el ancla del nuevo filtro.
+
+## CHANGELOG — Limpieza, validación ticker y fuzzy 80% (Feb 2026)
+Tras conversación sobre tiers y refresco cualitativo, el usuario pidió simplificar el flujo:
+
+### Punto 3 · Borrar trío muerto (link-suggestions / add-company / evaluate-company)
+Era código backend completo (3 rutas + 2 job runners + 2 modelos de request + 1 servicio LLM `evaluate_company_for_trend`) orbitando alrededor del componente `CompanyThesisLinker.jsx`, que nunca se montaba en ninguna página. Borrado:
+- Backend: rutas `POST /thesis/{id}/{link-suggestions, add-company, evaluate-company}`, helpers `_eval_company_sync`, `_run_addcompany_job`, `_run_eval_company_job`, modelos `AddCompanyRequest` / `EvaluateCompanyRequest`, import de `evaluate_company_for_trend`.
+- Servicio `services/thesis.py`: borrada función `evaluate_company_for_trend` y prompt `EVALUATOR_SYS`.
+- Frontend: `CompanyThesisLinker.jsx` (eliminado del repo), `thesisLinkSuggestions`/`thesisAddCompany`/`thesisEvaluateCompany` borrados de `api.js`.
+- Decisión del usuario: para actualizar cualitativamente una empresa hoy → borrar/sobreescribir desde el buscador. No añadimos botón granular de "re-evaluar".
+
+### Punto 2 · Copys engañosos sobre el refresco
+Fundamentals/precios SE refrescan automáticamente (cron + botón). El cualitativo (overall_score, value_chain TAM, narrativa, TAM global de la tendencia) NO se actualiza nunca solo. Reescritos los textos en:
+- `RefreshButton.jsx` (`REFRESH_LEGEND`): ahora dice explícitamente "actualiza fundamentales y recalcula TAM Scores; lo CUALITATIVO no se actualiza aquí".
+- `ThesisSidebar.jsx`: copy del toggle "Refresco semanal" reescrito en la misma línea.
+- `Thesis.jsx` línea 580 (`dedup-warning`): borrada la falsedad "El Thesis Engine la refresca automáticamente cada semana"; texto nuevo aclara que regenerar es lo único que actualiza lo cualitativo, mientras el botón Refrescar sólo toca lo cuantitativo.
+- `Thesis.jsx` línea 469 (tooltip botón Refrescar dashboard): aclarado.
+
+### Punto 4a · Validación ticker-only en buscador de empresa
+Regex `^[A-Z0-9]{1,6}(\.[A-Z]{1,3})?(-[A-Z])?$` (acepta NVDA, BRK.B, 7203.T, 9988.HK, VOD.L; rechaza "obesidad", "APPLE INC", etc.). UX:
+- El input se auto-uppercases mientras tecleas.
+- Si el contenido no matchea ticker, aparece un hint rojo inline (`data-testid="thesis-input-hint"`) "Solo tickers. Para buscar por nombre/concepto usa Tendencias → Empresas".
+- El botón "Generar tesis" queda deshabilitado (50% opacity, cursor-not-allowed).
+- Gate adicional en `generate()` con toast por si el usuario intenta saltarse el disabled.
+
+### Punto 4b3 · Aviso dedup con fuzzy 80% (Sørensen-Dice sobre bigramas)
+El antiguo matcher usaba `includes` substring (demasiado agresivo y a la vez no detectaba el caso real). Ahora `findDup`:
+- **Trend ↔ Trend**: best fuzzy match contra todos los títulos de tendencias guardadas; si score ≥ 0.80 → warning "Ya tienes esta tendencia guardada... Reescribir igualmente / Abrir la existente / Cancelar".
+- **Trend ↔ Company (cross-match)**: además, contra todos los títulos de tesis de empresa; si score ≥ 0.80 → warning especial "Ya tienes una tesis de empresa con un nombre parecido. Se generará una tendencia nueva; la tesis de empresa NO se toca". Botón: "Generar tendencia igualmente" (NO sobreescribe el plan).
+- **Company ↔ Company**: ticker exact match (la validación ticker-only ya estrecha el input).
+- Accent-insensitive (`_norm` ahora hace `normalize('NFD')` y strip diacríticos).
+
+### Verificación
+- Tests pytest backend: 62/62 (sin contar test_compare pre-existente roto).
+- Lint Python + JS limpio (warning pre-existente sobre eslint-disable directive no relacionado).
+- Unit test inline en Node de `isValidTicker` + `similarity`: ✅
+  - "obesidad" vs título largo "Ecosistema de Salud Metabólica..." → 0.264 → new trend (correcto, era el observed-bug del usuario).
+  - "Ecosistema Salud Metabolica Obesidad" → 0.835 → dup warning.
+  - "Hims & Hers" → 0.833 contra "Hims & Hers Health" → cross-match warning.
+  - Tickers: NVDA, BRK.B, 7203.T, 9988.HK, VOD.L → válidos; "obesidad", "APPLE INC" → rechazados.
+- Smoke test: app arranca sin errores en consola; CompanyThesisLinker eliminado sin imports rotos.
