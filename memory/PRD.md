@@ -18,6 +18,7 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ UX particiones → auto-marca plan "split" (Feb 2026, verificado por usuario en PLTR):** en la ficha de driver durante planificación, al desplegar manualmente el panel "Se puede dividir en N partes" se cambia automáticamente el botón preseleccionado de "Conjunto" a "Particiones" (si no estaba ya). El usuario mantiene control total: puede colapsar/expandir y forzar cualquiera de los dos botones manualmente. Sólo aplica antes de generar (`!planningLocked`). Cambio: `ThesisResult.jsx` (handler del toggle).
 - **✅ P1 verificado E2E (Jun 2026): emails Screener nocturno + Radar semanal funcionando con Resend:**
   - Smoke test directo Resend → API key válida, sender `onboarding@resend.dev` autorizado para `joseaq.2m@gmail.com` (modo sandbox).
   - Screener nocturno: ejecutado vía `POST /api/admin/run-screener`, detectó 1 cruce en la watchlist real (TSLA/MU/QCOM/REGN/META/LLY/COST/AVGO/BKNG/ANET/AMD/AMZN, etc.) → 1 email enviado y recibido en bandeja.
