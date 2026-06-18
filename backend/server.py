@@ -173,25 +173,39 @@ async def admin_run_radar():
 
 
 @api_router.post("/admin/preview-radar/{user_id}")
-async def admin_preview_radar_start(user_id: str):
-    """Kick off a radar email PREVIEW job for one user (no email sent). Returns a
-    job_id; poll /admin/preview-radar/job/{job_id} for the rendered HTML when
-    `status: done`. Async because the news-watch step hits DDG + LLM (~60-120s)."""
+async def admin_preview_radar_start(user_id: str, send: bool = False):
+    """Kick off a radar email PREVIEW job for one user. Returns a job_id; poll
+    /admin/preview-radar/job/{job_id} for the rendered HTML when `status: done`.
+    Async because the news-watch step hits DDG + LLM (~60-120s).
+
+    If `send=true` is passed, the rendered email is ALSO delivered via Resend to
+    the user's address (real inbox preview, not just screenshot)."""
     import uuid
-    from radar import build_preview_for_user
+    from radar import build_preview_for_user, _send_email_resend
     job_id = f"radarprev_{uuid.uuid4().hex[:12]}"
     await db.thesis_jobs.insert_one({
         "id": job_id, "kind": "radar_preview", "user_id": user_id,
-        "status": "pending",
+        "status": "pending", "send_requested": bool(send),
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
     async def _run():
         try:
             preview = await build_preview_for_user(db, user_id, trends=None)
+            sent = False
+            if send and preview.get("email"):
+                n_news = preview.get("news_items_count", 0)
+                n_co = preview.get("companies_count", 0)
+                bits = []
+                if n_news:
+                    bits.append(f"{n_news} noticia{'s' if n_news != 1 else ''} de tus empresas")
+                if n_co and not n_news:
+                    bits.append(f"{n_co} empresa{'s' if n_co != 1 else ''} en seguimiento")
+                subject = "[PREVIEW] Radar · " + (" · ".join(bits) if bits else "test")
+                sent = await _send_email_resend(preview["email"], subject, preview["html"])
             await db.thesis_jobs.update_one(
                 {"id": job_id},
-                {"$set": {"status": "done", "result": preview,
+                {"$set": {"status": "done", "result": preview, "sent": sent,
                           "updated_at": datetime.now(timezone.utc).isoformat()}},
             )
         except Exception as e:
@@ -202,7 +216,7 @@ async def admin_preview_radar_start(user_id: str):
             )
 
     asyncio.create_task(_run())
-    return {"job_id": job_id, "status": "pending"}
+    return {"job_id": job_id, "status": "pending", "will_send": bool(send)}
 
 
 @api_router.get("/admin/preview-radar/job/{job_id}")
