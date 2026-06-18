@@ -456,10 +456,13 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
                             <button
                                 onClick={() => setShowSplits((v) => {
                                     const next = !v;
-                                    // Si el usuario despliega las particiones, demuestra interés:
-                                    // auto-marcamos el plan como "split" (sólo en fase de planificación).
-                                    if (next && !planningLocked && t.plan !== "split") {
-                                        onSetPlan?.(coreName, "split");
+                                    // Sincronía bidireccional con el plan (solo en planificación):
+                                    //   - desplegar  → marca "split"   (interés en partir)
+                                    //   - colapsar   → marca "whole"   (vuelta al conjunto)
+                                    // El usuario puede forzar cualquiera con los botones manuales.
+                                    if (!planningLocked) {
+                                        if (next && t.plan !== "split") onSetPlan?.(coreName, "split");
+                                        else if (!next && t.plan === "split") onSetPlan?.(coreName, "whole");
                                     }
                                     return next;
                                 })}
