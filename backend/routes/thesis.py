@@ -1234,6 +1234,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "is_child": bool(t.get("parent_id") and t.get("parent_id") in trend_id_set),
                 "tam_busd": (t.get("tam") or {}).get("global_busd"),
                 "company_count": len(clist), "companies": clist,
+                "source_company_thesis_id": src,
             })
 
         # Surface every complete company even if no trends rolled into its aggregate
@@ -1286,12 +1287,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "tendencia_count": len(contained),
             })
 
-        # Company dropdown (simplified): list ONLY the trend theses already generated
-        # where the company really appears (membership). Newest doc per ticker.
-        trend_tickers = {
-            tr["id"]: {(c.get("ticker") or "").upper() for c in tr["companies"] if c.get("ticker")}
-            for tr in trends
-        }
+        # Company dropdown: list ONLY the tesis NACIDAS de esta empresa (drivers
+        # desarrollados desde su plan). Las membresías "fantasma" en tesis nacidas
+        # de otros planes NO aparecen aquí — solo bajo "También aparece en (informativo)"
+        # de /company/{TICKER}, manteniendo la coherencia con el sum_tam_score.
         company_theses = []
         seen_tickers = set()
         for d in company_docs:  # sorted newest-first → keep only the latest per ticker
@@ -1303,7 +1302,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             fit = [
                 {"name": tr["title"], "thesis_id": tr["id"], "state": "included"}
                 for tr in trends
-                if tk and tk in trend_tickers.get(tr["id"], set())
+                if tr.get("source_company_thesis_id") == d.get("id")
             ]
             company_theses.append({
                 "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
