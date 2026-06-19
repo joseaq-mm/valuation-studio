@@ -606,3 +606,7 @@ Petición del usuario: las tarjetas de driver (`NewThesisCard`) PERDÍAN su narr
 - Última columna renombrada **"Combinado" → "Combinado total"** (key `combined`, las 4 variables).
 - **Tooltips de cabecera** (HoverTip) en TODAS las columnas de Score a Combinado total: Score, TAM Score, Combinado cualitativo, Compra %, Venta %, Combinado total (objeto `TIP`). `SortableTh` acepta prop `tip` y envuelve el label en HoverTip (mantiene el click de ordenamiento). colSpan 8→9.
 - Solo frontend (`Visual.jsx`). Verificado por screenshot (cabeceras + tooltip + datos reales del usuario).
+
+## CHANGELOG — Visual: ordenación de Ticker/Nombre + cabeceras 2 líneas (19 jun 2026)
+- Cabeceras "Combinado cualitativo" y "Combinado total" ahora en DOS líneas (flex-col) para columnas equidistantes.
+- Columnas **Ticker** (`ticker`) y **Nombre** (`name`) ahora ordenables (alfabético, `localeCompare` es, sensitivity base). `SortableTh` acepta `align` (left/right) + `className`; `STRING_KEYS` define orden alfabético; columnas string arrancan en asc, numéricas en desc. Solo frontend (`Visual.jsx`).

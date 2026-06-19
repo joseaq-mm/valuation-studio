@@ -144,22 +144,29 @@ export default function Visual() {
         return () => window.removeEventListener("vs:thresholds-changed", onChange);
     }, []);
 
-    // Sorting (table) — always over ALL rows
+    // Sorting (table) — always over ALL rows. String columns (ticker/name) sort
+    // alphabetically; the rest numerically.
+    const STRING_KEYS = useMemo(() => new Set(["ticker", "name"]), []);
     const sortedRows = useMemo(() => {
         const arr = [...rows];
+        const isStr = STRING_KEYS.has(sortKey);
         arr.sort((a, b) => {
             const av = a[sortKey]; const bv = b[sortKey];
             if (av == null && bv == null) return 0;
             if (av == null) return 1;
             if (bv == null) return -1;
+            if (isStr) {
+                const c = String(av).localeCompare(String(bv), "es", { sensitivity: "base" });
+                return sortDir === "asc" ? c : -c;
+            }
             return sortDir === "asc" ? av - bv : bv - av;
         });
         return arr;
-    }, [rows, sortKey, sortDir]);
+    }, [rows, sortKey, sortDir, STRING_KEYS]);
 
     const onSort = (k) => {
         if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        else { setSortKey(k); setSortDir("desc"); }
+        else { setSortKey(k); setSortDir(STRING_KEYS.has(k) ? "asc" : "desc"); }
     };
 
     const allSelected = rows.length > 0 && selected.size === rows.length;
@@ -306,8 +313,8 @@ export default function Visual() {
                             <th className="p-2 text-left w-8">
                                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="cursor-pointer" data-testid="visual-toggle-all" />
                             </th>
-                            <th className="p-2 text-left">Ticker</th>
-                            <th className="p-2 text-left font-sans">Nombre</th>
+                            <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" />
+                            <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>cualitativo</span></span>} k="combined_qual" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined_qual} />
@@ -362,7 +369,7 @@ const FilterField = ({ label, value, step, onChange, testid, suffix }) => (
     </label>
 );
 
-const SortableTh = ({ label, k, sortKey, sortDir, onSort, tip }) => {
+const SortableTh = ({ label, k, sortKey, sortDir, onSort, tip, align = "right", className = "" }) => {
     const active = sortKey === k;
     const inner = (
         <span className="inline-flex items-center gap-1">
@@ -371,7 +378,7 @@ const SortableTh = ({ label, k, sortKey, sortDir, onSort, tip }) => {
         </span>
     );
     return (
-        <th className="p-2 text-right cursor-pointer select-none" onClick={() => onSort(k)} data-testid={`sort-${k}`}>
+        <th className={`p-2 cursor-pointer select-none ${align === "left" ? "text-left" : "text-right"} ${className}`} onClick={() => onSort(k)} data-testid={`sort-${k}`}>
             {tip ? <HoverTip text={tip} maxWidth={300}><span className="cursor-help">{inner}</span></HoverTip> : inner}
         </th>
     );
