@@ -1494,6 +1494,20 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         ).to_list(length=len(tickers))
         by_ticker: Dict[str, Dict[str, Any]] = {cd["ticker"]: cd.get("data") or {} for cd in cached}
 
+        # KPI coefficient per ticker: join with the user's most recent COMPANY thesis
+        # that has a kpi_snapshot.coef_global (deduped by ticker, latest wins).
+        kpi_docs = await db.theses.find(
+            {"user_id": user["user_id"], "type": "company", "kpi_snapshot.coef_global": {"$ne": None}},
+            {"_id": 0, "company": 1, "kpi_snapshot": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=500)
+        kpi_by_ticker: Dict[str, float] = {}
+        for kd in kpi_docs:
+            tk = ((kd.get("company") or {}).get("ticker") or "").upper().strip()
+            if tk and tk not in kpi_by_ticker:
+                coef = (kd.get("kpi_snapshot") or {}).get("coef_global")
+                if isinstance(coef, (int, float)):
+                    kpi_by_ticker[tk] = float(coef)
+
         rows: List[Dict[str, Any]] = []
         for c in companies:
             tk = c["ticker"]
@@ -1527,6 +1541,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "name": c.get("name"),
                 "avg_overall_score": c.get("avg_overall_score"),
                 "sum_tam_score": c.get("sum_tam_score"),
+                "kpi_coef": kpi_by_ticker.get((tk or "").upper().strip()),
                 "ratio_compra_pct": ratio_c,
                 "ratio_venta_pct": ratio_v,
                 "current_price": price,

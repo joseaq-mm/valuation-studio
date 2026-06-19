@@ -9,36 +9,45 @@ import { signalFor } from "@/lib/thresholds";
 
 // ---------- Helpers ----------
 const clamp01 = (v) => (v == null ? 0 : Math.max(0, Math.min(1, v)));
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-/** Combined ranking — media simple normalizada de las 4 variables. Null → 0.
- *  Score: /100        TAM: /30 capped     Compra/Venta: clamp((v+50)/150)  */
-const computeCombined = (r) => {
-    const s = clamp01((r.avg_overall_score || 0) / 100);
-    const t = clamp01((r.sum_tam_score || 0) / 30);
-    const rc = clamp01(((r.ratio_compra_pct ?? -50) + 50) / 150);
-    const rv = clamp01(((r.ratio_venta_pct ?? -50) + 50) / 150);
-    return (s + t + rc + rv) / 4;
-};
+const KPI_BETA = 0.5; // intensidad de la modulación del coeficiente KPI
 
-/** Qualitative-only combined — media normalizada de Score y TAM Score (sin precio). */
-const computeCombinedQual = (r) => {
+/** Parte cualitativa base — media normalizada de Score y TAM Score (sin precio, sin KPI). */
+const qualBase = (r) => {
     const s = clamp01((r.avg_overall_score || 0) / 100);
     const t = clamp01((r.sum_tam_score || 0) / 30);
     return (s + t) / 2;
+};
+
+/** Parte de precio — media normalizada de Ratio Compra y Venta. */
+const priceBase = (r) => {
+    const rc = clamp01(((r.ratio_compra_pct ?? -50) + 50) / 150);
+    const rv = clamp01(((r.ratio_venta_pct ?? -50) + 50) / 150);
+    return (rc + rv) / 2;
+};
+
+/** Factor KPI relativo: punto neutro = promedio de 1 (absoluto) y la media del universo.
+ *  C por encima del neutro mejora el combinado; por debajo lo empeora. Sin KPI → 1 (neutro). */
+const kpiFactor = (C, neutro) => {
+    if (C == null || typeof C !== "number") return 1;
+    return clamp(1 + KPI_BETA * (C - neutro), 0.6, 1.4);
 };
 
 // Header tooltips (Score → Combinado total)
 const TIP = {
     score: "Score global cualitativo (0–100): media de la calidad de la empresa en las tesis donde aparece. Combina posición competitiva, momentum del sector, calidad del management y resiliencia financiera.",
     tam: "TAM Score (suma): potencial de mercado atribuido a la empresa. Mezcla su calidad con el trozo de TAM que le toca frente a sus ingresos proyectados, sumado en todas sus tesis. >1 = oportunidad grande respecto a su tamaño actual.",
-    combined_qual: "Combinado cualitativo (0–100%): une el Score y el TAM Score en un único índice. Mide la fuerza CUALITATIVA total — calidad del negocio + potencial de mercado — sin tener en cuenta el precio.",
+    kpi: "Coeficiente KPI (0,5–1,5): validación operativa de la tesis con datos reales (ARR, NRR, backlog…). C = 1 + 0,5·S, donde S es la señal cuantitativa. >1 = los KPIs confirman la tesis; <1 = la refutan. Modula los combinados respecto a la media del universo. «—» = aún sin analizar en /kpis.",
+    combined_qual: "Combinado cualitativo (0–100%): une el Score y el TAM Score, modulado por el coeficiente KPI (relativo a la media de todas las empresas con KPI). Mide la fuerza CUALITATIVA total — calidad + potencial + validación operativa — sin precio.",
     compra: "Ratio de Compra (%): distancia del precio actual al Precio Objetivo de Compra (POC). Positivo y alto = potencialmente barata.",
     venta: "Ratio de Venta (%): distancia del precio actual al Precio Objetivo de Venta (POV). Avisa de cuándo se agota el recorrido al alza.",
-    combined: "Combinado total (0–100%): índice global que une las 4 variables — Score, TAM Score, Ratio de Compra y Ratio de Venta. Resume calidad + potencial + valoración en una sola cifra para rankear.",
+    combined: "Combinado total (0–100%): índice global que une calidad + potencial + validación KPI (vía el Combinado cualitativo) y la valoración (Compra/Venta). El coeficiente KPI cuenta una sola vez (no se dobla su peso).",
 };
 
 const fmtPct = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
 const fmtN = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
+const coefColor = (c) => (c == null ? "#9ca3af" : c > 1.05 ? "#1D7044" : c < 0.95 ? "#B32A22" : "#B8860B");
 
 // ---------- Quadrant background labels (with subtitle) ----------
 const QuadrantLabels = () => (
@@ -106,6 +115,8 @@ export default function Visual() {
     const [selected, setSelected] = useState(new Set()); // all unchecked by default
     const [sortKey, setSortKey] = useState("combined");
     const [sortDir, setSortDir] = useState("desc");
+    const [kpiMean, setKpiMean] = useState(null);
+    const [noKpiCount, setNoKpiCount] = useState(0);
 
     // Filters (only affect map visibility, not the table)
     const [filters, setFilters] = useState({
@@ -122,8 +133,19 @@ export default function Visual() {
         setLoading(true); setError(null);
         try {
             const d = await thesisVisualData();
-            const enriched = (d.rows || []).map((r) => ({ ...r, combined: computeCombined(r), combined_qual: computeCombinedQual(r) }));
+            const raw = d.rows || [];
+            // Media de coef KPI sobre TODAS las empresas que tienen KPI (las demás no cuentan).
+            const coefs = raw.map((r) => r.kpi_coef).filter((v) => typeof v === "number");
+            const mediaC = coefs.length ? coefs.reduce((a, b) => a + b, 0) / coefs.length : 1;
+            const neutro = (1 + mediaC) / 2;
+            const enriched = raw.map((r) => {
+                const f = kpiFactor(r.kpi_coef, neutro);
+                const cq = clamp01(qualBase(r) * f);
+                return { ...r, kpi_factor: f, combined_qual: cq, combined: (cq + priceBase(r)) / 2 };
+            });
             setRows(enriched);
+            setKpiMean(coefs.length ? mediaC : null);
+            setNoKpiCount(raw.length - coefs.length);
             setSelected(new Set(enriched.map((r) => r.ticker)));
         } catch (e) {
             setError(e?.response?.data?.detail || e.message);
@@ -317,6 +339,7 @@ export default function Visual() {
                             <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
+                            <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Coef</span><span>KPI</span></span>} k="kpi_coef" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.kpi} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>cualitativo</span></span>} k="combined_qual" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined_qual} />
                             <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.compra} />
                             <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.venta} />
@@ -325,7 +348,7 @@ export default function Visual() {
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 && !loading && (
-                            <tr><td colSpan={9} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
+                            <tr><td colSpan={10} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
                         )}
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
@@ -337,6 +360,11 @@ export default function Visual() {
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
+                                    <td className="p-2 text-right" data-testid={`visual-kpi-${r.ticker}`}>
+                                        {typeof r.kpi_coef === "number"
+                                            ? <span style={{ color: coefColor(r.kpi_coef) }} className="font-semibold">{r.kpi_coef.toFixed(2)}</span>
+                                            : <span className="text-[#9ca3af]">—</span>}
+                                    </td>
                                     <td className="p-2 text-right">{(r.combined_qual * 100).toFixed(1)}%</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
@@ -346,6 +374,18 @@ export default function Visual() {
                         })}
                     </tbody>
                 </table>
+            </div>
+
+            {/* KPI notice */}
+            <div className="text-xs text-[#4A4A4A] mt-3 font-sans leading-relaxed" data-testid="visual-kpi-note">
+                {kpiMean != null && (
+                    <span>El <strong>coef KPI</strong> modula los combinados respecto a la media del universo (<span className="font-mono">{kpiMean.toFixed(2)}</span>): por encima del punto neutro mejora el porcentaje, por debajo lo empeora (cuenta una sola vez). </span>
+                )}
+                {noKpiCount > 0 && (
+                    <span data-testid="visual-no-kpi-note">
+                        {noKpiCount === 1 ? "1 empresa aún no tiene" : `${noKpiCount} empresas aún no tienen`} coeficiente KPI («—»): no se incluye este factor en {noKpiCount === 1 ? "su combinado" : "sus combinados"}. Analíza{noKpiCount === 1 ? "la" : "las"} en <Link to="/kpis" className="underline hover:text-black">/kpis</Link>.
+                    </span>
+                )}
             </div>
         </div>
     );
