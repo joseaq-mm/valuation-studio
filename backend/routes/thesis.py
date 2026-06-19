@@ -243,15 +243,25 @@ KPI_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 KPI_ALLOWED_EXT = {"pdf", "png", "jpg", "jpeg", "webp", "gif"}
 
 
-def _doc_extract_sync(data: bytes, ext: str, mime: str, company: str, filename: str) -> str:
-    """Write the uploaded bytes to a temp file and run the multimodal extraction."""
+def _doc_extract_sync(data: bytes, ext: str, mime: str, company: str, filename: str) -> dict:
+    """Write the uploaded bytes to a temp file, run the multimodal extraction, and
+    split out the suggested TÍTULO (first line) from the KPI digest."""
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tf:
         tf.write(data)
         path = tf.name
     try:
-        txt, _cost = run_costed(extract_document_text(path, mime, company, filename))
-        return txt
+        raw, _cost = run_costed(extract_document_text(path, mime, company, filename))
+        raw = (raw or "").strip()
+        title, body = None, raw
+        lines = raw.splitlines()
+        if lines:
+            first = lines[0].strip().lstrip("*# ").strip()
+            norm = first.upper().replace("Í", "I")
+            if norm.startswith("TITULO:") or norm.startswith("TÍTULO:"):
+                title = first.split(":", 1)[1].strip().strip("*").strip()[:120]
+                body = "\n".join(lines[1:]).strip()
+        return {"title": title or None, "text": body}
     finally:
         try:
             os.unlink(path)
@@ -1731,11 +1741,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     # ----- KPI source files (PDF / images / pasted transcript) -----
     async def _run_doc_extract(file_id, user_id, data, ext, mime, company, filename):
         try:
-            txt = await asyncio.to_thread(_doc_extract_sync, data, ext, mime, company, filename)
-            await db.kpi_files.update_one(
-                {"id": file_id, "user_id": user_id},
-                {"$set": {"status": "ready", "extracted_text": txt or "",
-                          "extracted_at": datetime.now(timezone.utc).isoformat()}})
+            res = await asyncio.to_thread(_doc_extract_sync, data, ext, mime, company, filename)
+            upd = {"status": "ready", "extracted_text": res.get("text") or "",
+                   "extracted_at": datetime.now(timezone.utc).isoformat()}
+            # Auto-name from the AI-suggested title (user can still rename manually).
+            if res.get("title"):
+                upd["display_name"] = res["title"]
+            await db.kpi_files.update_one({"id": file_id, "user_id": user_id}, {"$set": upd})
         except Exception as e:
             logger.error(f"doc extract failed ({file_id}): {e}")
             await db.kpi_files.update_one(

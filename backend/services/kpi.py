@@ -265,11 +265,15 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
 
 DOC_EXTRACT_SYS = """Eres un analista financiero. Vas a leer un documento (presentación de inversores, informe, o imagen de un gráfico) de una empresa y debes EXTRAER de forma fiel toda la información OPERATIVA y de KPIs que contenga: ARR, NRR/net revenue retention, nº de clientes/suscriptores, backlog/RPO, bookings, book-to-bill, churn, ARPU, DAU/MAU, ingresos por segmento/geografía, guidance, y cualquier métrica con su VALOR y PERIODO.
 
+FORMATO DE RESPUESTA (obligatorio):
+- La PRIMERA línea debe ser exactamente: `TÍTULO: <nombre corto y descriptivo del documento>` incluyendo el TIPO y el PERIODO o TEMA. Ejemplos: "Presentación resultados Q1 2026", "Gráfico TTM suscriptores desde 2021", "Informe anual 2025", "Carta a accionistas Q4 2025".
+- A partir de la segunda línea, el RESUMEN de KPIs (bullets).
+
 REGLAS:
 - Transcribe los NÚMEROS EXACTOS tal como aparecen, con su unidad y periodo (p. ej. "Suscriptores de pago: 12,2M (Q4 2025) vs 10,9M (Q4 2024)").
 - Si es un GRÁFICO, lee los valores de los ejes/etiquetas lo mejor posible e indica que provienen de un gráfico.
 - NO inventes datos que no estén en el documento. Si algo es ilegible, dilo.
-- Devuelve un resumen claro en texto plano (bullets), centrado SOLO en métricas operativas y cifras. Sé conciso pero completo."""
+- Resumen claro en texto plano, centrado SOLO en métricas operativas y cifras. Conciso pero completo."""
 
 
 async def extract_document_text(file_path: str, mime_type: str, company: str, filename: str = "") -> str:
