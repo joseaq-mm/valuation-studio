@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search } from "lucide-react";
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import KpiDocuments from "@/components/kpi/KpiDocuments";
 import { toast } from "sonner";
 
 const coefColor = (c) => {
@@ -160,6 +161,9 @@ export default function Kpis() {
             </div>
 
             {!selId && <div className="text-sm text-[#4A4A4A] border border-dashed border-black/30 p-6 text-center">Elige una empresa para empezar.</div>}
+
+            {/* Document sources (available before & after analysis) */}
+            {selId && <KpiDocuments companyId={selId} />}
 
             {selId && loading && !status && (
                 <div className="flex items-center gap-2 text-[#4A4A4A] py-8 justify-center"><Loader2 className="animate-spin" size={18} /> Cargando…</div>

@@ -192,3 +192,18 @@ export const kpiEdit = (companyId, kpis) =>
     api.put(`/thesis/${companyId}/kpis`, { kpis }).then(r => r.data);
 export const kpiSearch = (companyId, query, onStatus = null) =>
     api.post(`/thesis/${companyId}/kpis/search`, { query }).then(r => startAndPoll(r.data, onStatus));
+
+// KPI source files (PDF / images / pasted transcript)
+export const kpiFilesList = (companyId) =>
+    api.get(`/thesis/${companyId}/kpis/files`).then(r => r.data);
+export const kpiFileUpload = (companyId, file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post(`/thesis/${companyId}/kpis/files`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 180000 }).then(r => r.data);
+};
+export const kpiTranscriptAdd = (companyId, text, title) =>
+    api.post(`/thesis/${companyId}/kpis/files/transcript`, { text, title }).then(r => r.data);
+export const kpiFileToggle = (companyId, fileId, selected) =>
+    api.patch(`/thesis/${companyId}/kpis/files/${fileId}`, { selected }).then(r => r.data);
+export const kpiFileDelete = (companyId, fileId) =>
+    api.delete(`/thesis/${companyId}/kpis/files/${fileId}`).then(r => r.data);

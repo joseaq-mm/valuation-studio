@@ -1,0 +1,132 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste } from "lucide-react";
+import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileDelete } from "@/lib/api";
+import { toast } from "sonner";
+
+const fileIcon = (f) => {
+    if (f.kind === "transcript") return ClipboardPaste;
+    if ((f.content_type || "").includes("pdf")) return FileType;
+    if ((f.content_type || "").startsWith("image/")) return ImageIcon;
+    return FileText;
+};
+const fmtSize = (b) => (b == null ? "" : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
+
+// Per-company document sources for KPI analysis: upload PDF/images (pre-extracted
+// by AI on upload), paste a transcript, select which to use, delete obsolete.
+export default function KpiDocuments({ companyId }) {
+    const [files, setFiles] = useState([]);
+    const [uploading, setUploading] = useState(false);
+    const [tOpen, setTOpen] = useState(false);
+    const [tText, setTText] = useState("");
+    const [tTitle, setTTitle] = useState("");
+    const inputRef = useRef(null);
+
+    const load = useCallback(async () => {
+        try { const d = await kpiFilesList(companyId); setFiles(d.files || []); }
+        catch { setFiles([]); }
+    }, [companyId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    // Poll while any file is still being processed (pre-extraction).
+    useEffect(() => {
+        if (!files.some((f) => f.status === "processing")) return;
+        const t = setInterval(load, 3000);
+        return () => clearInterval(t);
+    }, [files, load]);
+
+    const onPick = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+        if (file.size > 100 * 1024 * 1024) { toast.error("El archivo supera 100 MB"); return; }
+        setUploading(true);
+        try {
+            const d = await kpiFileUpload(companyId, file);
+            setFiles((prev) => [d.file, ...prev]);
+            toast.success("Archivo subido · leyéndolo con IA…");
+        } catch (err) {
+            toast.error(err?.response?.data?.detail || "Error al subir");
+        } finally { setUploading(false); }
+    };
+
+    const addTranscript = async () => {
+        if (tText.trim().length < 20) { toast.error("Pega un transcript más completo"); return; }
+        try {
+            const d = await kpiTranscriptAdd(companyId, tText.trim(), tTitle.trim() || "Transcript");
+            setFiles((prev) => [d.file, ...prev]);
+            setTText(""); setTTitle(""); setTOpen(false);
+            toast.success("Transcript añadido");
+        } catch (err) { toast.error(err?.response?.data?.detail || "Error"); }
+    };
+
+    const toggle = async (f) => {
+        setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, selected: !x.selected } : x)));
+        try { await kpiFileToggle(companyId, f.id, !f.selected); }
+        catch { load(); }
+    };
+
+    const remove = async (f) => {
+        setFiles((prev) => prev.filter((x) => x.id !== f.id));
+        try { await kpiFileDelete(companyId, f.id); toast.success("Archivo borrado"); }
+        catch { load(); }
+    };
+
+    return (
+        <div className="border border-black/20 bg-white p-3 mb-4" data-testid="kpi-documents">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5"><FileText size={13} /> Documentos como fuente ({files.length}/10)</div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setTOpen((v) => !v)} className="btn-ghost !py-1 !px-2.5 inline-flex items-center gap-1.5 text-xs" data-testid="kpi-transcript-toggle">
+                        <ClipboardPaste size={13} /> Pegar transcript
+                    </button>
+                    <button onClick={() => inputRef.current?.click()} disabled={uploading || files.length >= 10} className="btn-primary !py-1 !px-2.5 inline-flex items-center gap-1.5 text-xs disabled:opacity-40" data-testid="kpi-upload-btn">
+                        {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Subir PDF/imagen
+                    </button>
+                    <input ref={inputRef} type="file" accept=".pdf,image/png,image/jpeg,image/webp,image/gif" onChange={onPick} className="hidden" data-testid="kpi-file-input" />
+                </div>
+            </div>
+
+            <p className="text-[11px] text-[#7A7A7A] mb-2">Sube presentaciones o gráficos (máx. 100 MB, 10 por empresa). La IA los lee al subirlos y usa los <strong>seleccionados</strong> al analizar/buscar KPIs.</p>
+
+            {tOpen && (
+                <div className="border border-[#052049]/30 bg-[#F4F6FA] p-2.5 mb-2" data-testid="kpi-transcript-box">
+                    <input value={tTitle} onChange={(e) => setTTitle(e.target.value)} placeholder="Título (p. ej. Earnings call Q4 2025)" className="w-full border border-black/30 bg-white px-2 py-1 text-sm mb-1.5 outline-none" data-testid="kpi-transcript-title" />
+                    <textarea value={tText} onChange={(e) => setTText(e.target.value)} rows={4} placeholder="Pega aquí el transcript de la llamada de resultados…" className="w-full border border-black/30 bg-white px-2 py-1 text-sm outline-none resize-y" data-testid="kpi-transcript-text" />
+                    <div className="flex justify-end gap-2 mt-1.5">
+                        <button onClick={() => { setTOpen(false); setTText(""); }} className="btn-ghost !py-1 !px-2.5 text-xs">Cancelar</button>
+                        <button onClick={addTranscript} className="btn-primary !py-1 !px-2.5 text-xs" data-testid="kpi-transcript-save">Añadir</button>
+                    </div>
+                </div>
+            )}
+
+            {files.length === 0 ? (
+                <div className="text-xs text-[#9A9A9A] py-2 text-center border border-dashed border-black/20">Sin documentos. Sube un PDF/imagen o pega un transcript.</div>
+            ) : (
+                <ul className="space-y-1" data-testid="kpi-files-list">
+                    {files.map((f) => {
+                        const Icon = fileIcon(f);
+                        return (
+                            <li key={f.id} className="flex items-center gap-2 border border-black/10 px-2 py-1.5 text-sm" data-testid={`kpi-file-${f.id}`}>
+                                <input type="checkbox" checked={!!f.selected} onChange={() => toggle(f)} disabled={f.status !== "ready"} className="accent-[#052049]" data-testid={`kpi-file-toggle-${f.id}`} title="Usar como fuente" />
+                                <Icon size={15} className="text-[#4A4A4A] shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate font-medium leading-tight">{f.original_filename}</div>
+                                    <div className="text-[11px] text-[#9A9A9A]">
+                                        {fmtSize(f.size)}
+                                        {f.status === "processing" && <span className="text-[#B8860B] ml-1 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> leyendo…</span>}
+                                        {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
+                                        {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
+                                    </div>
+                                </div>
+                                <button onClick={() => remove(f)} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-1 shrink-0" title="Borrar" data-testid={`kpi-file-delete-${f.id}`}>
+                                    <Trash2 size={14} />
+                                </button>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </div>
+    );
+}

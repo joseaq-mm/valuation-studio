@@ -7,10 +7,11 @@ reusing the existing auth dependencies from auth.py.
 import uuid
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, Query, Header
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -24,7 +25,8 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
-from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search
+from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text
+from storage import put_object, get_object, APP_NAME, MIME_TYPES
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
 
@@ -188,22 +190,62 @@ def _auto_trend_sync(exclude) -> dict:
     return result
 
 
-def _kpi_sync(company: str, ticker: str, drivers: list) -> dict:
-    """Blocking KPI pipeline (live search + LLM) run in a worker thread."""
+def _kpi_sync(company: str, ticker: str, drivers: list, docs: list = None) -> dict:
+    """Blocking KPI pipeline (live search + selected document digests + LLM)."""
     sources = gather_kpi_sources(company, ticker)
+    if docs:
+        sources = sources + docs
     result, cost = run_costed(run_company_kpis(company, ticker, drivers, sources))
     if isinstance(result, dict):
         result["_cost"] = cost
     return result
 
 
-def _kpi_search_sync(company: str, ticker: str, drivers: list, query: str) -> dict:
-    """Blocking targeted single-KPI search (live search + LLM) in a worker thread."""
+def _kpi_search_sync(company: str, ticker: str, drivers: list, query: str, docs: list = None) -> dict:
+    """Blocking targeted single-KPI search (live search + document digests + LLM)."""
     sources = gather_kpi_search_sources(company, ticker, query)
+    if docs:
+        sources = sources + docs
     result, _cost = run_costed(run_kpi_search(company, ticker, drivers, query, sources))
     if isinstance(result, dict):
         result["_sources"] = [{"title": s.get("title"), "url": s.get("url")} for s in sources][:12]
     return result
+
+
+def _selected_doc_sources(files: list) -> list:
+    """Turn selected, ready KPI files into text 'sources' the extractor can cite."""
+    out = []
+    for f in files:
+        txt = (f.get("extracted_text") or "").strip()
+        if not txt:
+            continue
+        out.append({
+            "title": f"[Documento] {f.get('original_filename') or 'archivo'}",
+            "url": f"doc:{f.get('id')}",
+            "snippet": txt[:6000],
+        })
+    return out
+
+
+KPI_MAX_FILES = 10
+KPI_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
+KPI_ALLOWED_EXT = {"pdf", "png", "jpg", "jpeg", "webp", "gif"}
+
+
+def _doc_extract_sync(data: bytes, ext: str, mime: str, company: str, filename: str) -> str:
+    """Write the uploaded bytes to a temp file and run the multimodal extraction."""
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tf:
+        tf.write(data)
+        path = tf.name
+    try:
+        txt, _cost = run_costed(extract_document_text(path, mime, company, filename))
+        return txt
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def _company_drivers(doc: dict) -> list:
@@ -303,6 +345,15 @@ class EditKpisRequest(BaseModel):
 
 class KpiSearchRequest(BaseModel):
     query: str
+
+
+class KpiTranscriptRequest(BaseModel):
+    text: str
+    title: Optional[str] = None
+
+
+class KpiFileSelectRequest(BaseModel):
+    selected: bool
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -1470,7 +1521,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             company = (doc.get("company") or {}).get("name") or doc.get("title") or company_id
             ticker = (doc.get("company") or {}).get("ticker") or ""
             drivers = _company_drivers(doc)
-            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers)
+            files = await db.kpi_files.find(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False,
+                 "status": "ready", "selected": True}, {"_id": 0}).to_list(length=20)
+            docs = _selected_doc_sources(files)
+            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs)
             snap.pop("_cost", None)
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
@@ -1570,7 +1625,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             company = (doc.get("company") or {}).get("name") or doc.get("title") or company_id
             ticker = (doc.get("company") or {}).get("ticker") or ""
             drivers = _company_drivers(doc)
-            res = await asyncio.to_thread(_kpi_search_sync, company, ticker, drivers, query)
+            files = await db.kpi_files.find(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False,
+                 "status": "ready", "selected": True}, {"_id": 0}).to_list(length=20)
+            docs = _selected_doc_sources(files)
+            res = await asyncio.to_thread(_kpi_search_sync, company, ticker, drivers, query, docs)
             new_kpis = res.get("kpis") or []
             new_sources = res.pop("_sources", []) or []
 
@@ -1644,6 +1703,135 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         })
         _spawn(_run_kpi_search_job(job_id, company_id, user["user_id"], q))
         return {"job_id": job_id}
+
+    # ----- KPI source files (PDF / images / pasted transcript) -----
+    async def _run_doc_extract(file_id, user_id, data, ext, mime, company, filename):
+        try:
+            txt = await asyncio.to_thread(_doc_extract_sync, data, ext, mime, company, filename)
+            await db.kpi_files.update_one(
+                {"id": file_id, "user_id": user_id},
+                {"$set": {"status": "ready", "extracted_text": txt or "",
+                          "extracted_at": datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.error(f"doc extract failed ({file_id}): {e}")
+            await db.kpi_files.update_one(
+                {"id": file_id, "user_id": user_id},
+                {"$set": {"status": "error", "error": "No se pudo leer el documento"}})
+
+    def _file_public(f):
+        txt = f.get("extracted_text") or ""
+        return {
+            "id": f.get("id"), "original_filename": f.get("original_filename"),
+            "content_type": f.get("content_type"), "size": f.get("size"),
+            "status": f.get("status"), "selected": f.get("selected", True),
+            "kind": f.get("kind", "file"), "created_at": f.get("created_at"),
+            "error": f.get("error"), "preview": txt[:180],
+            "has_text": bool(txt),
+        }
+
+    @router.get("/{company_id}/kpis/files")
+    async def list_kpi_files(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        files = await db.kpi_files.find(
+            {"company_id": company_id, "user_id": user["user_id"], "is_deleted": False},
+            {"_id": 0}).sort("created_at", -1).to_list(length=50)
+        return {"files": [_file_public(f) for f in files]}
+
+    @router.post("/{company_id}/kpis/files")
+    async def upload_kpi_file(company_id: str, file: UploadFile = File(...), user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "company": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        count = await db.kpi_files.count_documents(
+            {"company_id": company_id, "user_id": user["user_id"], "is_deleted": False})
+        if count >= KPI_MAX_FILES:
+            raise HTTPException(status_code=400, detail=f"Máximo {KPI_MAX_FILES} archivos por empresa. Borra alguno antiguo.")
+        ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "").lower()
+        if ext not in KPI_ALLOWED_EXT:
+            raise HTTPException(status_code=400, detail="Formato no admitido. Sube PDF o imagen (PNG/JPG/WEBP).")
+        data = await file.read()
+        if len(data) > KPI_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="El archivo supera 100 MB.")
+        mime = MIME_TYPES.get(ext, file.content_type or "application/octet-stream")
+        fid = uuid.uuid4().hex
+        storage_path = f"{APP_NAME}/kpi-files/{user['user_id']}/{fid}.{ext}"
+        try:
+            res = await asyncio.to_thread(put_object, storage_path, data, mime)
+        except Exception as e:
+            logger.error(f"storage upload failed: {e}")
+            raise HTTPException(status_code=502, detail="No se pudo subir el archivo")
+        company = (doc.get("company") or {}).get("name") or company_id
+        rec = {
+            "id": fid, "user_id": user["user_id"], "company_id": company_id,
+            "storage_path": res.get("path", storage_path), "original_filename": file.filename,
+            "content_type": mime, "size": len(data), "ext": ext, "kind": "file",
+            "status": "processing", "selected": True, "is_deleted": False,
+            "extracted_text": "", "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.kpi_files.insert_one(rec)
+        _spawn(_run_doc_extract(fid, user["user_id"], data, ext, mime, company, file.filename))
+        return {"file": _file_public(rec)}
+
+    @router.post("/{company_id}/kpis/files/transcript")
+    async def add_transcript(company_id: str, req: KpiTranscriptRequest, user: Dict[str, Any] = Depends(auth_required)):
+        text = (req.text or "").strip()
+        if len(text) < 20:
+            raise HTTPException(status_code=400, detail="Pega un transcript más completo.")
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "id": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        count = await db.kpi_files.count_documents(
+            {"company_id": company_id, "user_id": user["user_id"], "is_deleted": False})
+        if count >= KPI_MAX_FILES:
+            raise HTTPException(status_code=400, detail=f"Máximo {KPI_MAX_FILES} archivos por empresa.")
+        fid = uuid.uuid4().hex
+        rec = {
+            "id": fid, "user_id": user["user_id"], "company_id": company_id,
+            "storage_path": None, "original_filename": (req.title or "Transcript").strip()[:80],
+            "content_type": "text/plain", "size": len(text.encode()), "ext": "txt", "kind": "transcript",
+            "status": "ready", "selected": True, "is_deleted": False,
+            "extracted_text": text[:40000], "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.kpi_files.insert_one(rec)
+        return {"file": _file_public(rec)}
+
+    @router.patch("/{company_id}/kpis/files/{file_id}")
+    async def toggle_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
+        r = await db.kpi_files.update_one(
+            {"id": file_id, "company_id": company_id, "user_id": user["user_id"], "is_deleted": False},
+            {"$set": {"selected": bool(req.selected)}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        return {"ok": True, "selected": bool(req.selected)}
+
+    @router.delete("/{company_id}/kpis/files/{file_id}")
+    async def delete_kpi_file(company_id: str, file_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        r = await db.kpi_files.update_one(
+            {"id": file_id, "company_id": company_id, "user_id": user["user_id"]},
+            {"$set": {"is_deleted": True}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        return {"ok": True}
+
+    @router.get("/{company_id}/kpis/files/{file_id}/download")
+    async def download_kpi_file(company_id: str, file_id: str, auth: str = Query(None), authorization: str = Header(None)):
+        token = None
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1]
+        elif auth:
+            token = auth
+        uid = None
+        if token:
+            sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0, "user_id": 1})
+            uid = sess.get("user_id") if sess else None
+        rec = await db.kpi_files.find_one({"id": file_id, "company_id": company_id, "is_deleted": False}, {"_id": 0})
+        if not rec or rec.get("user_id") != uid:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        if not rec.get("storage_path"):
+            raise HTTPException(status_code=404, detail="Sin archivo descargable")
+        data, ctype = await asyncio.to_thread(get_object, rec["storage_path"])
+        return Response(content=data, media_type=rec.get("content_type") or ctype)
 
 
 

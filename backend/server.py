@@ -768,6 +768,12 @@ async def _startup_scheduler():
         )
     except Exception as e:
         logger.warning(f"orphan generate-job cleanup failed: {e}")
+    try:
+        from storage import init_storage
+        init_storage()
+        logger.info("Object storage initialized.")
+    except Exception as e:
+        logger.warning(f"Object storage init failed (uploads may not work): {e}")
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))

@@ -17,6 +17,7 @@ Models (independent of the global thesis preset, per product decision):
   - Judge:     Claude Sonnet (quality)
 """
 import logging
+import os
 from datetime import datetime, timezone
 
 from services.thesis import _llm, _run_searches, _extract_json, _sources_block
@@ -237,6 +238,32 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
     coeff["period"] = period
     coeff["sources"] = [{"title": s.get("title"), "url": s.get("url")} for s in sources][:12]
     return coeff
+
+
+# ---------------------- Document pre-extraction (Gemini Flash, multimodal) ----------------------
+
+DOC_EXTRACT_SYS = """Eres un analista financiero. Vas a leer un documento (presentación de inversores, informe, o imagen de un gráfico) de una empresa y debes EXTRAER de forma fiel toda la información OPERATIVA y de KPIs que contenga: ARR, NRR/net revenue retention, nº de clientes/suscriptores, backlog/RPO, bookings, book-to-bill, churn, ARPU, DAU/MAU, ingresos por segmento/geografía, guidance, y cualquier métrica con su VALOR y PERIODO.
+
+REGLAS:
+- Transcribe los NÚMEROS EXACTOS tal como aparecen, con su unidad y periodo (p. ej. "Suscriptores de pago: 12,2M (Q4 2025) vs 10,9M (Q4 2024)").
+- Si es un GRÁFICO, lee los valores de los ejes/etiquetas lo mejor posible e indica que provienen de un gráfico.
+- NO inventes datos que no estén en el documento. Si algo es ilegible, dilo.
+- Devuelve un resumen claro en texto plano (bullets), centrado SOLO en métricas operativas y cifras. Sé conciso pero completo."""
+
+
+async def extract_document_text(file_path: str, mime_type: str, company: str, filename: str = "") -> str:
+    """One-time pre-extraction of a PDF/image into a compact operational-KPI digest
+    (Gemini Flash multimodal). Stored on the file record and reused as a cheap text
+    source in later KPI analyses (so we don't re-pay vision cost each run)."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+    api_key = os.environ["EMERGENT_LLM_KEY"]
+    chat = LlmChat(api_key=api_key, session_id=f"kpi-doc-{datetime.now(timezone.utc).timestamp()}",
+                   system_message=DOC_EXTRACT_SYS).with_model(*KPI_EXTRACTOR_MODEL)
+    fc = FileContentWithMimeType(file_path=file_path, mime_type=mime_type)
+    prompt = (f"EMPRESA: {company}\nDOCUMENTO: {filename}\n\n"
+              "Extrae todas las métricas operativas y KPIs con sus cifras y periodos.")
+    resp = await chat.send_message(UserMessage(text=prompt, file_contents=[fc]))
+    return (resp or "").strip()
 
 
 # ---------------------- Targeted single-KPI search ----------------------
