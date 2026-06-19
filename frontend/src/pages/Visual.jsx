@@ -4,6 +4,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { Loader2, RotateCcw, ArrowUp, ArrowDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData } from "@/lib/api";
+import HoverTip from "@/components/HoverTip";
 import { signalFor } from "@/lib/thresholds";
 
 // ---------- Helpers ----------
@@ -17,6 +18,23 @@ const computeCombined = (r) => {
     const rc = clamp01(((r.ratio_compra_pct ?? -50) + 50) / 150);
     const rv = clamp01(((r.ratio_venta_pct ?? -50) + 50) / 150);
     return (s + t + rc + rv) / 4;
+};
+
+/** Qualitative-only combined — media normalizada de Score y TAM Score (sin precio). */
+const computeCombinedQual = (r) => {
+    const s = clamp01((r.avg_overall_score || 0) / 100);
+    const t = clamp01((r.sum_tam_score || 0) / 30);
+    return (s + t) / 2;
+};
+
+// Header tooltips (Score → Combinado total)
+const TIP = {
+    score: "Score global cualitativo (0–100): media de la calidad de la empresa en las tesis donde aparece. Combina posición competitiva, momentum del sector, calidad del management y resiliencia financiera.",
+    tam: "TAM Score (suma): potencial de mercado atribuido a la empresa. Mezcla su calidad con el trozo de TAM que le toca frente a sus ingresos proyectados, sumado en todas sus tesis. >1 = oportunidad grande respecto a su tamaño actual.",
+    combined_qual: "Combinado cualitativo (0–100%): une el Score y el TAM Score en un único índice. Mide la fuerza CUALITATIVA total — calidad del negocio + potencial de mercado — sin tener en cuenta el precio.",
+    compra: "Ratio de Compra (%): distancia del precio actual al Precio Objetivo de Compra (POC). Positivo y alto = potencialmente barata.",
+    venta: "Ratio de Venta (%): distancia del precio actual al Precio Objetivo de Venta (POV). Avisa de cuándo se agota el recorrido al alza.",
+    combined: "Combinado total (0–100%): índice global que une las 4 variables — Score, TAM Score, Ratio de Compra y Ratio de Venta. Resume calidad + potencial + valoración en una sola cifra para rankear.",
 };
 
 const fmtPct = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
@@ -104,7 +122,7 @@ export default function Visual() {
         setLoading(true); setError(null);
         try {
             const d = await thesisVisualData();
-            const enriched = (d.rows || []).map((r) => ({ ...r, combined: computeCombined(r) }));
+            const enriched = (d.rows || []).map((r) => ({ ...r, combined: computeCombined(r), combined_qual: computeCombinedQual(r) }));
             setRows(enriched);
             setSelected(new Set(enriched.map((r) => r.ticker)));
         } catch (e) {
@@ -290,16 +308,17 @@ export default function Visual() {
                             </th>
                             <th className="p-2 text-left">Ticker</th>
                             <th className="p-2 text-left font-sans">Nombre</th>
-                            <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                            <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                            <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                            <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                            <SortableTh label="Combinado" k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                            <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
+                            <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
+                            <SortableTh label="Combinado cualitativo" k="combined_qual" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined_qual} />
+                            <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.compra} />
+                            <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.venta} />
+                            <SortableTh label="Combinado total" k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined} />
                         </tr>
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 && !loading && (
-                            <tr><td colSpan={8} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
+                            <tr><td colSpan={9} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
                         )}
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
@@ -311,6 +330,7 @@ export default function Visual() {
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
+                                    <td className="p-2 text-right">{(r.combined_qual * 100).toFixed(1)}%</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
@@ -342,14 +362,17 @@ const FilterField = ({ label, value, step, onChange, testid, suffix }) => (
     </label>
 );
 
-const SortableTh = ({ label, k, sortKey, sortDir, onSort }) => {
+const SortableTh = ({ label, k, sortKey, sortDir, onSort, tip }) => {
     const active = sortKey === k;
+    const inner = (
+        <span className="inline-flex items-center gap-1">
+            {label}
+            {active ? (sortDir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : null}
+        </span>
+    );
     return (
         <th className="p-2 text-right cursor-pointer select-none" onClick={() => onSort(k)} data-testid={`sort-${k}`}>
-            <span className="inline-flex items-center gap-1">
-                {label}
-                {active ? (sortDir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : null}
-            </span>
+            {tip ? <HoverTip text={tip} maxWidth={300}><span className="cursor-help">{inner}</span></HoverTip> : inner}
         </th>
     );
 };

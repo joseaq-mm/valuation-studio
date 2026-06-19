@@ -600,3 +600,9 @@ Petición del usuario: las tarjetas de driver (`NewThesisCard`) PERDÍAN su narr
   - Controles de planificación (Conjunto/Particiones, Fusionar, "Pendiente de generarse") ocultos cuando `isDeveloped`.
 - **RETROACTIVO**: la narrativa nunca se borraba (`_record_split_dev` solo añade a `split_dev`, no toca `trends[]`); solo dejaba de pintarse. Verificado en BD: 23 empresas desarrolladas conservan narrativa en todos sus trends. Verificado por screenshot (ALNY `thesis_6c056cbc1db0`: 3 tarjetas con narrativa + badges verdes + particiones con estado).
 - Limpieza: se eliminaron `pendingSplits`/`devSplitSet` (sin uso). Backend/datos sin cambios.
+
+## CHANGELOG — Visual: columna "Combinado cualitativo" + tooltips de cabecera (19 jun 2026)
+- Nueva columna **"Combinado cualitativo"** en la tabla de `/visual`, ENTRE "TAM Score" y "Compra %". Fórmula `computeCombinedQual` = media normalizada de Score (/100) + TAM Score (/30 cap), mostrada en % (0–100%). Ordenable (key `combined_qual`).
+- Última columna renombrada **"Combinado" → "Combinado total"** (key `combined`, las 4 variables).
+- **Tooltips de cabecera** (HoverTip) en TODAS las columnas de Score a Combinado total: Score, TAM Score, Combinado cualitativo, Compra %, Venta %, Combinado total (objeto `TIP`). `SortableTh` acepta prop `tip` y envuelve el label en HoverTip (mantiene el click de ordenamiento). colSpan 8→9.
+- Solo frontend (`Visual.jsx`). Verificado por screenshot (cabeceras + tooltip + datos reales del usuario).
