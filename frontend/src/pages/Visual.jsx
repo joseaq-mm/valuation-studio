@@ -310,10 +310,10 @@ export default function Visual() {
                             <th className="p-2 text-left font-sans">Nombre</th>
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
-                            <SortableTh label="Combinado cualitativo" k="combined_qual" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined_qual} />
+                            <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>cualitativo</span></span>} k="combined_qual" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined_qual} />
                             <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.compra} />
                             <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.venta} />
-                            <SortableTh label="Combinado total" k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined} />
+                            <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>total</span></span>} k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined} />
                         </tr>
                     </thead>
                     <tbody>
