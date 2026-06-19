@@ -3,6 +3,7 @@ import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
+import KpiNews from "@/components/kpi/KpiNews";
 import { toast } from "sonner";
 
 const coefColor = (c) => {
@@ -164,6 +165,9 @@ export default function Kpis() {
 
             {/* Document sources (available before & after analysis) */}
             {selId && <KpiDocuments companyId={selId} />}
+
+            {/* Qualitative news (informs scores; aged out over time) */}
+            {selId && <KpiNews companyId={selId} />}
 
             {selId && loading && !status && (
                 <div className="flex items-center gap-2 text-[#4A4A4A] py-8 justify-center"><Loader2 className="animate-spin" size={18} /> Cargando…</div>

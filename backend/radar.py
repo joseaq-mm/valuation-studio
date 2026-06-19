@@ -25,6 +25,7 @@ from typing import Dict, Any, List, Optional
 import resend
 
 from services.thesis import run_discover, run_company_news_watch
+from services.kpi import merge_prune_news
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +301,18 @@ async def _dispatch_to_users(db, users: List[Dict[str, Any]], new_trends: List[D
         user_news_keys = {c["ticker"] for c in cs}
         user_news = {tk: items for tk, items in news_by_ticker.items() if tk in user_news_keys}
         n_news = sum(len(v) for v in user_news.values())
+        # Persist this user's radar news into the KPI news store (origin="radar"),
+        # so it feeds the KPI module's qualitative context (decayed/pruned over time).
+        if user_news:
+            cmap = {c["ticker"]: c.get("plan_id") for c in cs}
+            for tk, items in user_news.items():
+                cid = cmap.get(tk)
+                if not cid:
+                    continue
+                try:
+                    await merge_prune_news(db, cid, uid, tk, items, "radar")
+                except Exception as e:
+                    logger.warning(f"radar→kpi_news persist failed ({tk}): {e}")
         subject_bits = []
         if new_trends:
             subject_bits.append(f"{len(new_trends)} tendencia{'s' if len(new_trends) != 1 else ''} emergente{'s' if len(new_trends) != 1 else ''}")

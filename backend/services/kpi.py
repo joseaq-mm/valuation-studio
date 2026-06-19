@@ -18,6 +18,8 @@ Models (independent of the global thesis preset, per product decision):
 """
 import logging
 import os
+import re
+import uuid
 from datetime import datetime, timezone
 
 from services.thesis import _llm, _run_searches, _extract_json, _sources_block
@@ -123,15 +125,33 @@ async def _extract_kpis(company: str, drivers: list, sources_block: str) -> dict
     return data if isinstance(data, dict) else {}
 
 
-async def _judge_kpis(company: str, drivers: list, kpis: list) -> dict:
+def _news_block(news: list) -> str:
+    if not news:
+        return ""
+    lines = []
+    for n in news[:15]:
+        d = n.get("published_at") or ""
+        lines.append(f"- ({d}) [{n.get('sentiment') or 'neutral'}] {n.get('headline')}"
+                     + (f" — {n.get('why_it_matters')}" if n.get("why_it_matters") else
+                        (f" — {n.get('summary')}" if n.get("summary") else "")))
+    return "\n".join(lines)
+
+
+async def _judge_kpis(company: str, drivers: list, kpis: list, context_news: list = None) -> dict:
     kpi_lines = []
     for k in kpis:
         kpi_lines.append(
             f"- {k.get('name')} (driver: {k.get('driver') or 'general'}) · "
             f"actual {k.get('value_current')} vs anterior {k.get('value_prior')} · "
             f"sube_es_bueno={k.get('higher_is_better')}")
+    news_ctx = ""
+    nb = _news_block(context_news or [])
+    if nb:
+        news_ctx = ("\n\nNOTICIAS RECIENTES (contexto cualitativo — úsalas SOLO para matizar señal/peso y "
+                    "verdict; el dato cuantitativo del KPI manda):\n" + nb)
     user = (f"EMPRESA: {company}\n\nDRIVERS (tesis):\n{_drivers_block(drivers)}\n\n"
-            f"KPIs EXTRAÍDOS:\n" + "\n".join(kpi_lines) + "\n\nJuzga señal y peso por KPI + verdict por driver, en JSON.")
+            f"KPIs EXTRAÍDOS:\n" + "\n".join(kpi_lines) + news_ctx +
+            "\n\nJuzga señal y peso por KPI + verdict por driver, en JSON.")
     raw = await _llm(*KPI_JUDGE_MODEL, f"kpi-judge-{datetime.now(timezone.utc).timestamp()}",
                      JUDGE_SYS, user)
     data = _extract_json(raw)
@@ -210,8 +230,9 @@ def _merge_judge(kpis: list, judged: dict) -> list:
     return out
 
 
-async def run_company_kpis(company: str, ticker: str, drivers: list, sources: list) -> dict:
-    """Full KPI pipeline: extract (Gemini) → judge (Claude) → coefficients (pure)."""
+async def run_company_kpis(company: str, ticker: str, drivers: list, sources: list, context_news: list = None) -> dict:
+    """Full KPI pipeline: extract (Gemini) → judge (Claude, with optional news
+    context) → coefficients (pure)."""
     sblock = _sources_block(sources)
     ext = await _extract_kpis(company, drivers, sblock)
     kpis = ext.get("kpis") or []
@@ -226,7 +247,7 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
             "note": "No se encontraron KPIs operativos fiables en las fuentes recientes.",
         }
 
-    judged = await _judge_kpis(company, drivers, kpis)
+    judged = await _judge_kpis(company, drivers, kpis, context_news)
     kpis = _merge_judge(kpis, judged)
     coeff = compute_kpi_coefficients(kpis, driver_names, ALPHA)
 
@@ -318,3 +339,154 @@ async def run_kpi_search(company: str, ticker: str, drivers: list, query: str, s
     judged = await _judge_kpis(company, drivers, kpis)
     kpis = _merge_judge(kpis, judged)
     return {"kpis": kpis, "note": None, "judged_drivers": judged.get("drivers") or []}
+
+
+# ---------------------- Qualitative news (inform scores; aged out over time) ----------------------
+
+NEWS_HALF_LIFE_DAYS = 45
+NEWS_MAX_ITEMS = 15
+NEWS_MIN_EFF = 0.04  # below this effective relevance a news item is "forgotten"
+
+NEWS_EXTRACTOR_SYS = """Eres un analista de equity research. A partir de RESULTADOS DE BÚSQUEDA en vivo, extrae las NOTICIAS materiales y recientes sobre una empresa que puedan afectar a su tesis (cualitativamente): resultados, regulación, demandas, alianzas, lanzamientos, guidance, dirección, competencia.
+
+REGLAS:
+- SOLO noticias reales respaldadas por las fuentes, con su enlace. NO inventes titulares ni fechas.
+- `published_at`: fecha real (YYYY-MM-DD); si no la sabes con seguridad, déjala vacía.
+- `sentiment`: "positivo" | "negativo" | "neutral" para la tesis.
+- `relevance`: 0..1 (cuán material es para la tesis de la empresa).
+- `driver`: el driver más relacionado (uno de los dados) o "general".
+- Máximo 8 noticias, las más relevantes y recientes.
+
+Devuelve SOLO JSON:
+{ "news": [ { "headline": "...", "summary": "1-2 frases", "why_it_matters": "impacto en la tesis",
+  "published_at": "YYYY-MM-DD", "sentiment": "positivo|negativo|neutral", "relevance": 0.0,
+  "driver": "<driver o general>", "url": "https://..." } ] }"""
+
+
+def gather_news_sources(company: str, ticker: str, max_results: int = 5) -> list:
+    name = (company or ticker or "").strip()
+    year = datetime.now(timezone.utc).year
+    queries = [
+        f"{name} {ticker} news {year}",
+        f"{name} earnings regulation lawsuit partnership guidance {year}",
+        f"{name} {ticker} latest developments {year}",
+    ]
+    return _run_searches(queries, max_results=max_results, cap=18)
+
+
+def gather_news_search_sources(company: str, ticker: str, query: str, max_results: int = 6) -> list:
+    name = (company or ticker or "").strip()
+    year = datetime.now(timezone.utc).year
+    queries = [f"{name} {query} {year}", f"{name} {ticker} {query} news {year}", f"{query} {name}"]
+    return _run_searches(queries, max_results=max_results, cap=18)
+
+
+async def run_company_news(company: str, ticker: str, drivers: list, sources: list) -> list:
+    """Extract material news items (Gemini Flash) from search results."""
+    names = ", ".join(d.get("name") for d in drivers if d.get("name")) or "general"
+    user = (f"EMPRESA: {company} ({ticker})\n\nDRIVERS (para asignar `driver`): {names}, general\n\n"
+            f"RESULTADOS DE BÚSQUEDA EN VIVO:\n{_sources_block(sources)}\n\nExtrae las noticias materiales en JSON.")
+    raw = await _llm(*KPI_EXTRACTOR_MODEL, f"kpi-news-{datetime.now(timezone.utc).timestamp()}",
+                     NEWS_EXTRACTOR_SYS, user)
+    data = _extract_json(raw) or {}
+    out = []
+    for n in (data.get("news") or [])[:10]:
+        if not (n.get("headline") or "").strip():
+            continue
+        rel = _clampf(n.get("relevance"), 0, 1)
+        out.append({
+            "headline": (n.get("headline") or "").strip(),
+            "summary": (n.get("summary") or "").strip(),
+            "why_it_matters": (n.get("why_it_matters") or "").strip(),
+            "published_at": (n.get("published_at") or "").strip(),
+            "sentiment": (n.get("sentiment") or "neutral").strip().lower(),
+            "relevance": 0.6 if rel is None else rel,
+            "driver": (n.get("driver") or "general").strip(),
+            "url": (n.get("url") or "").strip(),
+        })
+    return out
+
+
+def _age_days(item: dict, now: datetime) -> float:
+    raw = item.get("published_at") or item.get("created_at") or ""
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            dt = datetime.strptime(raw[:26] if "T" in raw else raw[:10], fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return max(0.0, (now - dt).total_seconds() / 86400.0)
+        except (ValueError, TypeError):
+            continue
+    # Unknown date → treat as moderately old so it ages out unless re-found.
+    return 21.0
+
+
+def news_effective_relevance(item: dict, now: datetime = None) -> float:
+    now = now or datetime.now(timezone.utc)
+    rel = _clampf(item.get("relevance"), 0, 1)
+    rel = 0.6 if rel is None else rel
+    decay = 0.5 ** (_age_days(item, now) / NEWS_HALF_LIFE_DAYS)
+    return round(rel * decay, 4)
+
+
+def prune_news(items: list, now: datetime = None) -> tuple:
+    """Apply 45-day half-life decay; keep the top NEWS_MAX_ITEMS above NEWS_MIN_EFF.
+    Returns (kept, dropped) — `dropped` are 'forgotten' (older/less relevant)."""
+    now = now or datetime.now(timezone.utc)
+    scored = []
+    for it in items:
+        eff = news_effective_relevance(it, now)
+        scored.append((eff, it))
+    scored.sort(key=lambda x: -x[0])
+    kept, dropped = [], []
+    for i, (eff, it) in enumerate(scored):
+        it = dict(it)
+        it["effective_relevance"] = eff
+        if i < NEWS_MAX_ITEMS and eff >= NEWS_MIN_EFF:
+            kept.append(it)
+        else:
+            dropped.append(it)
+    return kept, dropped
+
+
+def news_dedupe_key(headline: str, url: str = None) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (headline or "").lower()).strip()[:80]
+
+
+async def merge_prune_news(db, company_id, user_id, ticker, new_items, origin):
+    """Upsert news into `kpi_news` (dedupe by normalized headline), then apply the
+    45-day decay/cap so old, low-relevance items are 'forgotten'. Shared by the KPI
+    analysis, the news button, and the weekly Radar. Returns the kept list."""
+    now = datetime.now(timezone.utc)
+    nowiso = now.isoformat()
+    for n in (new_items or []):
+        h = (n.get("headline") or "").strip()
+        if not h:
+            continue
+        key = news_dedupe_key(h, n.get("url"))
+        ex = await db.kpi_news.find_one(
+            {"company_id": company_id, "user_id": user_id, "dedupe_key": key, "is_deleted": False},
+            {"_id": 0, "id": 1})
+        if ex:
+            await db.kpi_news.update_one({"id": ex["id"]}, {"$set": {
+                "last_seen": nowiso,
+                "relevance": max(n.get("relevance") or 0.6, 0.0),
+                "published_at": n.get("published_at") or "",
+            }})
+            continue
+        await db.kpi_news.insert_one({
+            "id": uuid.uuid4().hex, "user_id": user_id, "company_id": company_id, "ticker": ticker,
+            "headline": h, "summary": n.get("summary"), "why_it_matters": n.get("why_it_matters"),
+            "url": n.get("url"), "published_at": n.get("published_at") or "",
+            "sentiment": n.get("sentiment") or "neutral",
+            "relevance": n.get("relevance") if n.get("relevance") is not None else 0.6,
+            "driver": n.get("driver") or "general", "origin": origin, "dedupe_key": key,
+            "is_deleted": False, "created_at": nowiso, "last_seen": nowiso,
+        })
+    alln = await db.kpi_news.find(
+        {"company_id": company_id, "user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(length=200)
+    kept, dropped = prune_news(alln, now)
+    for d in dropped:
+        if d.get("id"):
+            await db.kpi_news.update_one({"id": d["id"]}, {"$set": {"is_deleted": True}})
+    return kept

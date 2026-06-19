@@ -207,3 +207,11 @@ export const kpiFileToggle = (companyId, fileId, selected) =>
     api.patch(`/thesis/${companyId}/kpis/files/${fileId}`, { selected }).then(r => r.data);
 export const kpiFileDelete = (companyId, fileId) =>
     api.delete(`/thesis/${companyId}/kpis/files/${fileId}`).then(r => r.data);
+
+// KPI qualitative news (inform scores; aged out over time)
+export const kpiNewsList = (companyId) =>
+    api.get(`/thesis/${companyId}/kpis/news`).then(r => r.data);
+export const kpiNewsSearch = (companyId, query = null, onStatus = null) =>
+    api.post(`/thesis/${companyId}/kpis/news`, { query }).then(r => startAndPoll(r.data, onStatus));
+export const kpiNewsDelete = (companyId, newsId) =>
+    api.delete(`/thesis/${companyId}/kpis/news/${newsId}`).then(r => r.data);

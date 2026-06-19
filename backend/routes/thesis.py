@@ -8,6 +8,7 @@ import uuid
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
@@ -25,7 +26,7 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
-from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text
+from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
 from storage import put_object, get_object, APP_NAME, MIME_TYPES
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
@@ -190,15 +191,25 @@ def _auto_trend_sync(exclude) -> dict:
     return result
 
 
-def _kpi_sync(company: str, ticker: str, drivers: list, docs: list = None) -> dict:
+def _kpi_sync(company: str, ticker: str, drivers: list, docs: list = None, context_news: list = None) -> dict:
     """Blocking KPI pipeline (live search + selected document digests + LLM)."""
     sources = gather_kpi_sources(company, ticker)
     if docs:
         sources = sources + docs
-    result, cost = run_costed(run_company_kpis(company, ticker, drivers, sources))
+    result, cost = run_costed(run_company_kpis(company, ticker, drivers, sources, context_news))
     if isinstance(result, dict):
         result["_cost"] = cost
     return result
+
+
+def _news_sync(company: str, ticker: str, drivers: list, query: str = None) -> list:
+    """Blocking news extraction (live search + Gemini) in a worker thread."""
+    if query:
+        sources = gather_news_search_sources(company, ticker, query)
+    else:
+        sources = gather_news_sources(company, ticker)
+    result, _cost = run_costed(run_company_news(company, ticker, drivers, sources))
+    return result if isinstance(result, list) else []
 
 
 def _kpi_search_sync(company: str, ticker: str, drivers: list, query: str, docs: list = None) -> dict:
@@ -354,6 +365,10 @@ class KpiTranscriptRequest(BaseModel):
 
 class KpiFileSelectRequest(BaseModel):
     selected: bool
+
+
+class KpiNewsRequest(BaseModel):
+    query: Optional[str] = None
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -1525,7 +1540,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 {"company_id": company_id, "user_id": user_id, "is_deleted": False,
                  "status": "ready", "selected": True}, {"_id": 0}).to_list(length=20)
             docs = _selected_doc_sources(files)
-            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs)
+            # Refresh qualitative news and feed the current (decayed/pruned) list as context.
+            try:
+                fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, None)
+                await _news_merge_prune(company_id, user_id, ticker, fresh, "analysis")
+            except Exception as ne:
+                logger.warning(f"kpi news refresh failed ({company_id}): {ne}")
+            context_news = await _load_company_news(company_id, user_id)
+            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs, context_news)
             snap.pop("_cost", None)
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
@@ -1832,6 +1854,74 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=404, detail="Sin archivo descargable")
         data, ctype = await asyncio.to_thread(get_object, rec["storage_path"])
         return Response(content=data, media_type=rec.get("content_type") or ctype)
+
+    # ----- KPI qualitative news (inform scores; aged out, refreshed on reanalyze) -----
+    def _news_public(n):
+        return {
+            "id": n.get("id"), "headline": n.get("headline"), "summary": n.get("summary"),
+            "why_it_matters": n.get("why_it_matters"), "url": n.get("url"),
+            "published_at": n.get("published_at"), "sentiment": n.get("sentiment"),
+            "relevance": n.get("relevance"), "effective_relevance": n.get("effective_relevance"),
+            "driver": n.get("driver"), "origin": n.get("origin"), "created_at": n.get("created_at"),
+        }
+
+    async def _news_merge_prune(company_id, user_id, ticker, new_items, origin):
+        return await merge_prune_news(db, company_id, user_id, ticker, new_items, origin)
+
+    async def _load_company_news(company_id, user_id):
+        alln = await db.kpi_news.find(
+            {"company_id": company_id, "user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(length=200)
+        kept, _ = prune_news(alln, datetime.now(timezone.utc))
+        return kept
+
+    @router.get("/{company_id}/kpis/news")
+    async def list_kpi_news(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        kept = await _load_company_news(company_id, user["user_id"])
+        return {"news": [_news_public(n) for n in kept]}
+
+    async def _run_kpi_news_job(job_id, company_id, user_id, query):
+        try:
+            doc = await db.theses.find_one(
+                {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Empresa no encontrada"}})
+                return
+            company = (doc.get("company") or {}).get("name") or company_id
+            ticker = (doc.get("company") or {}).get("ticker") or ""
+            drivers = _company_drivers(doc)
+            fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, query or None)
+            kept = await _news_merge_prune(company_id, user_id, ticker, fresh, "news_search")
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": {"news": [_news_public(n) for n in kept], "found": len(fresh)},
+                          "updated_at": datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.error(f"kpi news job failed ({company_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or "Error buscando noticias"}})
+
+    @router.post("/{company_id}/kpis/news")
+    async def search_kpi_news(company_id: str, req: KpiNewsRequest, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "id": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "kpi_news",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_kpi_news_job(job_id, company_id, user["user_id"], (req.query or "").strip() or None))
+        return {"job_id": job_id}
+
+    @router.delete("/{company_id}/kpis/news/{news_id}")
+    async def delete_kpi_news(company_id: str, news_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        r = await db.kpi_news.update_one(
+            {"id": news_id, "company_id": company_id, "user_id": user["user_id"]},
+            {"$set": {"is_deleted": True}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Noticia no encontrada")
+        return {"ok": True}
 
 
 
