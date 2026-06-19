@@ -4,7 +4,10 @@ import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
 import KpiNews from "@/components/kpi/KpiNews";
+import HoverTip from "@/components/HoverTip";
 import { toast } from "sonner";
+
+const COEF_TIP = "Coeficiente de validación (C = 1 + α·S, α=0,5): resume si los KPIs validan la tesis. >1 (verde) se valida, <1 (rojo) se deteriora, ≈1 neutral. La S es la señal agregada (−1 a +1): el promedio, ponderado por la relevancia de cada KPI, de cuánto apoyan (+) o contradicen (−) la tesis. Ej.: S=+0,5 → C=1,25; S=0 → C=1,00; S=−0,5 → C=0,75.";
 
 const coefColor = (c) => {
     if (c == null) return "#7A7A7A";
