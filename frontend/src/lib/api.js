@@ -190,3 +190,5 @@ export const kpiRun = (companyId, onStatus = null) =>
     api.post(`/thesis/${companyId}/kpis`).then(r => startAndPoll(r.data, onStatus));
 export const kpiEdit = (companyId, kpis) =>
     api.put(`/thesis/${companyId}/kpis`, { kpis }).then(r => r.data);
+export const kpiSearch = (companyId, query, onStatus = null) =>
+    api.post(`/thesis/${companyId}/kpis/search`, { query }).then(r => startAndPoll(r.data, onStatus));

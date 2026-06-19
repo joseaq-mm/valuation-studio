@@ -619,3 +619,8 @@ Piloto: validar/refutar la tesis de empresas YA desarrolladas mediante KPIs oper
 - Decisiones usuario: disparo bajo demanda (a), α=0.5, Gemini+Claude, piloto DDOG/NOW/CRWD/NET/MDB+DUOL+RBLX, edición operativa SÍ.
 - Verificado end-to-end: DUOL coef_global 1,24 (validándose), edición baja a 1,02 al poner señal −0,8 en Paid Subscribers. Screenshots OK (selector 26, drivers, tabla, edición).
 - NOTA: KPIs extraídos por IA → mostrar siempre fuente y permitir corrección (ya implementado). Consumo: ~2 llamadas LLM por empresa.
+
+## CHANGELOG — KPIs: buscador puntual de KPI específico (19 jun 2026)
+- En la ficha de empresa de /kpis, caja **"Buscar un KPI específico"** (`kpi-search-box`/`kpi-search-input`/`kpi-search-btn`): el usuario pide un dato (p. ej. "número de suscriptores") → IA busca en vivo + extrae (Gemini) + juzga (Claude) → se **incorpora al snapshot y recalcula el coeficiente**.
+- Backend `services/kpi.py`: `gather_kpi_search_sources` + `run_kpi_search` (SEARCH_EXTRACTOR_SYS enfocado a la petición; reutiliza `_judge_kpis`/`_merge_judge`). Endpoint `POST /thesis/{id}/kpis/search` (job async `_run_kpi_search_job`): mergea el KPI nuevo en el snapshot (dedupe por name+driver: el nuevo reemplaza), recompute determinista, **preserva verdicts/ediciones/period**, mergea fuentes; si no encuentra dato → conserva snapshot + `search_note`. Modelo `KpiSearchRequest`. api.js `kpiSearch`.
+- Verificado: HIMS "suscriptores" → no hallado, snapshot intacto + nota; DUOL "crecimiento de ingresos" → añade KPI "Ingresos 292M" (n_kpis 4→5), coef 1,02→1,10, preserva edición previa (Paid Subscribers s=-0.8). Screenshot UI OK.

@@ -24,7 +24,7 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
-from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients
+from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
 
@@ -197,6 +197,15 @@ def _kpi_sync(company: str, ticker: str, drivers: list) -> dict:
     return result
 
 
+def _kpi_search_sync(company: str, ticker: str, drivers: list, query: str) -> dict:
+    """Blocking targeted single-KPI search (live search + LLM) in a worker thread."""
+    sources = gather_kpi_search_sources(company, ticker, query)
+    result, _cost = run_costed(run_kpi_search(company, ticker, drivers, query, sources))
+    if isinstance(result, dict):
+        result["_sources"] = [{"title": s.get("title"), "url": s.get("url")} for s in sources][:12]
+    return result
+
+
 def _company_drivers(doc: dict) -> list:
     """Growth-driver theses of a company doc (non-merged), as the KPI judge input."""
     out = []
@@ -290,6 +299,10 @@ class AutoTrendRequest(BaseModel):
 
 class EditKpisRequest(BaseModel):
     kpis: List[Dict[str, Any]]
+
+
+class KpiSearchRequest(BaseModel):
+    query: str
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -1546,6 +1559,92 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.theses.update_one(
             {"id": company_id, "user_id": user["user_id"]}, {"$set": {"kpi_snapshot": recomputed}})
         return {"kpi_snapshot": recomputed}
+
+    async def _run_kpi_search_job(job_id: str, company_id: str, user_id: str, query: str):
+        try:
+            doc = await db.theses.find_one(
+                {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Empresa no encontrada"}})
+                return
+            company = (doc.get("company") or {}).get("name") or doc.get("title") or company_id
+            ticker = (doc.get("company") or {}).get("ticker") or ""
+            drivers = _company_drivers(doc)
+            res = await asyncio.to_thread(_kpi_search_sync, company, ticker, drivers, query)
+            new_kpis = res.get("kpis") or []
+            new_sources = res.pop("_sources", []) or []
+
+            snap = doc.get("kpi_snapshot") or {}
+            existing = snap.get("kpis") or []
+            alpha = snap.get("alpha") or 0.5
+            driver_names = [d.get("name") for d in drivers if d.get("name")]
+
+            if not new_kpis:
+                # Nothing found: keep the snapshot, just attach a transient note for the UI.
+                result = dict(snap)
+                result["search_note"] = res.get("note") or "No se encontró ese dato en fuentes recientes."
+                await db.thesis_jobs.update_one(
+                    {"id": job_id}, {"$set": {"status": "done", "result": result,
+                                              "updated_at": datetime.now(timezone.utc).isoformat()}})
+                return
+
+            # Merge: a new KPI replaces an existing one with the same (name, driver).
+            def key(k):
+                return ((k.get("name") or "").strip().lower(), (k.get("driver") or "").strip().lower())
+            new_keys = {key(k) for k in new_kpis}
+            merged = [k for k in existing if key(k) not in new_keys] + new_kpis
+
+            recomputed = compute_kpi_coefficients(merged, driver_names, alpha)
+            # Preserve verdicts (existing + any new from this search).
+            verdicts = {(d.get("name") or "").strip().lower(): d.get("verdict") for d in (snap.get("drivers") or [])}
+            for d in (res.get("judged_drivers") or []):
+                if d.get("verdict"):
+                    verdicts[(d.get("name") or "").strip().lower()] = d.get("verdict")
+            for d in recomputed["drivers"]:
+                d["verdict"] = verdicts.get((d.get("name") or "").strip().lower())
+            # Merge sources (dedupe by url).
+            seen_urls = set()
+            allsrc = []
+            for s in (snap.get("sources") or []) + new_sources:
+                u = s.get("url")
+                if u and u in seen_urls:
+                    continue
+                seen_urls.add(u)
+                allsrc.append(s)
+            recomputed["sources"] = allsrc[:14]
+            recomputed["period"] = snap.get("period")
+            recomputed["ticker"] = ticker
+            recomputed["generated_at"] = snap.get("generated_at") or datetime.now(timezone.utc).isoformat()
+            recomputed["searched_at"] = datetime.now(timezone.utc).isoformat()
+            recomputed["last_query"] = query
+
+            await db.theses.update_one(
+                {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": recomputed}})
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "done", "result": recomputed,
+                                          "updated_at": datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.error(f"kpi search job failed ({company_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error buscando KPI: {e}"}})
+
+    @router.post("/{company_id}/kpis/search")
+    async def search_kpi(company_id: str, req: KpiSearchRequest, user: Dict[str, Any] = Depends(auth_required)):
+        q = (req.query or "").strip()
+        if not q:
+            raise HTTPException(status_code=400, detail="Escribe qué dato buscar")
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "id": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "kpi_search",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_kpi_search_job(job_id, company_id, user["user_id"], q))
+        return {"job_id": job_id}
+
 
 
     @router.get("/{thesis_id}")

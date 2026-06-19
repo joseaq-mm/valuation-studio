@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw } from "lucide-react";
-import { kpiCompanies, kpiGet, kpiRun, kpiEdit } from "@/lib/api";
+import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search } from "lucide-react";
+import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
@@ -41,6 +41,9 @@ export default function Kpis() {
     const [status, setStatus] = useState(null);   // analysis progress text
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState([]);
+    const [query, setQuery] = useState("");
+    const [searching, setSearching] = useState(false);
+    const [searchNote, setSearchNote] = useState(null);
 
     const loadCompanies = useCallback(async () => {
         if (!user) { setCompanies([]); return; }
@@ -75,8 +78,7 @@ export default function Kpis() {
         } finally { setStatus(null); setLoading(false); }
     };
 
-    const startEdit = () => { setDraft((snap.kpis || []).map((k) => ({ ...k }))); setEditing(true); };
-    const setField = (i, field, val) => setDraft((d) => d.map((k, j) => (j === i ? { ...k, [field]: val } : k)));
+    const startEdit = () => { setDraft((snap.kpis || []).map((k) => ({ ...k }))); setEditing(true); };    const setField = (i, field, val) => setDraft((d) => d.map((k, j) => (j === i ? { ...k, [field]: val } : k)));
     const saveEdit = async () => {
         setLoading(true);
         try {
@@ -96,6 +98,22 @@ export default function Kpis() {
 
     const rows = editing ? draft : (snap?.kpis || []);
     const selCompany = companies.find((c) => c.id === selId);
+
+    const doSearch = async () => {
+        const q = query.trim();
+        if (!q || searching) return;
+        setSearching(true); setSearchNote(null);
+        try {
+            const res = await kpiSearch(selId, q);
+            const result = res?.result || res;
+            setSnap(result);
+            setQuery("");
+            if (result?.search_note) { setSearchNote(result.search_note); toast.info(result.search_note); }
+            else { toast.success("KPI añadido · coeficiente actualizado"); await loadCompanies(); }
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Error buscando el dato");
+        } finally { setSearching(false); }
+    };
 
     if (!user) {
         return (
@@ -197,6 +215,28 @@ export default function Kpis() {
                     </div>
 
                     {snap.note && <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-3 text-sm text-[#7a5a10] mb-4">{snap.note}</div>}
+
+                    {/* Targeted KPI search — adds a specific datapoint and recomputes the coefficient */}
+                    <div className="border border-[#052049]/30 bg-[#F4F6FA] p-3 mb-4" data-testid="kpi-search-box">
+                        <div className="overline text-[#052049] mb-1.5 flex items-center gap-1.5"><Search size={13} /> Buscar un KPI específico</div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }}
+                                placeholder="p. ej. número de suscriptores, ARR, backlog…"
+                                className="flex-1 border border-black/30 bg-white px-3 py-1.5 text-sm outline-none focus:border-black"
+                                disabled={searching}
+                                data-testid="kpi-search-input"
+                            />
+                            <button onClick={doSearch} disabled={searching || !query.trim()} className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-40" data-testid="kpi-search-btn">
+                                {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                                {searching ? "Buscando…" : "Buscar y añadir"}
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-[#4A4A4A] mt-1.5">El dato se extrae por IA (con su fuente), se incorpora al cálculo y <strong>actualiza el coeficiente</strong>.</p>
+                        {searchNote && <div className="text-xs text-[#B32A22] mt-1.5">{searchNote}</div>}
+                    </div>
 
                     {/* Per-driver coefficients */}
                     {snap.drivers?.length > 0 && (

@@ -237,3 +237,57 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
     coeff["period"] = period
     coeff["sources"] = [{"title": s.get("title"), "url": s.get("url")} for s in sources][:12]
     return coeff
+
+
+# ---------------------- Targeted single-KPI search ----------------------
+
+SEARCH_EXTRACTOR_SYS = """Eres un analista financiero. El usuario quiere un DATO/KPI operativo CONCRETO de una empresa (p. ej. "número de suscriptores", "ARR", "backlog").
+
+A partir de los RESULTADOS DE BÚSQUEDA en vivo, extrae el/los KPI(s) que responden a su PETICIÓN.
+REGLAS:
+- SOLO datos respaldados por las fuentes, con su cita. Si NO encuentras el dato, devuelve `kpis` vacío y explica en `note`.
+- Da valor actual y, si está disponible, el del periodo anterior (para ver momentum).
+- Asigna cada KPI al driver más relacionado (usa EXACTAMENTE uno de los nombres de driver dados, o "general").
+- `higher_is_better`: true si que suba es bueno (suscriptores, ARR, backlog), false si bajar es bueno (churn).
+- 1 a 3 KPIs como máximo (los que respondan a la petición).
+
+Devuelve SOLO JSON:
+{
+  "kpis": [
+    { "name": "...", "value_current": "...", "value_prior": "...", "period_current": "...", "period_prior": "...",
+      "unit": "...", "yoy_change": "...", "higher_is_better": true, "driver": "<driver o 'general'>",
+      "source_url": "https://...", "source_quote": "...", "confidence": 0.0 }
+  ],
+  "note": "vacío si todo OK, o por qué no se encontró"
+}"""
+
+
+def gather_kpi_search_sources(company: str, ticker: str, query: str, max_results: int = 6) -> list:
+    name = (company or ticker or "").strip()
+    year = datetime.now(timezone.utc).year
+    queries = [
+        f"{name} {query} {year}",
+        f"{name} {ticker} {query} latest earnings results {year}",
+        f"{name} {query} investor relations",
+    ]
+    return _run_searches(queries, max_results=max_results, cap=18)
+
+
+async def run_kpi_search(company: str, ticker: str, drivers: list, query: str, sources: list) -> dict:
+    """Targeted: extract the SPECIFIC KPI the user asked for, then judge it in the
+    thesis context (signal/weight/rationale). Returns the new KPI(s) to merge."""
+    sblock = _sources_block(sources)
+    names = ", ".join(d.get("name") for d in drivers if d.get("name")) or "general"
+    user = (f"EMPRESA: {company}\nPETICIÓN DEL USUARIO: {query}\n\n"
+            f"DRIVERS DE CRECIMIENTO (usa estos nombres exactos al asignar `driver`):\n{_drivers_block(drivers)}\n"
+            f"Nombres válidos de driver: {names}, general\n\n"
+            f"RESULTADOS DE BÚSQUEDA EN VIVO:\n{sblock}\n\nExtrae el/los KPI(s) pedido(s) en JSON.")
+    raw = await _llm(*KPI_EXTRACTOR_MODEL, f"kpi-search-{datetime.now(timezone.utc).timestamp()}",
+                     SEARCH_EXTRACTOR_SYS, user)
+    data = _extract_json(raw) or {}
+    kpis = data.get("kpis") or []
+    if not kpis:
+        return {"kpis": [], "note": data.get("note") or "No se encontró el dato en las fuentes recientes.", "judged_drivers": []}
+    judged = await _judge_kpis(company, drivers, kpis)
+    kpis = _merge_judge(kpis, judged)
+    return {"kpis": kpis, "note": None, "judged_drivers": judged.get("drivers") or []}
