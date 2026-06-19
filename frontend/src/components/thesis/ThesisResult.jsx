@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown } from "lucide-react";
+import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAlert, Sparkles, Flame, RefreshCw, GitBranch, GitMerge, ChevronDown, Check } from "lucide-react";
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
@@ -342,11 +342,10 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
     const splitSum = splits ? splits.reduce((a, s) => a + (s.tam_busd || 0), 0) : 0;
 
     const devSplits = dev?.developedSplits || [];
-    const devSplitSet = new Set(devSplits.map((d) => _norm(d.split)));
     const devSplitId = (name) => devSplits.find((d) => _norm(d.split) === _norm(name))?.developed_id;
-    const pendingSplits = splits ? splits.filter((sp) => !devSplitSet.has(_norm(sp.name))) : [];
     const wholeDeveloped = !!dev?.whole;
     const splitDeveloped = devSplits.length > 0;
+    const isDeveloped = wholeDeveloped || splitDeveloped;
 
     return (
         <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
@@ -384,138 +383,130 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
                 </div>
             )}
 
-            {/* STATE A — the whole core was developed: informational note, no actions. */}
-            {wholeDeveloped ? (
-                <div className="mt-3 border border-[#1E7D45]/40 bg-[#F0F7F2] p-3 text-sm leading-relaxed" data-testid={`core-whole-note-${(t.name || "").slice(0, 12)}`}>
-                    <span className="font-semibold text-[#1E7D45]">{splits ? "Conjunto desarrollado ✓" : "Tesis ya desarrollada ✓"}</span>{" "}
-                    <Link to={`/thesis/${dev.whole.developed_id}`} className="underline font-medium">Ver la tesis</Link>.
-                    {splits && (
-                        <div className="text-[11px] text-[#4A4A4A] mt-1">
-                            Tenía disponibles estos splits: {splits.map((sp) => sp.name).join(" · ")}.
-                        </div>
-                    )}
+            {/* Status banner (green) when developed — narrative is preserved below. */}
+            {wholeDeveloped && (
+                <div className="mt-3 inline-flex items-center gap-2 w-fit border border-[#1E7D45]/50 bg-[#F0F7F2] px-3 py-1.5 text-sm" data-testid={`core-whole-note-${(t.name || "").slice(0, 12)}`}>
+                    <Check size={15} className="text-[#1E7D45]" />
+                    <span className="font-semibold text-[#1E7D45]">Tesis generada</span>
+                    <Link to={`/thesis/${dev.whole.developed_id}`} className="underline font-medium text-[#1a1a1a]" data-testid={`core-whole-link-${(t.name || "").slice(0, 12)}`}>Ver la tesis</Link>
                 </div>
-            ) : splitDeveloped ? (
-                /* STATE B — developed by parts: note + pending splits as their own cards. */
-                <div className="mt-3" data-testid={`core-split-note-${(t.name || "").slice(0, 12)}`}>
-                    <div className="border border-[#B8860B] bg-[#FBF3E0] p-3 text-sm leading-relaxed">
-                        <div className="font-semibold text-[#7a5a10] flex items-center gap-1.5 mb-1"><GitBranch size={14} /> Este core se dividió en partes:</div>
-                        <ul className="space-y-0.5">
-                            {splits.map((sp, i) => {
-                                const did = devSplitId(sp.name);
-                                return (
-                                    <li key={i} className="text-[13px]">
-                                        <span className="font-medium">{sp.name}</span>{fmtTam(sp.tam_busd) ? ` (${fmtTam(sp.tam_busd)})` : ""} —{" "}
-                                        {did
-                                            ? <Link to={`/thesis/${did}`} className="text-[#1E7D45] underline font-semibold">tesis generada ✓</Link>
-                                            : <span className="text-[#B32A22] font-semibold">pendiente</span>}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </div>
-                    {pendingSplits.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                            <div className="overline text-[#4A4A4A]">Partes pendientes de desarrollar</div>
-                            {pendingSplits.map((sp, i) => (
-                                <div key={i} className="flex items-center justify-between gap-2 border border-black/20 bg-white px-3 py-2" data-testid={`pending-split-${_norm(sp.name).slice(0, 12)}`}>
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-medium leading-tight">{sp.name}</div>
-                                        {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold">{fmtTam(sp.tam_busd)}</span>}
-                                    </div>
-                                    <DevelopAction
-                                        name={sp.name} core={coreName} whole={false} companyId={companyId} onDevelop={onDevelop}
-                                        linkTo={splitLink(sp.name)}
-                                        className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1.5 hover:bg-[#052049] transition-colors"
-                                        testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
-                                    >
-                                        <Sparkles size={12} /> Generar
-                                    </DevelopAction>
-                                </div>
+            )}
+            {!wholeDeveloped && splitDeveloped && (
+                <div className="mt-3 inline-flex items-center gap-2 w-fit border border-[#1E7D45]/50 bg-[#F0F7F2] px-3 py-1.5 text-sm" data-testid={`core-split-note-${(t.name || "").slice(0, 12)}`}>
+                    <Check size={15} className="text-[#1E7D45]" />
+                    <span className="font-semibold text-[#1E7D45]">Tesis generada por partes</span>
+                    <span className="text-[11px] text-[#4A4A4A]">· detalle abajo</span>
+                </div>
+            )}
+
+            {/* Narrative — ALWAYS shown (kept as reference even after the thesis is developed). */}
+            {t.win_probability != null && <div className="mt-2.5"><WinningBadge value={t.win_probability} /></div>}
+            {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
+            {t.value_chain_role && (
+                <div className="mt-2 text-xs text-[#4A4A4A]">
+                    <span className="font-semibold">Rol en la cadena:</span> {t.value_chain_role}
+                </div>
+            )}
+            {t.rationale && (
+                <div className="mt-3 border-l-2 pl-3" style={{ borderColor: c }}>
+                    <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
+                </div>
+            )}
+
+            {/* Splits */}
+            {splits && (isDeveloped || planningLocked) ? (
+                /* Developed / locked: split parts as info with per-part status (+ generate pending). */
+                <div className="mt-3 border border-[#B8860B]/50 bg-[#FBF3E0] p-3" data-testid={`splits-status-${(t.name || "").slice(0, 12)}`}>
+                    <div className="font-semibold text-[#7a5a10] flex items-center gap-1.5 mb-1.5 text-sm"><GitBranch size={14} /> Particiones del conjunto</div>
+                    <ul className="space-y-1">
+                        {splits.map((sp, i) => {
+                            const did = devSplitId(sp.name);
+                            return (
+                                <li key={i} className="text-[13px] flex items-center justify-between gap-2">
+                                    <span className="min-w-0"><span className="font-medium">{sp.name}</span>{fmtTam(sp.tam_busd) ? ` (${fmtTam(sp.tam_busd)})` : ""}</span>
+                                    {did
+                                        ? <Link to={`/thesis/${did}`} className="text-[#1E7D45] underline font-semibold inline-flex items-center gap-1 shrink-0"><Check size={12} />tesis generada</Link>
+                                        : wholeDeveloped
+                                            ? <span className="text-[#4A4A4A] text-[11px] shrink-0">incluida en el conjunto</span>
+                                            : <DevelopAction
+                                                name={sp.name} core={coreName} whole={false} companyId={companyId} onDevelop={onDevelop}
+                                                linkTo={splitLink(sp.name)}
+                                                className="shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.1em] font-semibold bg-black text-[#FDF1E6] px-2.5 py-1 hover:bg-[#052049] transition-colors"
+                                                testid={`split-generate-${_norm(sp.name).slice(0, 12)}`}
+                                            ><Sparkles size={11} /> Generar</DevelopAction>}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            ) : splits ? (
+                /* Planning, not developed: interactive split panel. */
+                <div className="mt-3 border-2 border-[#B8860B] bg-[#FBF3E0] p-3">
+                    <button
+                        onClick={() => setShowSplits((v) => {
+                            const next = !v;
+                            // Sincronía bidireccional con el plan (solo en planificación):
+                            //   - desplegar  → marca "split"   (interés en partir)
+                            //   - colapsar   → marca "whole"   (vuelta al conjunto)
+                            // El usuario puede forzar cualquiera con los botones manuales.
+                            if (!planningLocked) {
+                                if (next && t.plan !== "split") onSetPlan?.(coreName, "split");
+                                else if (!next && t.plan === "split") onSetPlan?.(coreName, "whole");
+                            }
+                            return next;
+                        })}
+                        className="w-full flex items-center justify-between gap-2 text-left"
+                        data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
+                    >
+                        <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#7a5a10] uppercase tracking-[0.06em]">
+                            <GitBranch size={15} /> Se puede dividir en {splits.length} partes
+                        </span>
+                        <ChevronDown size={16} className={`text-[#7a5a10] transition-transform ${showSplits ? "rotate-180" : ""}`} />
+                    </button>
+                    <p className="text-[11px] text-[#7a5a10] mt-1 leading-snug">
+                        Si la partes, cada parte es su propia tesis y sus TAM se <strong>reparten el TAM del conjunto</strong> ({fmtTam(t.tam_busd) || "del driver"}): al generarlas, sus trozos se ajustan para sumar exactamente ese total (coherencia garantizada).
+                    </p>
+                    {showSplits && (
+                        <ul className="mt-2 space-y-1" data-testid={`thesis-splits-${(t.name || "").slice(0, 12)}`}>
+                            {splits.map((sp, i) => (
+                                <li key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/40 bg-white px-2.5 py-1.5 text-sm">
+                                    <span className="font-medium leading-tight">{sp.name}</span>
+                                    {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold shrink-0">{fmtTam(sp.tam_busd)}</span>}
+                                </li>
                             ))}
+                        </ul>
+                    )}
+                </div>
+            ) : null}
+
+            {/* Footer: planning controls — only while planning and not yet developed. */}
+            {!isDeveloped && (
+                <div className="mt-auto pt-4 border-t border-black/10">
+                    {planningLocked ? (
+                        <div className="text-[11px] text-[#4A4A4A] inline-flex items-center gap-1.5" data-testid={`pending-gen-${slug}`}>
+                            <Loader2 size={12} className="animate-spin" /> Pendiente de generarse…
+                        </div>
+                    ) : (
+                        <div data-testid={`plan-markers-${slug}`}>
+                            <div className="overline text-[#4A4A4A] mb-1.5">¿Cómo generarla?</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <button onClick={() => onSetPlan?.(coreName, "whole")} className={planBtn(t.plan !== "split")} data-testid={`plan-whole-${slug}`}>
+                                    Conjunto
+                                </button>
+                                {splits && (
+                                    <button onClick={() => onSetPlan?.(coreName, "split")} className={planBtn(t.plan === "split")} data-testid={`plan-split-${slug}`}>
+                                        <GitBranch size={12} className="inline -mt-0.5 mr-1" />Particiones ({splits.length})
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-[11px] text-[#4A4A4A] mt-1.5 leading-snug">
+                                {t.plan === "split" && splits
+                                    ? <>Se generarán <strong>{splits.length} tesis</strong>; sus TAM se reparten el conjunto ({fmtTam(t.tam_busd) || "del driver"}).</>
+                                    : <>Se generará <strong>1 tesis</strong> con todo el TAM del driver{fmtTam(t.tam_busd) ? ` (${fmtTam(t.tam_busd)})` : ""}.</>}
+                            </p>
                         </div>
                     )}
                 </div>
-            ) : (
-                /* STATE C — not yet developed. */
-                <>
-                    {t.win_probability != null && <div className="mt-2.5"><WinningBadge value={t.win_probability} /></div>}
-                    {t.fit_description && <p className="text-sm mt-3 leading-relaxed">{t.fit_description}</p>}
-                    {t.value_chain_role && (
-                        <div className="mt-2 text-xs text-[#4A4A4A]">
-                            <span className="font-semibold">Rol en la cadena:</span> {t.value_chain_role}
-                        </div>
-                    )}
-                    {t.rationale && (
-                        <div className="mt-3 border-l-2 pl-3" style={{ borderColor: c }}>
-                            <p className="text-sm leading-relaxed text-[#1a1a1a]">{t.rationale}</p>
-                        </div>
-                    )}
-                    {splits && (
-                        <div className="mt-3 border-2 border-[#B8860B] bg-[#FBF3E0] p-3">
-                            <button
-                                onClick={() => setShowSplits((v) => {
-                                    const next = !v;
-                                    // Sincronía bidireccional con el plan (solo en planificación):
-                                    //   - desplegar  → marca "split"   (interés en partir)
-                                    //   - colapsar   → marca "whole"   (vuelta al conjunto)
-                                    // El usuario puede forzar cualquiera con los botones manuales.
-                                    if (!planningLocked) {
-                                        if (next && t.plan !== "split") onSetPlan?.(coreName, "split");
-                                        else if (!next && t.plan === "split") onSetPlan?.(coreName, "whole");
-                                    }
-                                    return next;
-                                })}
-                                className="w-full flex items-center justify-between gap-2 text-left"
-                                data-testid={`thesis-split-toggle-${(t.name || "").slice(0, 12)}`}
-                            >
-                                <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#7a5a10] uppercase tracking-[0.06em]">
-                                    <GitBranch size={15} /> Se puede dividir en {splits.length} partes
-                                </span>
-                                <ChevronDown size={16} className={`text-[#7a5a10] transition-transform ${showSplits ? "rotate-180" : ""}`} />
-                            </button>
-                            <p className="text-[11px] text-[#7a5a10] mt-1 leading-snug">
-                                Si la partes, cada parte es su propia tesis y sus TAM se <strong>reparten el TAM del conjunto</strong> ({fmtTam(t.tam_busd) || "del driver"}): al generarlas, sus trozos se ajustan para sumar exactamente ese total (coherencia garantizada).
-                            </p>
-                            {showSplits && (
-                                <ul className="mt-2 space-y-1" data-testid={`thesis-splits-${(t.name || "").slice(0, 12)}`}>
-                                    {splits.map((sp, i) => (
-                                        <li key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/40 bg-white px-2.5 py-1.5 text-sm">
-                                            <span className="font-medium leading-tight">{sp.name}</span>
-                                            {fmtTam(sp.tam_busd) && <span className="font-mono text-xs text-[#1E7D45] font-bold shrink-0">{fmtTam(sp.tam_busd)}</span>}
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-                    )}
-                    <div className="mt-auto pt-4 border-t border-black/10">
-                        {planningLocked ? (
-                            <div className="text-[11px] text-[#4A4A4A] inline-flex items-center gap-1.5" data-testid={`pending-gen-${slug}`}>
-                                <Loader2 size={12} className="animate-spin" /> Pendiente de generarse…
-                            </div>
-                        ) : (
-                            <div data-testid={`plan-markers-${slug}`}>
-                                <div className="overline text-[#4A4A4A] mb-1.5">¿Cómo generarla?</div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <button onClick={() => onSetPlan?.(coreName, "whole")} className={planBtn(t.plan !== "split")} data-testid={`plan-whole-${slug}`}>
-                                        Conjunto
-                                    </button>
-                                    {splits && (
-                                        <button onClick={() => onSetPlan?.(coreName, "split")} className={planBtn(t.plan === "split")} data-testid={`plan-split-${slug}`}>
-                                            <GitBranch size={12} className="inline -mt-0.5 mr-1" />Particiones ({splits.length})
-                                        </button>
-                                    )}
-                                </div>
-                                <p className="text-[11px] text-[#4A4A4A] mt-1.5 leading-snug">
-                                    {t.plan === "split" && splits
-                                        ? <>Se generarán <strong>{splits.length} tesis</strong>; sus TAM se reparten el conjunto ({fmtTam(t.tam_busd) || "del driver"}).</>
-                                        : <>Se generará <strong>1 tesis</strong> con todo el TAM del driver{fmtTam(t.tam_busd) ? ` (${fmtTam(t.tam_busd)})` : ""}.</>}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </>
             )}
 
             {/* Fusionar (control manual, solo en planificación): fold this driver into a sibling. */}

@@ -591,3 +591,12 @@ Objetivo del usuario: facilitar el arranque de usuarios principiantes con 3 boto
 - **Ayuda** (`components/HelpChat.jsx` + backend `routes/help.py`): chat interno (`help-chat-dialog`) que responde dudas sobre la app. Backend `POST /api/help/chat` {session_id, message} usa Emergent LLM Key con **Gemini Flash `gemini-2.5-flash`** (NOTA: `gemini-2.5-flash-lite` ya NO es válido para la key; verificar con /v1/models). Memoria de conversación POR SESIÓN in-process (instancia LlmChat cacheada por session_id en `_sessions`). Bilingüe (es/en según i18n). Sugerencias iniciales. Errores LLM traducidos (budget/rate/genérico).
 - Verificado: curl (chat con memoria: POC→POV en relación a lo anterior, OK) + screenshot (los 3 botones, dialog Ayuda, tour 1/8 y 2/8 con spotlight, Instrucciones ES/EN). Frontend compila (solo warning benigno de source-map de html2pdf).
 - PENDIENTE: el usuario entregará el documento final de Instrucciones para sustituir el contenido provisional de `CONTENT` en `Instructions.jsx`.
+
+## CHANGELOG — Conservar narrativa del driver tras desarrollar la tesis (19 jun 2026)
+Petición del usuario: las tarjetas de driver (`NewThesisCard`) PERDÍAN su narrativa al desarrollar la tesis (pasaban a un mini-aviso). Las quería conservar como info de referencia (contienen más detalle que la entrada de la empresa en el eslabón de la tesis desarrollada).
+- **Cambio (solo frontend, `ThesisResult.jsx` · `NewThesisCard`)**: se fusionaron los estados A/B/C. La tarjeta SIEMPRE pinta su narrativa (badge Actual/Futura, TAM, probabilidad ganadora, descripción de encaje, rol en cadena, rationale, lista de splits). Cuando está desarrollada añade:
+  - Distintivo verde `Tesis generada` + enlace `Ver la tesis` (`core-whole-note-*` / `core-split-note-*`) — icono `Check`.
+  - Sección `splits-status-*`: cada partición con su estado — `tesis generada` (enlace) / `incluida en el conjunto` (si se desarrolló el conjunto) / botón `Generar` (split-generate-*) si está pendiente.
+  - Controles de planificación (Conjunto/Particiones, Fusionar, "Pendiente de generarse") ocultos cuando `isDeveloped`.
+- **RETROACTIVO**: la narrativa nunca se borraba (`_record_split_dev` solo añade a `split_dev`, no toca `trends[]`); solo dejaba de pintarse. Verificado en BD: 23 empresas desarrolladas conservan narrativa en todos sus trends. Verificado por screenshot (ALNY `thesis_6c056cbc1db0`: 3 tarjetas con narrativa + badges verdes + particiones con estado).
+- Limpieza: se eliminaron `pendingSplits`/`devSplitSet` (sin uso). Backend/datos sin cambios.
