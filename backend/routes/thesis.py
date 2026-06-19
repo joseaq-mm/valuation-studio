@@ -24,6 +24,7 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
+from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
 
@@ -187,6 +188,31 @@ def _auto_trend_sync(exclude) -> dict:
     return result
 
 
+def _kpi_sync(company: str, ticker: str, drivers: list) -> dict:
+    """Blocking KPI pipeline (live search + LLM) run in a worker thread."""
+    sources = gather_kpi_sources(company, ticker)
+    result, cost = run_costed(run_company_kpis(company, ticker, drivers, sources))
+    if isinstance(result, dict):
+        result["_cost"] = cost
+    return result
+
+
+def _company_drivers(doc: dict) -> list:
+    """Growth-driver theses of a company doc (non-merged), as the KPI judge input."""
+    out = []
+    for t in (doc.get("trends") or []):
+        if t.get("merged_into"):
+            continue
+        out.append({
+            "name": t.get("name"),
+            "type": t.get("type"),
+            "demand_driver": t.get("demand_driver"),
+            "fit_description": t.get("fit_description"),
+            "tam_busd": t.get("tam_busd"),
+        })
+    return out
+
+
 def _match_sync(company: str, company_trends: list, existing: list) -> dict:
     return asyncio.run(match_company_to_theses(company, company_trends, existing))
 
@@ -260,6 +286,10 @@ class ExploreRequest(BaseModel):
 
 class AutoTrendRequest(BaseModel):
     exclude: Optional[List[str]] = None
+
+
+class EditKpisRequest(BaseModel):
+    kpis: List[Dict[str, Any]]
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -1415,6 +1445,108 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             })
 
         return {"rows": rows}
+
+    # ---------------------- KPI validation module ----------------------
+    async def _run_kpi_job(job_id: str, company_id: str, user_id: str):
+        try:
+            doc = await db.theses.find_one(
+                {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
+            if not doc:
+                await db.thesis_jobs.update_one({"id": job_id}, {"$set": {"status": "error", "error": "Empresa no encontrada"}})
+                return
+            company = (doc.get("company") or {}).get("name") or doc.get("title") or company_id
+            ticker = (doc.get("company") or {}).get("ticker") or ""
+            drivers = _company_drivers(doc)
+            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers)
+            snap.pop("_cost", None)
+            snap["generated_at"] = datetime.now(timezone.utc).isoformat()
+            snap["ticker"] = ticker
+            await db.theses.update_one(
+                {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": snap}})
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": snap,
+                          "updated_at": datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.error(f"kpi job failed ({company_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or f"Error analizando KPIs: {e}"}})
+
+    @router.get("/kpi-companies")
+    async def kpi_companies(user: Dict[str, Any] = Depends(auth_required)):
+        """Companies with a fully-developed thesis (eligible for KPI analysis),
+        deduped by ticker (latest plan). Each flags whether KPIs were already run."""
+        docs = await db.theses.find(
+            {"user_id": user["user_id"], "type": "company"},
+            {"_id": 0, "id": 1, "company": 1, "trends": 1, "split_dev": 1, "kpi_snapshot": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(length=500)
+        seen, out = set(), []
+        for d in docs:
+            tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            if not tk or tk in seen:
+                continue
+            if not company_is_complete(d):
+                continue
+            seen.add(tk)
+            snap = d.get("kpi_snapshot") or {}
+            out.append({
+                "id": d["id"], "ticker": tk,
+                "name": (d.get("company") or {}).get("name"),
+                "has_kpis": bool(snap),
+                "coef_global": snap.get("coef_global"),
+                "kpi_generated_at": snap.get("generated_at"),
+            })
+        return {"companies": out}
+
+    @router.post("/{company_id}/kpis")
+    async def run_kpis(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "id": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "kpis",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_kpi_job(job_id, company_id, user["user_id"]))
+        return {"job_id": job_id}
+
+    @router.get("/{company_id}/kpis")
+    async def get_kpis(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"},
+            {"_id": 0, "kpi_snapshot": 1, "company": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        return {"company": doc.get("company"), "kpi_snapshot": doc.get("kpi_snapshot")}
+
+    @router.put("/{company_id}/kpis")
+    async def edit_kpis(company_id: str, req: EditKpisRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Manual correction: recompute the coefficient deterministically from the
+        edited KPIs (signal/weight/values) — no LLM. Keeps period/verdicts/sources."""
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        snap = doc.get("kpi_snapshot")
+        if not snap:
+            raise HTTPException(status_code=400, detail="Esta empresa aún no tiene KPIs analizados")
+        driver_names = [d.get("name") for d in (snap.get("drivers") or []) if d.get("name")]
+        recomputed = compute_kpi_coefficients(req.kpis, driver_names, snap.get("alpha") or 0.5)
+        # Preserve per-driver verdicts + period/sources/meta from the original snapshot.
+        verdicts = {(d.get("name") or "").strip().lower(): d.get("verdict") for d in (snap.get("drivers") or [])}
+        for d in recomputed["drivers"]:
+            d["verdict"] = verdicts.get((d.get("name") or "").strip().lower())
+        recomputed["period"] = snap.get("period")
+        recomputed["sources"] = snap.get("sources")
+        recomputed["ticker"] = snap.get("ticker")
+        recomputed["generated_at"] = snap.get("generated_at")
+        recomputed["edited_at"] = datetime.now(timezone.utc).isoformat()
+        await db.theses.update_one(
+            {"id": company_id, "user_id": user["user_id"]}, {"$set": {"kpi_snapshot": recomputed}})
+        return {"kpi_snapshot": recomputed}
+
 
     @router.get("/{thesis_id}")
     async def get_thesis(thesis_id: str, user: Dict[str, Any] = Depends(auth_required)):

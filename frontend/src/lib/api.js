@@ -180,3 +180,13 @@ export const thesisVisualData = () =>
 // In-app help assistant chat (Gemini Flash, keeps per-session memory backend-side)
 export const helpChat = (session_id, message) =>
     api.post(`/help/chat`, { session_id, message }, { timeout: 60000 }).then(r => r.data);
+
+// ---- KPI validation module ----
+export const kpiCompanies = () =>
+    api.get(`/thesis/kpi-companies`).then(r => r.data);
+export const kpiGet = (companyId) =>
+    api.get(`/thesis/${companyId}/kpis`).then(r => r.data);
+export const kpiRun = (companyId, onStatus = null) =>
+    api.post(`/thesis/${companyId}/kpis`).then(r => startAndPoll(r.data, onStatus));
+export const kpiEdit = (companyId, kpis) =>
+    api.put(`/thesis/${companyId}/kpis`, { kpis }).then(r => r.data);
