@@ -205,6 +205,8 @@ export const kpiTranscriptAdd = (companyId, text, title) =>
     api.post(`/thesis/${companyId}/kpis/files/transcript`, { text, title }).then(r => r.data);
 export const kpiFileToggle = (companyId, fileId, selected) =>
     api.patch(`/thesis/${companyId}/kpis/files/${fileId}`, { selected }).then(r => r.data);
+export const kpiFileUpdate = (companyId, fileId, fields) =>
+    api.patch(`/thesis/${companyId}/kpis/files/${fileId}`, fields).then(r => r.data);
 export const kpiFileDelete = (companyId, fileId) =>
     api.delete(`/thesis/${companyId}/kpis/files/${fileId}`).then(r => r.data);
 

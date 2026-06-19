@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Newspaper, Search, Trash2, Loader2, ExternalLink, Rss } from "lucide-react";
 import { kpiNewsList, kpiNewsSearch, kpiNewsDelete } from "@/lib/api";
+import HoverTip from "@/components/HoverTip";
 import { toast } from "sonner";
 
 const sentColor = (s) => (s === "positivo" ? "#1D7044" : s === "negativo" ? "#B32A22" : "#7A7A7A");
 const sentLabel = (s) => (s === "positivo" ? "+" : s === "negativo" ? "−" : "•");
+const sentText = (s) => (s === "positivo" ? "Positivo para la tesis" : s === "negativo" ? "Negativo para la tesis" : "Neutral para la tesis");
+const SENT_TIP = "Indicador de sentimiento: cómo afecta la noticia a la tesis. Verde (+) = favorable, rojo (−) = desfavorable, gris (•) = neutral. Matiza los scores al Reanalizar.";
 
 // Qualitative news per company. INFORMS the scores (fed to the judge on Reanalyze),
 // ages out via 45-day decay (max 15), incorporates Radar news, has its own search.
@@ -43,7 +46,10 @@ export default function KpiNews({ companyId }) {
     return (
         <div className="border border-black/20 bg-white p-3 mb-4" data-testid="kpi-news">
             <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                <div className="overline text-[#4A4A4A] flex items-center gap-1.5"><Newspaper size={13} /> Noticias ({news.length}) · contexto cualitativo</div>
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Newspaper size={13} /> Noticias ({news.length}) ·{" "}
+                    <HoverTip text={SENT_TIP} maxWidth={300}><span className="cursor-help underline decoration-dotted">contexto cualitativo</span></HoverTip>
+                </div>
                 <button onClick={search} disabled={searching} className="btn-ghost !py-1 !px-2.5 inline-flex items-center gap-1.5 text-xs disabled:opacity-40" data-testid="kpi-news-search-btn">
                     {searching ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />} Buscar noticias
                 </button>
@@ -58,7 +64,9 @@ export default function KpiNews({ companyId }) {
                 <ul className="space-y-1.5" data-testid="kpi-news-list">
                     {news.map((n) => (
                         <li key={n.id} className="flex items-start gap-2 border border-black/10 px-2 py-1.5 text-sm" data-testid={`kpi-news-${n.id}`}>
-                            <span className="font-bold mt-0.5 shrink-0" style={{ color: sentColor(n.sentiment) }} title={n.sentiment}>{sentLabel(n.sentiment)}</span>
+                            <HoverTip text={`${sentText(n.sentiment)} — ${SENT_TIP}`} maxWidth={280}>
+                                <span className="font-bold mt-0.5 shrink-0 cursor-help" style={{ color: sentColor(n.sentiment) }} data-testid={`kpi-news-sentiment-${n.id}`}>{sentLabel(n.sentiment)}</span>
+                            </HoverTip>
                             <div className="min-w-0 flex-1">
                                 <div className="leading-tight font-medium">{n.headline}</div>
                                 {n.why_it_matters && <div className="text-[11px] text-[#7A7A7A] leading-snug mt-0.5">{n.why_it_matters}</div>}

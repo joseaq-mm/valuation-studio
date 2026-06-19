@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste } from "lucide-react";
-import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileDelete } from "@/lib/api";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X } from "lucide-react";
+import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete } from "@/lib/api";
 import { toast } from "sonner";
 
 const fileIcon = (f) => {
@@ -19,6 +19,9 @@ export default function KpiDocuments({ companyId }) {
     const [tOpen, setTOpen] = useState(false);
     const [tText, setTText] = useState("");
     const [tTitle, setTTitle] = useState("");
+    const [editId, setEditId] = useState(null);
+    const [editName, setEditName] = useState("");
+    const [editDesc, setEditDesc] = useState("");
     const inputRef = useRef(null);
 
     const load = useCallback(async () => {
@@ -72,6 +75,18 @@ export default function KpiDocuments({ companyId }) {
         catch { load(); }
     };
 
+    const startEdit = (f) => { setEditId(f.id); setEditName(f.display_name || f.original_filename || ""); setEditDesc(f.description || ""); };
+    const cancelEdit = () => { setEditId(null); setEditName(""); setEditDesc(""); };
+    const saveEdit = async (f) => {
+        const name = editName.trim();
+        try {
+            const d = await kpiFileUpdate(companyId, f.id, { display_name: name || f.original_filename, description: editDesc.trim() });
+            setFiles((prev) => prev.map((x) => (x.id === f.id ? d.file : x)));
+            cancelEdit();
+            toast.success("Guardado");
+        } catch { toast.error("No se pudo guardar"); }
+    };
+
     return (
         <div className="border border-black/20 bg-white p-3 mb-4" data-testid="kpi-documents">
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
@@ -106,19 +121,39 @@ export default function KpiDocuments({ companyId }) {
                 <ul className="space-y-1" data-testid="kpi-files-list">
                     {files.map((f) => {
                         const Icon = fileIcon(f);
+                        const isEd = editId === f.id;
                         return (
-                            <li key={f.id} className="flex items-center gap-2 border border-black/10 px-2 py-1.5 text-sm" data-testid={`kpi-file-${f.id}`}>
-                                <input type="checkbox" checked={!!f.selected} onChange={() => toggle(f)} disabled={f.status !== "ready"} className="accent-[#052049]" data-testid={`kpi-file-toggle-${f.id}`} title="Usar como fuente" />
-                                <Icon size={15} className="text-[#4A4A4A] shrink-0" />
+                            <li key={f.id} className="flex items-start gap-2 border border-black/10 px-2 py-1.5 text-sm" data-testid={`kpi-file-${f.id}`}>
+                                <input type="checkbox" checked={!!f.selected} onChange={() => toggle(f)} disabled={f.status !== "ready"} className="accent-[#052049] mt-0.5" data-testid={`kpi-file-toggle-${f.id}`} title="Usar como fuente" />
+                                <Icon size={15} className="text-[#4A4A4A] shrink-0 mt-0.5" />
                                 <div className="min-w-0 flex-1">
-                                    <div className="truncate font-medium leading-tight">{f.original_filename}</div>
-                                    <div className="text-[11px] text-[#9A9A9A]">
-                                        {fmtSize(f.size)}
-                                        {f.status === "processing" && <span className="text-[#B8860B] ml-1 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> leyendo…</span>}
-                                        {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
-                                        {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
-                                    </div>
+                                    {isEd ? (
+                                        <div className="space-y-1">
+                                            <input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nombre del documento" className="w-full border border-black/30 bg-white px-2 py-1 text-sm outline-none" data-testid={`kpi-file-edit-name-${f.id}`} />
+                                            <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="Descripción (p. ej. Deck resultados Q4 2025)" className="w-full border border-black/30 bg-white px-2 py-1 text-xs outline-none" data-testid={`kpi-file-edit-desc-${f.id}`} />
+                                            <div className="flex gap-2 justify-end">
+                                                <button onClick={cancelEdit} className="text-xs text-[#4A4A4A] inline-flex items-center gap-1"><X size={12} /> Cancelar</button>
+                                                <button onClick={() => saveEdit(f)} className="text-xs text-[#1D7044] font-semibold inline-flex items-center gap-1" data-testid={`kpi-file-save-${f.id}`}><Check size={12} /> Guardar</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="truncate font-medium leading-tight">{f.display_name || f.original_filename}</div>
+                                            {f.description && <div className="text-[11px] text-[#4A4A4A] leading-snug">{f.description}</div>}
+                                            <div className="text-[11px] text-[#9A9A9A]">
+                                                {fmtSize(f.size)}
+                                                {f.status === "processing" && <span className="text-[#B8860B] ml-1 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> leyendo…</span>}
+                                                {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
+                                                {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
+                                {!isEd && (
+                                    <button onClick={() => startEdit(f)} className="text-[#4A4A4A] hover:bg-black/5 p-1 shrink-0" title="Renombrar / describir" data-testid={`kpi-file-edit-${f.id}`}>
+                                        <Pencil size={13} />
+                                    </button>
+                                )}
                                 <button onClick={() => remove(f)} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-1 shrink-0" title="Borrar" data-testid={`kpi-file-delete-${f.id}`}>
                                     <Trash2 size={14} />
                                 </button>

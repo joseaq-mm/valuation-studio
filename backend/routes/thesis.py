@@ -364,7 +364,9 @@ class KpiTranscriptRequest(BaseModel):
 
 
 class KpiFileSelectRequest(BaseModel):
-    selected: bool
+    selected: Optional[bool] = None
+    display_name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class KpiNewsRequest(BaseModel):
@@ -1744,6 +1746,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         txt = f.get("extracted_text") or ""
         return {
             "id": f.get("id"), "original_filename": f.get("original_filename"),
+            "display_name": f.get("display_name") or f.get("original_filename"),
+            "description": f.get("description") or "",
             "content_type": f.get("content_type"), "size": f.get("size"),
             "status": f.get("status"), "selected": f.get("selected", True),
             "kind": f.get("kind", "file"), "created_at": f.get("created_at"),
@@ -1819,13 +1823,23 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"file": _file_public(rec)}
 
     @router.patch("/{company_id}/kpis/files/{file_id}")
-    async def toggle_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
+    async def update_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
+        upd = {}
+        if req.selected is not None:
+            upd["selected"] = bool(req.selected)
+        if req.display_name is not None:
+            upd["display_name"] = req.display_name.strip()[:120]
+        if req.description is not None:
+            upd["description"] = req.description.strip()[:500]
+        if not upd:
+            raise HTTPException(status_code=400, detail="Nada que actualizar")
         r = await db.kpi_files.update_one(
             {"id": file_id, "company_id": company_id, "user_id": user["user_id"], "is_deleted": False},
-            {"$set": {"selected": bool(req.selected)}})
+            {"$set": upd})
         if r.matched_count == 0:
             raise HTTPException(status_code=404, detail="Archivo no encontrado")
-        return {"ok": True, "selected": bool(req.selected)}
+        rec = await db.kpi_files.find_one({"id": file_id}, {"_id": 0})
+        return {"ok": True, "file": _file_public(rec)}
 
     @router.delete("/{company_id}/kpis/files/{file_id}")
     async def delete_kpi_file(company_id: str, file_id: str, user: Dict[str, Any] = Depends(auth_required)):

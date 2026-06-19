@@ -644,3 +644,7 @@ Las noticias INFORMAN los scores (no sub-índice). Vida media 45 días, máx 15.
 - **Frontend** `components/kpi/KpiNews.jsx` (en /kpis): lista con sentimiento (+/−/•), why_it_matters, fecha, sello Radar, fuente, borrar; botón "Buscar noticias"; aviso de que matizan al Reanalizar. api.js: `kpiNewsList/kpiNewsSearch/kpiNewsDelete`.
 - Verificado E2E: DUOL buscar noticias → 7 con decaimiento correcto (16-jun eff0.85, 6-may 0.50, 29-mar 0.21); Reanalizar → refresca a 10, juez cita contexto ("se REFUERZA por noticias de diversificación: matemáticas, música"), coef 1.39. Screenshot panel OK.
 - Decisiones usuario: solo informan, vida media 45d, máx 15, refresco al reanalizar + Radar + botón propio.
+
+## CHANGELOG — KPIs: renombrar/describir documentos + tooltip de sentimiento (19 jun 2026)
+- **Documentos**: `kpi_files` ahora con `display_name` y `description` editables. PATCH `/{id}/kpis/files/{file_id}` acepta parcial {selected?, display_name?, description?} y devuelve el file actualizado. `_file_public` expone display_name (||original) y description. Frontend `KpiDocuments.jsx`: botón lápiz por archivo → inputs nombre+descripción (save/cancel), muestra display_name + descripción. api.js `kpiFileUpdate`. Verificado por API (rename "Deck resultados Q4 2025" + descripción).
+- **Noticias**: tooltip (HoverTip) en el indicador de sentimiento (símbolo +/−/• y en cabecera "contexto cualitativo") explicando verde(+)=favorable, rojo(−)=desfavorable, gris(•)=neutral. `KpiNews.jsx`. Verificado por screenshot.
