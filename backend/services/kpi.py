@@ -42,9 +42,10 @@ def gather_kpi_sources(company_name: str, ticker: str, max_results: int = 6) -> 
         f"{name} {ticker} latest quarterly earnings results {year} key operating metrics",
         f"{name} {ticker} Q earnings call deliveries units shipped subscribers backlog guidance {year}",
         f"{name} investor relations operating metrics ARR customers GMV revenue by segment {year}",
+        f"{name} {ticker} quarterly update shareholder deck presentation {year} filetype:pdf",
         f"{name} {ticker} earnings press release volume capacity active users orders {year}",
     ]
-    return _run_searches(queries, max_results=max_results, cap=20)
+    return _run_searches(queries, max_results=max_results, cap=24)
 
 
 def _norm(s: str) -> str:

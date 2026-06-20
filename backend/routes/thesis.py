@@ -27,6 +27,7 @@ from services.thesis import (
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
 from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
+from services.fetcher import fetch_full_sources
 from storage import put_object, get_object, APP_NAME, MIME_TYPES
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
@@ -191,9 +192,11 @@ def _auto_trend_sync(exclude) -> dict:
     return result
 
 
-def _kpi_sync(company: str, ticker: str, drivers: list, docs: list = None, context_news: list = None) -> dict:
-    """Blocking KPI pipeline (live search + selected document digests + LLM)."""
-    sources = gather_kpi_sources(company, ticker)
+def _kpi_sync(company: str, ticker: str, drivers: list, docs: list = None, context_news: list = None, web_sources: list = None) -> dict:
+    """Blocking KPI pipeline (live search + selected document digests + LLM).
+    If `web_sources` is provided (Option A: full-content fetch), it replaces the
+    internal snippet-only search."""
+    sources = web_sources if web_sources is not None else gather_kpi_sources(company, ticker)
     if docs:
         sources = sources + docs
     result, cost = run_costed(run_company_kpis(company, ticker, drivers, sources, context_news))
@@ -1553,6 +1556,61 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"rows": rows}
 
     # ---------------------- KPI validation module ----------------------
+    async def _auto_fetch_for_kpis(company_id: str, user_id: str, company: str, ticker: str):
+        """Option A: open the top search results, read their FULL content, and
+        auto-ingest up to FETCH_MAX_PDFS PDFs as 'auto' KPI documents (deduped by
+        source URL → cached, never re-downloaded). Returns the enriched web
+        sources (or None on failure → pipeline falls back to snippet search)."""
+        try:
+            search = await asyncio.to_thread(gather_kpi_sources, company, ticker)
+        except Exception as e:
+            logger.warning(f"kpi auto-fetch search failed ({company_id}): {e}")
+            return None
+        try:
+            web_sources, pdfs = await asyncio.to_thread(fetch_full_sources, search, company, ticker)
+        except Exception as e:
+            logger.warning(f"kpi auto-fetch failed ({company_id}): {e}")
+            return search
+        for pdf in pdfs:
+            url = pdf.get("url")
+            if not url:
+                continue
+            existing = await db.kpi_files.find_one(
+                {"company_id": company_id, "user_id": user_id, "source_url": url, "is_deleted": False},
+                {"_id": 0, "id": 1})
+            if existing:
+                continue  # cached — already downloaded for this company
+            count = await db.kpi_files.count_documents(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False})
+            if count >= KPI_MAX_FILES:
+                break  # respect the 10-doc cap
+            data, mime, fname = pdf["data"], pdf["mime"], pdf["filename"]
+            fid = uuid.uuid4().hex
+            storage_path = f"{APP_NAME}/kpi-files/{user_id}/{fid}.pdf"
+            try:
+                res = await asyncio.to_thread(put_object, storage_path, data, mime)
+            except Exception as e:
+                logger.warning(f"auto pdf storage failed {url}: {e}")
+                continue
+            try:
+                ext_res = await asyncio.to_thread(_doc_extract_sync, data, "pdf", mime, company, fname)
+            except Exception as e:
+                logger.warning(f"auto pdf extract failed {url}: {e}")
+                ext_res = {"title": None, "text": ""}
+            now = datetime.now(timezone.utc).isoformat()
+            rec = {
+                "id": fid, "user_id": user_id, "company_id": company_id,
+                "storage_path": res.get("path", storage_path), "original_filename": fname,
+                "content_type": mime, "size": len(data), "ext": "pdf", "kind": "auto",
+                "auto_fetched": True, "source_url": url,
+                "display_name": ext_res.get("title") or fname,
+                "description": "Descargado automáticamente por la app (fuente web/IR).",
+                "status": "ready", "selected": True, "is_deleted": False,
+                "extracted_text": ext_res.get("text") or "", "created_at": now, "extracted_at": now,
+            }
+            await db.kpi_files.insert_one(rec)
+        return web_sources
+
     async def _run_kpi_job(job_id: str, company_id: str, user_id: str):
         try:
             doc = await db.theses.find_one(
@@ -1563,6 +1621,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             company = (doc.get("company") or {}).get("name") or doc.get("title") or company_id
             ticker = (doc.get("company") or {}).get("ticker") or ""
             drivers = _company_drivers(doc)
+            # Option A: read full content of top results + auto-ingest PDFs BEFORE
+            # querying files, so the freshly stored auto docs are picked up below.
+            web_sources = await _auto_fetch_for_kpis(company_id, user_id, company, ticker)
             files = await db.kpi_files.find(
                 {"company_id": company_id, "user_id": user_id, "is_deleted": False,
                  "status": "ready", "selected": True}, {"_id": 0}).to_list(length=20)
@@ -1574,7 +1635,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             except Exception as ne:
                 logger.warning(f"kpi news refresh failed ({company_id}): {ne}")
             context_news = await _load_company_news(company_id, user_id)
-            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs, context_news)
+            snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs, context_news, web_sources)
             snap.pop("_cost", None)
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
@@ -1778,6 +1839,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "content_type": f.get("content_type"), "size": f.get("size"),
             "status": f.get("status"), "selected": f.get("selected", True),
             "kind": f.get("kind", "file"), "created_at": f.get("created_at"),
+            "auto_fetched": bool(f.get("auto_fetched")), "source_url": f.get("source_url"),
             "error": f.get("error"), "preview": txt[:180],
             "has_text": bool(txt),
         }

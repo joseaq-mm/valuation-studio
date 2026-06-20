@@ -181,7 +181,7 @@ export default function Kpis() {
                     <Loader2 className="animate-spin mx-auto mb-3 text-[#B32A22]" size={28} />
                     <div className="font-serif text-lg">{selCompany?.name}</div>
                     <div className="text-sm text-[#4A4A4A] mt-1">{status}</div>
-                    <div className="text-xs text-[#7A7A7A] mt-2">Puede tardar ~30–60s (búsqueda en vivo + IA).</div>
+                    <div className="text-xs text-[#7A7A7A] mt-2">Puede tardar ~1–3 min (lee páginas y documentos en vivo + IA).</div>
                 </div>
             )}
 

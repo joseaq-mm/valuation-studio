@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X } from "lucide-react";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud } from "lucide-react";
 import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -146,7 +146,7 @@ export default function KpiDocuments({ companyId }) {
                 </div>
             </div>
 
-            <p className="text-[11px] text-[#7A7A7A] mb-2">Sube presentaciones o gráficos (máx. 100 MB, 10 por empresa) <strong>o arrástralos aquí</strong>. La IA los lee al subirlos y usa los <strong>seleccionados</strong> al analizar/buscar KPIs.</p>
+            <p className="text-[11px] text-[#7A7A7A] mb-2">Sube presentaciones o gráficos (máx. 100 MB, 10 por empresa) <strong>o arrástralos aquí</strong>. Al analizar, la app también <strong>descarga sola</strong> el deck/comunicado oficial de resultados si lo encuentra (marcado <span className="text-[#052049] font-semibold">«Auto · web»</span>). La IA los lee y usa los <strong>seleccionados</strong> al analizar/buscar KPIs.</p>
 
             {tOpen && (
                 <div className="border border-[#052049]/30 bg-[#F4F6FA] p-2.5 mb-2" data-testid="kpi-transcript-box">
@@ -182,10 +182,20 @@ export default function KpiDocuments({ companyId }) {
                                         </div>
                                     ) : (
                                         <>
-                                            <div className="truncate font-medium leading-tight">{f.display_name || f.original_filename}</div>
+                                            <div className="truncate font-medium leading-tight flex items-center gap-1.5">
+                                                {f.display_name || f.original_filename}
+                                                {f.auto_fetched && (
+                                                    <span className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#052049] bg-[#E7EDF6] border border-[#052049]/30 px-1 py-0.5" data-testid={`kpi-file-auto-${f.id}`} title="Descargado automáticamente por la app">
+                                                        <DownloadCloud size={10} /> Auto · web
+                                                    </span>
+                                                )}
+                                            </div>
                                             {f.description && <div className="text-[11px] text-[#4A4A4A] leading-snug">{f.description}</div>}
                                             <div className="text-[11px] text-[#9A9A9A]">
                                                 {fmtSize(f.size)}
+                                                {f.auto_fetched && f.source_url && (
+                                                    <a href={f.source_url} target="_blank" rel="noreferrer" className="text-[#052049] ml-1 hover:underline inline-flex items-center gap-0.5">· fuente</a>
+                                                )}
                                                 {f.status === "processing" && <span className="text-[#B8860B] ml-1 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> leyendo…</span>}
                                                 {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
                                                 {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
