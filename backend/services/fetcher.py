@@ -35,13 +35,14 @@ def _name_tokens(company: str):
 
 
 def _pdf_relevant(url, title, snippet, name_tokens, ticker):
-    """A downloaded PDF must (1) clearly belong to the company and (2) look like an
-    INVESTOR document (earnings/update/presentation/IR/SEC) — not a random PDF that
-    merely mentions the company (e.g. a student thesis)."""
-    hay = f"{url} {title} {snippet}".lower()
-    company_match = (ticker and len(ticker) >= 2 and ticker.lower() in hay) or any(tok in hay for tok in name_tokens)
+    """A downloaded PDF must (1) clearly belong to the company — its ticker/name in the
+    URL or TITLE (not merely mentioned in the body, which would also match a fund's
+    holdings report) — and (2) look like an INVESTOR document."""
+    where = f"{url} {title}".lower()
+    company_match = (ticker and len(ticker) >= 2 and ticker.lower() in where) or any(tok in where for tok in name_tokens)
     if not company_match:
         return False
+    hay = f"{url} {title} {snippet}".lower()
     doc_signal = any(k in hay for k in (
         "update", "result", "quarter", "earnings", "shareholder", "presentation",
         "annual report", "investor", "press release", "10-q", "10-k", "8-k",

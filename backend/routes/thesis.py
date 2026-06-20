@@ -28,6 +28,7 @@ from services.thesis import (
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
 from services.kpi import gather_kpi_sources, run_company_kpis, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
 from services.fetcher import fetch_full_sources
+from services.sec import fetch_latest_sec_report
 from storage import put_object, get_object, APP_NAME, MIME_TYPES
 from thesis_refresh import refresh_user_data, recompute_and_store_tam
 import fx as fx_service
@@ -236,7 +237,7 @@ def _selected_doc_sources(files: list) -> list:
         out.append({
             "title": f"[Documento] {f.get('original_filename') or 'archivo'}",
             "url": f"doc:{f.get('id')}",
-            "snippet": txt[:6000],
+            "snippet": txt[:9000],
         })
     return out
 
@@ -1644,6 +1645,42 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             if sup:
                 rec["supersedes"] = sup
             await db.kpi_files.insert_one(rec)
+        # SEC EDGAR fallback: if no investor deck PDF was found, US filers still
+        # publish the substance in their latest 10-Q/10-K → ingest it as an auto doc.
+        if not pdfs and ticker:
+            existing_sec = await db.kpi_files.find_one(
+                {"company_id": company_id, "user_id": user_id, "source": "sec", "is_deleted": False},
+                {"_id": 0, "source_url": 1})
+            try:
+                sec = await asyncio.to_thread(fetch_latest_sec_report, ticker)
+            except Exception as e:
+                logger.warning(f"SEC fallback failed ({company_id}): {e}")
+                sec = None
+            count = await db.kpi_files.count_documents(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False})
+            already = existing_sec and existing_sec.get("source_url") == (sec or {}).get("url")
+            if sec and not already and count < KPI_MAX_FILES:
+                fid = uuid.uuid4().hex
+                storage_path = f"{APP_NAME}/kpi-files/{user_id}/{fid}.htm"
+                try:
+                    res = await asyncio.to_thread(put_object, storage_path, sec["html"], "text/html")
+                    now = datetime.now(timezone.utc).isoformat()
+                    rec = {
+                        "id": fid, "user_id": user_id, "company_id": company_id,
+                        "storage_path": res.get("path", storage_path), "original_filename": sec["filename"],
+                        "content_type": "text/html", "size": len(sec["html"]), "ext": "htm", "kind": "auto",
+                        "auto_fetched": True, "source": "sec", "source_url": sec["url"],
+                        "display_name": f"{sec['form']} {sec['date']} · SEC EDGAR",
+                        "description": "Informe oficial descargado automáticamente de SEC EDGAR.",
+                        "status": "ready", "selected": True, "is_deleted": False,
+                        "extracted_text": sec["text"], "created_at": now, "extracted_at": now,
+                    }
+                    sup = await _find_superseded(company_id, user_id, rec["display_name"], fid)
+                    if sup:
+                        rec["supersedes"] = sup
+                    await db.kpi_files.insert_one(rec)
+                except Exception as e:
+                    logger.warning(f"SEC ingest failed ({company_id}): {e}")
         return web_sources
 
     async def _run_kpi_job(job_id: str, company_id: str, user_id: str):
