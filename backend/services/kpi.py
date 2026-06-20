@@ -32,14 +32,17 @@ KPI_JUDGE_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
 
 
 def gather_kpi_sources(company_name: str, ticker: str, max_results: int = 6) -> list:
-    """Live web search focused on the company's LATEST operational KPIs."""
+    """Live web search focused on the company's LATEST operational KPIs.
+    Sector-agnostic: covers SaaS metrics AND volume/unit/capacity metrics
+    (deliveries, units, GMV, MW/GWh, subscribers, loans…) so non-SaaS
+    businesses (auto, hardware, energy, retail, financials…) also surface."""
     name = (company_name or ticker or "").strip()
     year = datetime.now(timezone.utc).year
     queries = [
-        f"{name} latest quarterly earnings results {year} ARR net revenue retention customers",
-        f"{name} {ticker} Q earnings call key metrics backlog RPO bookings guidance {year}",
-        f"{name} investor relations operating metrics subscribers ARPU churn {year}",
-        f"{name} {ticker} earnings press release KPIs growth {year}",
+        f"{name} {ticker} latest quarterly earnings results {year} key operating metrics",
+        f"{name} {ticker} Q earnings call deliveries units shipped subscribers backlog guidance {year}",
+        f"{name} investor relations operating metrics ARR customers GMV revenue by segment {year}",
+        f"{name} {ticker} earnings press release volume capacity active users orders {year}",
     ]
     return _run_searches(queries, max_results=max_results, cap=20)
 
@@ -50,20 +53,27 @@ def _norm(s: str) -> str:
 
 # ---------------------- LLM prompts ----------------------
 
-EXTRACTOR_SYS = """Eres un analista financiero experto en extraer KPIs OPERATIVOS (no los financieros GAAP estándar) de los últimos resultados/comunicados de inversores de una empresa.
+EXTRACTOR_SYS = """Eres un analista financiero experto en extraer los KPIs OPERATIVOS (no los financieros GAAP estándar) que CADA empresa realmente reporta en sus últimos resultados/comunicados de inversores.
 
-A partir de los RESULTADOS DE BÚSQUEDA en vivo y de la lista de DRIVERS DE CRECIMIENTO (tesis) de la empresa, extrae los KPIs operativos relevantes para ESTE tipo de empresa y que se relacionen con esos drivers. Ejemplos según el negocio:
+A partir de los RESULTADOS DE BÚSQUEDA en vivo y de la lista de DRIVERS DE CRECIMIENTO (tesis) de la empresa, identifica primero a QUÉ TIPO de negocio pertenece y extrae los KPIs operativos que ESE negocio destaca y que se relacionen con esos drivers. NO fuerces un molde de software/suscripciones si la empresa no lo es: extrae las métricas de volumen/unidad/uso/capacidad que la propia empresa publica. Ejemplos por familia (orientativos, no exhaustivos):
 - SaaS/software: ARR, NRR/Net Revenue Retention (DBNRR), nº de clientes, clientes >100k ARR, RPO/backlog, bookings, churn.
-- Industrial/defensa: backlog, book-to-bill, pedidos (orders).
-- Consumo/streaming/gaming: suscriptores/usuarios de pago, DAU/MAU, bookings, ARPU/ARPDAU, horas de uso.
-- Otros: el KPI operativo que la empresa destaque.
+- Automoción/hardware/manufactura: unidades entregadas/vendidas (deliveries), producción, capacidad instalada/utilización de fábrica, pedidos/backlog, ASP (precio medio), cuota de mercado, márgenes por unidad.
+- Energía/utilities/almacenamiento: capacidad desplegada (MW/GWh), generación, PPAs firmados, backlog de proyectos, take-or-pay.
+- Semiconductores/industrial/defensa: book-to-bill, pedidos (orders), backlog, utilización, design wins, capacidad (wafers).
+- Retail/e-commerce/marketplaces: GMV, pedidos, ticket medio, tiendas/superficie, ventas comparables (same-store sales), unidades vendidas, usuarios activos.
+- Consumo/streaming/gaming/redes: suscriptores/usuarios de pago, DAU/MAU, bookings, ARPU/ARPDAU, horas de uso, engagement.
+- Banca/fintech/seguros/pagos: TPV/volumen de pagos, cuentas/usuarios activos, préstamos originados, AUM, depósitos, NIM, ratio de morosidad, primas suscritas, combined ratio.
+- Salud/biotech/farma/medtech: ventas por producto/unidades, recetas (TRx/NRx), pacientes tratados, ensayos/hitos clínicos, aprobaciones, instalaciones de equipos.
+- Telecom/conectividad: abonados netos (net adds), ARPU, churn, penetración de fibra/5G.
+- Transporte/logística/viajes: pasajeros, ocupación, RPK/ASK, envíos, GBV/noches reservadas, conductores/repartidores activos.
+- Si la empresa no encaja claramente: extrae el/los KPI operativo(s) que la empresa MÁS destaca en sus resultados (el indicador físico/de volumen/de uso/de unit economics que mejor mide su tracción).
 
 REGLAS:
 - Incluye SOLO KPIs que puedas respaldar con las fuentes (con su cita). Si no hay dato, NO lo inventes.
 - Da el valor actual y el del periodo comparable anterior (si está disponible) para ver el momentum.
 - Asigna cada KPI al driver más relacionado (usa EXACTAMENTE uno de los nombres de driver dados; si es transversal a la empresa, usa "general").
-- `higher_is_better`: true si que el KPI suba es bueno (ARR, clientes, backlog, NRR), false si bajar es bueno (churn).
-- 4 a 10 KPIs como máximo.
+- `higher_is_better`: true si que el KPI suba es bueno (entregas, ARR, clientes, backlog, GMV, MW, abonados), false si bajar es bueno (churn, morosidad, combined ratio).
+- 4 a 10 KPIs como máximo. Prioriza los más centrales para la tesis.
 
 Devuelve SOLO JSON:
 {
