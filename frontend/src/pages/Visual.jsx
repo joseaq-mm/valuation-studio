@@ -34,6 +34,23 @@ const kpiFactor = (C, neutro) => {
     return clamp(1 + KPI_BETA * (C - neutro), 0.6, 1.4);
 };
 
+/** Aguja KPI: dirección por matriz 2×2 (absoluto C↔1 = izq/dcha; relativo C↔media = arriba/abajo),
+ *  inclinación 0°→45° y fuerza ∝ |C − media| normalizada (REF = mayor desviación relativa del universo). */
+const kpiArrow = (C, media, REF) => {
+    if (C == null || typeof C !== "number") return null;
+    const rdev = C - media;   // relativo  → arriba (≥0) / abajo (<0)
+    const adev = C - 1;       // absoluto  → derecha (≥0) / izquierda (<0)
+    const side = adev >= 0 ? 1 : -1;
+    const vert = rdev >= 0 ? 1 : -1;
+    const strength = REF > 0 ? clamp(Math.abs(rdev) / REF, 0, 1) : 0;
+    let color;
+    if (adev >= 0 && rdev >= 0) color = "#1D7044";      // verde · arriba-dcha
+    else if (adev >= 0 && rdev < 0) color = "#B8860B";  // ámbar · abajo-dcha
+    else if (adev < 0 && rdev >= 0) color = "#B8860B";  // ámbar · arriba-izq
+    else color = "#B32A22";                              // rojo  · abajo-izq
+    return { side, vert, strength, color };
+};
+
 // Header tooltips (Score → Combinado total)
 const TIP = {
     score: "Score global cualitativo (0–100): media de la calidad de la empresa en las tesis donde aparece. Combina posición competitiva, momentum del sector, calidad del management y resiliencia financiera.",
@@ -77,6 +94,30 @@ const QuadrantLabels = () => (
 // and edits cheap/fair, the dots re-paint immediately without a full reload.
 const colorForRv = (rv) => signalFor(rv, "venta").color;
 
+const DEG = Math.PI / 180;
+// KPI needle: radial arrow emerging from the dot's edge. Angle measured from the
+// center; tilt (0–45°) + length scale with relative strength. Direction & colour
+// follow the 2×2 matrix (absolute C↔1 = left/right, relative C↔mean = up/down).
+const KpiNeedle = ({ cx, cy, r, arrow }) => {
+    const tilt = 45 * arrow.strength * DEG;
+    const dirX = arrow.side * Math.cos(tilt);
+    const dirY = -arrow.vert * Math.sin(tilt); // screen y is inverted (up = negative)
+    const len = 11 + 30 * arrow.strength;
+    const x0 = cx + r * dirX, y0 = cy + r * dirY;
+    const x1 = cx + (r + len) * dirX, y1 = cy + (r + len) * dirY;
+    const ang = Math.atan2(dirY, dirX);
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    const px = -uy, py = ux;
+    const h = 7, w = 4;
+    const bx = x1 - h * ux, by = y1 - h * uy;
+    return (
+        <g pointerEvents="none">
+            <line x1={x0} y1={y0} x2={bx} y2={by} stroke={arrow.color} strokeWidth={2.6} strokeLinecap="round" />
+            <polygon points={`${x1},${y1} ${bx + w * px},${by + w * py} ${bx - w * px},${by - w * py}`} fill={arrow.color} stroke="#000" strokeWidth={0.5} />
+        </g>
+    );
+};
+
 const Dot = (props) => {
     const { cx, cy, payload } = props;
     const r = Math.max(5, Math.min(22, 4 + Math.sqrt(Math.max(0, payload.sum_tam_score || 0)) * 2.2));
@@ -84,6 +125,7 @@ const Dot = (props) => {
         <g>
             <circle cx={cx} cy={cy} r={r} fill={colorForRv(payload.ratio_venta_pct)} fillOpacity={0.75} stroke="#000" strokeWidth={1} />
             <text x={cx} y={cy + 4} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff" pointerEvents="none">{payload.ticker}</text>
+            {payload.kpi_arrow && <KpiNeedle cx={cx} cy={cy} r={r} arrow={payload.kpi_arrow} />}
         </g>
     );
 };
@@ -100,6 +142,9 @@ const ScatterTooltip = ({ active, payload }) => {
                 <div className="text-[#4A4A4A]">TAM Score</div><div className="text-right">{fmtN(p.sum_tam_score, 2)}</div>
                 <div className="text-[#4A4A4A]">Ratio Compra</div><div className="text-right">{fmtPct(p.ratio_compra_pct)}</div>
                 <div className="text-[#4A4A4A]">Ratio Venta</div><div className="text-right">{fmtPct(p.ratio_venta_pct)}</div>
+                {typeof p.kpi_coef === "number" && (<>
+                    <div className="text-[#4A4A4A]">Coef KPI</div><div className="text-right" style={{ color: coefColor(p.kpi_coef) }}>{p.kpi_coef.toFixed(2)}</div>
+                </>)}
                 <div className="text-[#4A4A4A] border-t border-black/10 pt-1 mt-1">Combinado</div><div className="text-right border-t border-black/10 pt-1 mt-1 font-semibold">{(p.combined * 100).toFixed(1)}%</div>
             </div>
         </div>
@@ -138,10 +183,11 @@ export default function Visual() {
             const coefs = raw.map((r) => r.kpi_coef).filter((v) => typeof v === "number");
             const mediaC = coefs.length ? coefs.reduce((a, b) => a + b, 0) / coefs.length : 1;
             const neutro = (1 + mediaC) / 2;
+            const REF = coefs.length ? Math.max(...coefs.map((c) => Math.abs(c - mediaC))) : 0;
             const enriched = raw.map((r) => {
                 const f = kpiFactor(r.kpi_coef, neutro);
                 const cq = clamp01(qualBase(r) * f);
-                return { ...r, kpi_factor: f, combined_qual: cq, combined: (cq + priceBase(r)) / 2 };
+                return { ...r, kpi_factor: f, kpi_arrow: kpiArrow(r.kpi_coef, mediaC, REF), combined_qual: cq, combined: (cq + priceBase(r)) / 2 };
             });
             setRows(enriched);
             setKpiMean(coefs.length ? mediaC : null);
@@ -308,6 +354,7 @@ export default function Visual() {
                         );
                     })()}
                     <span>Líneas discontinuas: <span className="font-mono">mediana</span> de las empresas visibles — el cruce divide los 4 cuadrantes dinámicamente.</span>
+                    <span className="basis-full">➤ <strong>Aguja KPI</strong>: dirección = validación operativa (dcha si C&gt;1, izq si C&lt;1; arriba si C&gt;media, abajo si C&lt;media). Longitud/inclinación ∝ fuerza relativa. <span className="text-[#1D7044] font-semibold">verde</span> = valida (arriba-dcha), <span className="text-[#B8860B] font-semibold">ámbar</span> = mixto, <span className="text-[#B32A22] font-semibold">rojo</span> = refuta (abajo-izq). Sin aguja = sin KPI.</span>
                 </div>
             </div>
 
