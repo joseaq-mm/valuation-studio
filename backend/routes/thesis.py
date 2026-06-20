@@ -1602,7 +1602,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
             if not tk or tk in seen:
                 continue
-            if not company_is_complete(d):
+            # Surface a company as soon as its thesis is GENERATED (has at least one
+            # non-merged growth driver) — no need to wait for full development. KPI
+            # analysis runs on the proposed drivers, so it's usable immediately.
+            if not _company_drivers(d):
                 continue
             seen.add(tk)
             snap = d.get("kpi_snapshot") or {}

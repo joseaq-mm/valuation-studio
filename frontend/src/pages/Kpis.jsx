@@ -161,7 +161,7 @@ export default function Kpis() {
                         )}
                     </button>
                 ))}
-                {companies.length === 0 && <span className="text-sm text-[#4A4A4A]">No tienes empresas con tesis desarrollada todavía.</span>}
+                {companies.length === 0 && <span className="text-sm text-[#4A4A4A]">No tienes empresas con tesis generada todavía.</span>}
             </div>
 
             {!selId && <div className="text-sm text-[#4A4A4A] border border-dashed border-black/30 p-6 text-center">Elige una empresa para empezar.</div>}
