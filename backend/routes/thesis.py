@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, Query, Header
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, Query, Header, Cookie
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -245,8 +245,39 @@ KPI_MAX_FILES = 10
 KPI_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 KPI_ALLOWED_EXT = {"pdf", "png", "jpg", "jpeg", "webp", "gif"}
 
+_PERIOD_RE = re.compile(r"\b(q[1-4]|fy\s?\d{2,4}|h[12]|1h|2h|20\d{2}|19\d{2})\b", re.I)
+_DOC_STOP = {"the", "de", "del", "la", "el", "los", "las", "un", "una", "y", "and",
+             "of", "for", "inc", "corp", "pdf", "a"}
 
-def _doc_extract_sync(data: bytes, ext: str, mime: str, company: str, filename: str) -> dict:
+
+def _doc_family(name: str) -> set:
+    """Normalised 'kind' of a document: its title minus any period/date tokens.
+    Two docs with the same family (e.g. quarterly results decks) are equivalent."""
+    s = (name or "").lower()
+    s = _PERIOD_RE.sub(" ", s)
+    s = re.sub(r"[^a-záéíóúñ ]", " ", s)
+    return {t for t in s.split() if len(t) > 2 and t not in _DOC_STOP}
+
+
+def _period_rank(name: str) -> int:
+    """Sortable recency of a document from its title (year*4 + quarter). 0 = unknown."""
+    s = (name or "").lower()
+    year = 0
+    m = re.search(r"(20\d{2})", s)
+    if m:
+        year = int(m.group(1))
+    q = 0
+    mq = re.search(r"q([1-4])", s)
+    if mq:
+        q = int(mq.group(1))
+    elif re.search(r"\bh2\b|\b2h\b", s):
+        q = 4
+    elif re.search(r"\bh1\b|\b1h\b", s):
+        q = 2
+    return year * 4 + q
+
+
+
     """Write the uploaded bytes to a temp file, run the multimodal extraction, and
     split out the suggested TÍTULO (first line) from the KPI digest."""
     import tempfile
@@ -380,6 +411,7 @@ class KpiFileSelectRequest(BaseModel):
     selected: Optional[bool] = None
     display_name: Optional[str] = None
     description: Optional[str] = None
+    dismiss_supersedes: Optional[bool] = None
 
 
 class KpiNewsRequest(BaseModel):
@@ -1608,6 +1640,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "status": "ready", "selected": True, "is_deleted": False,
                 "extracted_text": ext_res.get("text") or "", "created_at": now, "extracted_at": now,
             }
+            sup = await _find_superseded(company_id, user_id, rec["display_name"], fid)
+            if sup:
+                rec["supersedes"] = sup
             await db.kpi_files.insert_one(rec)
         return web_sources
 
@@ -1823,12 +1858,42 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             # Auto-name from the AI-suggested title (user can still rename manually).
             if res.get("title"):
                 upd["display_name"] = res["title"]
+            rec0 = await db.kpi_files.find_one({"id": file_id, "user_id": user_id}, {"_id": 0, "company_id": 1})
+            if rec0:
+                sup = await _find_superseded(rec0["company_id"], user_id, upd.get("display_name") or filename, file_id)
+                if sup:
+                    upd["supersedes"] = sup
             await db.kpi_files.update_one({"id": file_id, "user_id": user_id}, {"$set": upd})
         except Exception as e:
             logger.error(f"doc extract failed ({file_id}): {e}")
             await db.kpi_files.update_one(
                 {"id": file_id, "user_id": user_id},
                 {"$set": {"status": "error", "error": "No se pudo leer el documento"}})
+
+    async def _find_superseded(company_id, user_id, new_name, exclude_id):
+        """If `new_name` is an equivalent-but-newer version of an existing document,
+        return {id, name} of the older one it supersedes (closest previous version)."""
+        new_fam = _doc_family(new_name)
+        if not new_fam:
+            return None
+        new_rank = _period_rank(new_name)
+        cands = await db.kpi_files.find(
+            {"company_id": company_id, "user_id": user_id, "is_deleted": False, "id": {"$ne": exclude_id}},
+            {"_id": 0, "id": 1, "display_name": 1, "original_filename": 1, "created_at": 1}).to_list(length=30)
+        best = None
+        for c in cands:
+            cname = c.get("display_name") or c.get("original_filename") or ""
+            fam = _doc_family(cname)
+            union = len(new_fam | fam)
+            if not union or (len(new_fam & fam) / union) < 0.6:
+                continue  # different kind of document
+            crank = _period_rank(cname)
+            if new_rank < crank:
+                continue  # the new one is OLDER than this → don't flag
+            key = (crank, c.get("created_at") or "")
+            if best is None or crank > best["rank"] or (crank == best["rank"] and (c.get("created_at") or "") < best["created"]):
+                best = {"id": c["id"], "name": cname, "rank": crank, "created": c.get("created_at") or ""}
+        return {"id": best["id"], "name": best["name"]} if best else None
 
     def _file_public(f):
         txt = f.get("extracted_text") or ""
@@ -1840,6 +1905,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "status": f.get("status"), "selected": f.get("selected", True),
             "kind": f.get("kind", "file"), "created_at": f.get("created_at"),
             "auto_fetched": bool(f.get("auto_fetched")), "source_url": f.get("source_url"),
+            "supersedes": f.get("supersedes"),
+            "downloadable": bool(f.get("storage_path")),
             "error": f.get("error"), "preview": txt[:180],
             "has_text": bool(txt),
         }
@@ -1913,18 +1980,24 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     @router.patch("/{company_id}/kpis/files/{file_id}")
     async def update_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
-        upd = {}
+        upd, unset = {}, {}
         if req.selected is not None:
             upd["selected"] = bool(req.selected)
         if req.display_name is not None:
             upd["display_name"] = req.display_name.strip()[:120]
         if req.description is not None:
             upd["description"] = req.description.strip()[:500]
-        if not upd:
+        if req.dismiss_supersedes:
+            unset["supersedes"] = ""
+        if not upd and not unset:
             raise HTTPException(status_code=400, detail="Nada que actualizar")
+        ops = {}
+        if upd:
+            ops["$set"] = upd
+        if unset:
+            ops["$unset"] = unset
         r = await db.kpi_files.update_one(
-            {"id": file_id, "company_id": company_id, "user_id": user["user_id"], "is_deleted": False},
-            {"$set": upd})
+            {"id": file_id, "company_id": company_id, "user_id": user["user_id"], "is_deleted": False}, ops)
         if r.matched_count == 0:
             raise HTTPException(status_code=404, detail="Archivo no encontrado")
         rec = await db.kpi_files.find_one({"id": file_id}, {"_id": 0})
@@ -1940,12 +2013,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"ok": True}
 
     @router.get("/{company_id}/kpis/files/{file_id}/download")
-    async def download_kpi_file(company_id: str, file_id: str, auth: str = Query(None), authorization: str = Header(None)):
+    async def download_kpi_file(company_id: str, file_id: str, auth: str = Query(None), authorization: str = Header(None), session_token: str = Cookie(None)):
         token = None
         if authorization and authorization.lower().startswith("bearer "):
             token = authorization.split(" ", 1)[1]
         elif auth:
             token = auth
+        elif session_token:
+            token = session_token
         uid = None
         if token:
             sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0, "user_id": 1})
@@ -1956,7 +2031,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if not rec.get("storage_path"):
             raise HTTPException(status_code=404, detail="Sin archivo descargable")
         data, ctype = await asyncio.to_thread(get_object, rec["storage_path"])
-        return Response(content=data, media_type=rec.get("content_type") or ctype)
+        fname = (rec.get("display_name") or rec.get("original_filename") or "documento")
+        if not fname.lower().endswith(f".{rec.get('ext','')}") and rec.get("ext"):
+            fname = f"{fname}.{rec.get('ext')}"
+        fname = re.sub(r'[^\w.\- ]', "_", fname)
+        return Response(content=data, media_type=rec.get("content_type") or ctype,
+                        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
     # ----- KPI qualitative news (inform scores; aged out, refreshed on reanalyze) -----
     def _news_public(n):

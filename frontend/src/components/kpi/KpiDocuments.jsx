@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud } from "lucide-react";
-import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete } from "@/lib/api";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, Download } from "lucide-react";
+import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileDownload } from "@/lib/api";
 import { toast } from "sonner";
 
 const fileIcon = (f) => {
@@ -119,6 +119,35 @@ export default function KpiDocuments({ companyId }) {
         } catch { toast.error("No se pudo guardar"); }
     };
 
+    const download = async (f) => {
+        try {
+            const resp = await kpiFileDownload(companyId, f.id);
+            const url = URL.createObjectURL(resp.data);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = f.display_name || f.original_filename || "documento";
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+        } catch { toast.error("No se pudo descargar"); }
+    };
+
+    const keepBoth = async (f) => {
+        setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, supersedes: null } : x)));
+        try { await kpiFileUpdate(companyId, f.id, { dismiss_supersedes: true }); }
+        catch { load(); }
+    };
+
+    const deleteOld = async (f) => {
+        const oldId = f.supersedes?.id;
+        if (!oldId) return;
+        setFiles((prev) => prev.filter((x) => x.id !== oldId).map((x) => (x.id === f.id ? { ...x, supersedes: null } : x)));
+        try {
+            await kpiFileDelete(companyId, oldId);
+            await kpiFileUpdate(companyId, f.id, { dismiss_supersedes: true });
+            toast.success("Documento antiguo borrado");
+        } catch { load(); }
+    };
+
     return (
         <div
             className={`relative border bg-white p-3 mb-4 transition-colors ${dragOver ? "border-[#052049] border-dashed bg-[#F4F6FA]" : "border-black/20"}`}
@@ -200,9 +229,23 @@ export default function KpiDocuments({ companyId }) {
                                                 {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
                                                 {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
                                             </div>
+                                            {f.supersedes && (
+                                                <div className="mt-1.5 text-[11px] bg-[#FFF8E6] border border-[#B8860B]/40 px-2 py-1.5" data-testid={`kpi-file-supersedes-${f.id}`}>
+                                                    <div className="text-[#7a5c00] leading-snug">Parece una versión más reciente de «<strong>{f.supersedes.name}</strong>». ¿Mantener ambos o borrar el antiguo?</div>
+                                                    <div className="flex gap-2 mt-1">
+                                                        <button onClick={() => keepBoth(f)} className="text-[#4A4A4A] hover:underline" data-testid={`kpi-file-keepboth-${f.id}`}>Mantener ambos</button>
+                                                        <button onClick={() => deleteOld(f)} className="text-[#B32A22] font-semibold hover:underline" data-testid={`kpi-file-deleteold-${f.id}`}>Borrar el antiguo</button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </div>
+                                {!isEd && f.downloadable && (
+                                    <button onClick={() => download(f)} className="text-[#4A4A4A] hover:bg-black/5 p-1 shrink-0" title="Descargar" data-testid={`kpi-file-download-${f.id}`}>
+                                        <Download size={14} />
+                                    </button>
+                                )}
                                 {!isEd && (
                                     <button onClick={() => startEdit(f)} className="text-[#4A4A4A] hover:bg-black/5 p-1 shrink-0" title="Renombrar / describir" data-testid={`kpi-file-edit-${f.id}`}>
                                         <Pencil size={13} />

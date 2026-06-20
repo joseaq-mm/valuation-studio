@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search } from "lucide-react";
+import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle } from "lucide-react";
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
@@ -207,6 +207,18 @@ export default function Kpis() {
                             <div className="text-xs text-[#7A7A7A] mt-1">
                                 {snap.period ? `Periodo: ${snap.period} · ` : ""}{snap.generated_at ? `Analizado ${fmtDate(snap.generated_at)}` : ""}{snap.edited_at ? " · editado" : ""}
                             </div>
+                            {(() => {
+                                const uncovered = (snap.drivers || []).filter((d) => !d.n_kpis);
+                                if (!uncovered.length) return null;
+                                return (
+                                    <div className="mt-2 flex items-start gap-1.5 text-[12px] bg-[#FBF3E0] border border-[#B8860B]/50 px-2.5 py-1.5 max-w-xl" data-testid="kpi-uncovered-warning">
+                                        <AlertTriangle size={14} className="text-[#B8860B] shrink-0 mt-0.5" />
+                                        <div className="text-[#7a5a10] leading-snug">
+                                            {uncovered.length === 1 ? "1 área de la tesis sin KPIs" : `${uncovered.length} áreas de la tesis sin KPIs`} (<strong>{uncovered.map((d) => d.name).join(", ")}</strong>): el coeficiente solo refleja las áreas con datos. Busca o desarrolla KPIs de esas áreas para una validación más fiable y completa.
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                         <div className="flex items-center gap-2">
                             {!editing ? (

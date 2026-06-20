@@ -209,6 +209,8 @@ export const kpiFileUpdate = (companyId, fileId, fields) =>
     api.patch(`/thesis/${companyId}/kpis/files/${fileId}`, fields).then(r => r.data);
 export const kpiFileDelete = (companyId, fileId) =>
     api.delete(`/thesis/${companyId}/kpis/files/${fileId}`).then(r => r.data);
+export const kpiFileDownload = (companyId, fileId) =>
+    api.get(`/thesis/${companyId}/kpis/files/${fileId}/download`, { responseType: "blob", timeout: 180000 });
 
 // KPI qualitative news (inform scores; aged out over time)
 export const kpiNewsList = (companyId) =>
