@@ -22,7 +22,9 @@ export default function KpiDocuments({ companyId }) {
     const [editId, setEditId] = useState(null);
     const [editName, setEditName] = useState("");
     const [editDesc, setEditDesc] = useState("");
+    const [dragOver, setDragOver] = useState(false);
     const inputRef = useRef(null);
+    const dragDepth = useRef(0);
 
     const load = useCallback(async () => {
         try { const d = await kpiFilesList(companyId); setFiles(d.files || []); }
@@ -38,19 +40,49 @@ export default function KpiDocuments({ companyId }) {
         return () => clearInterval(t);
     }, [files, load]);
 
-    const onPick = async (e) => {
-        const file = e.target.files?.[0];
-        e.target.value = "";
-        if (!file) return;
-        if (file.size > 100 * 1024 * 1024) { toast.error("El archivo supera 100 MB"); return; }
-        setUploading(true);
+    const ACCEPT = /(pdf|image\/(png|jpe?g|webp|gif))/i;
+    const uploadOne = async (file) => {
+        if (file.size > 100 * 1024 * 1024) { toast.error(`"${file.name}" supera 100 MB`); return false; }
+        if (file.type && !ACCEPT.test(file.type)) { toast.error(`"${file.name}": formato no admitido (solo PDF o imagen)`); return false; }
         try {
             const d = await kpiFileUpload(companyId, file);
             setFiles((prev) => [d.file, ...prev]);
-            toast.success("Archivo subido · leyéndolo con IA…");
+            return true;
         } catch (err) {
-            toast.error(err?.response?.data?.detail || "Error al subir");
-        } finally { setUploading(false); }
+            toast.error(err?.response?.data?.detail || `Error al subir "${file.name}"`);
+            return false;
+        }
+    };
+
+    const uploadFiles = useCallback(async (fileList) => {
+        const incoming = Array.from(fileList || []);
+        if (!incoming.length) return;
+        // Respect the 10-file cap using the freshest count.
+        let slots = 10 - files.length;
+        if (slots <= 0) { toast.error("Máximo 10 documentos por empresa"); return; }
+        const toUpload = incoming.slice(0, slots);
+        if (incoming.length > toUpload.length) toast.info(`Solo se subirán ${toUpload.length} (máx. 10 por empresa)`);
+        setUploading(true);
+        let ok = 0;
+        for (const f of toUpload) { if (await uploadOne(f)) ok += 1; }
+        setUploading(false);
+        if (ok) toast.success(ok === 1 ? "Archivo subido · leyéndolo con IA…" : `${ok} archivos subidos · leyéndolos con IA…`);
+    }, [companyId, files.length]);
+
+    const onPick = (e) => {
+        const list = e.target.files;
+        e.target.value = "";
+        uploadFiles(list);
+    };
+
+    const onDragEnter = (e) => { e.preventDefault(); dragDepth.current += 1; setDragOver(true); };
+    const onDragOver = (e) => { e.preventDefault(); };
+    const onDragLeave = (e) => { e.preventDefault(); dragDepth.current -= 1; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragOver(false); } };
+    const onDrop = (e) => {
+        e.preventDefault();
+        dragDepth.current = 0; setDragOver(false);
+        if (uploading || files.length >= 10) { if (files.length >= 10) toast.error("Máximo 10 documentos por empresa"); return; }
+        uploadFiles(e.dataTransfer?.files);
     };
 
     const addTranscript = async () => {
@@ -88,7 +120,19 @@ export default function KpiDocuments({ companyId }) {
     };
 
     return (
-        <div className="border border-black/20 bg-white p-3 mb-4" data-testid="kpi-documents">
+        <div
+            className={`relative border bg-white p-3 mb-4 transition-colors ${dragOver ? "border-[#052049] border-dashed bg-[#F4F6FA]" : "border-black/20"}`}
+            data-testid="kpi-documents"
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+        >
+            {dragOver && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#F4F6FA]/85 border-2 border-dashed border-[#052049] pointer-events-none" data-testid="kpi-drop-overlay">
+                    <div className="text-[#052049] font-semibold inline-flex items-center gap-2"><Upload size={18} /> Suelta para subir (PDF/imagen)</div>
+                </div>
+            )}
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5"><FileText size={13} /> Documentos como fuente ({files.length}/10)</div>
                 <div className="flex items-center gap-2">
@@ -98,11 +142,11 @@ export default function KpiDocuments({ companyId }) {
                     <button onClick={() => inputRef.current?.click()} disabled={uploading || files.length >= 10} className="btn-primary !py-1 !px-2.5 inline-flex items-center gap-1.5 text-xs disabled:opacity-40" data-testid="kpi-upload-btn">
                         {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Subir PDF/imagen
                     </button>
-                    <input ref={inputRef} type="file" accept=".pdf,image/png,image/jpeg,image/webp,image/gif" onChange={onPick} className="hidden" data-testid="kpi-file-input" />
+                    <input ref={inputRef} type="file" multiple accept=".pdf,image/png,image/jpeg,image/webp,image/gif" onChange={onPick} className="hidden" data-testid="kpi-file-input" />
                 </div>
             </div>
 
-            <p className="text-[11px] text-[#7A7A7A] mb-2">Sube presentaciones o gráficos (máx. 100 MB, 10 por empresa). La IA los lee al subirlos y usa los <strong>seleccionados</strong> al analizar/buscar KPIs.</p>
+            <p className="text-[11px] text-[#7A7A7A] mb-2">Sube presentaciones o gráficos (máx. 100 MB, 10 por empresa) <strong>o arrástralos aquí</strong>. La IA los lee al subirlos y usa los <strong>seleccionados</strong> al analizar/buscar KPIs.</p>
 
             {tOpen && (
                 <div className="border border-[#052049]/30 bg-[#F4F6FA] p-2.5 mb-2" data-testid="kpi-transcript-box">
@@ -116,7 +160,7 @@ export default function KpiDocuments({ companyId }) {
             )}
 
             {files.length === 0 ? (
-                <div className="text-xs text-[#9A9A9A] py-2 text-center border border-dashed border-black/20">Sin documentos. Sube un PDF/imagen o pega un transcript.</div>
+                <div className="text-xs text-[#9A9A9A] py-3 text-center border border-dashed border-black/20">Sin documentos. Arrastra aquí un PDF/imagen, súbelo con el botón o pega un transcript.</div>
             ) : (
                 <ul className="space-y-1" data-testid="kpi-files-list">
                     {files.map((f) => {
