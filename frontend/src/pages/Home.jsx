@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, BookOpen, Compass } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useTour } from "@/lib/tour";
+import { HomeSearch } from "@/components/HomeSearch";
 
 const POPULAR = [
     { sym: "AAPL", name: "Apple Inc." },
@@ -28,21 +29,24 @@ export default function Home() {
             <section className="border border-black bg-white p-8 sm:p-12 mb-8" data-testid="hero-section">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="overline text-[#B32A22] mb-4">{t("home.tag")}</div>
-                    <div className="flex items-center gap-2" data-testid="home-help-buttons">
-                        <Link
-                            to="/instrucciones"
-                            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-white text-black hover:bg-black hover:text-[#FDF1E6] transition-colors"
-                            data-testid="home-btn-instructions"
-                        >
-                            <BookOpen size={14} /> {t("home.instructions")}
-                        </Link>
-                        <button
-                            onClick={() => tour && tour.start()}
-                            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-[#052049] text-white hover:bg-black transition-colors"
-                            data-testid="home-btn-tour"
-                        >
-                            <Compass size={14} /> {t("home.tour")}
-                        </button>
+                    <div className="flex flex-col items-end gap-3" data-testid="home-help-buttons">
+                        <div className="flex items-center gap-2">
+                            <Link
+                                to="/instrucciones"
+                                className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-white text-black hover:bg-black hover:text-[#FDF1E6] transition-colors"
+                                data-testid="home-btn-instructions"
+                            >
+                                <BookOpen size={14} /> {t("home.instructions")}
+                            </Link>
+                            <button
+                                onClick={() => tour && tour.start()}
+                                className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-[#052049] text-white hover:bg-black transition-colors"
+                                data-testid="home-btn-tour"
+                            >
+                                <Compass size={14} /> {t("home.tour")}
+                            </button>
+                        </div>
+                        <HomeSearch />
                     </div>
                 </div>
                 <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none font-medium mb-6 max-w-3xl">

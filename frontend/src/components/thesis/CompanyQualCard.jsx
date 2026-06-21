@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Sparkles, ArrowRight, GitMerge } from "lucide-react";
+import { Sparkles, ArrowRight, GitMerge, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisCompanyProfile, thesisMergeThesis, thesisUnmergeThesis } from "@/lib/api";
 import { ValueBox, scoreColor, tamColor, fmtTamScore } from "./ScoreBar";
@@ -28,6 +28,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
     const [mergeTarget, setMergeTarget] = useState("");
     const [mergeStep, setMergeStep] = useState("pick"); // pick | confirm
     const [busy, setBusy] = useState(false);
+    const [othersOpen, setOthersOpen] = useState(false);
 
     useEffect(() => {
         let alive = true;
@@ -216,29 +217,38 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
 
             {others.length > 0 && !fromCompanyId && (
                 <div className="mt-4 pt-3 border-t border-black/10" data-testid="qual-other-list">
-                    <div className="overline text-[#4A4A4A] mb-1">También aparece en (informativo · no suma)</div>
-                    <p className="text-[11px] text-[#9CA3AF] leading-snug mb-2">
-                        Tesis donde {ticker} fue añadida desde otros planes o tendencias. No cuentan en los totales de arriba para mantener la coherencia con tu plan.
-                    </p>
-                    <div className="space-y-0">
-                        {others.map((r) => (
-                            <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2 border-b border-black/10 opacity-70`} data-testid={`qual-other-row-${r.thesis_id}`}>
-                                <div className="min-w-0">
-                                    <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline inline-flex items-center gap-1 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
-                                        <span className="truncate">{r.thesis_title}</span>
-                                        <ArrowRight size={11} className="shrink-0" />
-                                    </Link>
-                                    {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}
-                                </div>
-                                <div className="flex justify-center">
-                                    <ValueBox text={r.overall_score ?? "—"} color={scoreColor(r.overall_score)} testid={`qual-other-overall-${r.thesis_id}`} />
-                                </div>
-                                <div className="flex justify-center">
-                                    <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-other-tam-${r.thesis_id}`} />
-                                </div>
+                    <button onClick={() => setOthersOpen((o) => !o)} className="flex items-center gap-1.5 group w-full text-left" data-testid="qual-other-toggle" aria-expanded={othersOpen}>
+                        {othersOpen ? <ChevronDown size={14} className="text-[#4A4A4A]" /> : <ChevronRight size={14} className="text-[#4A4A4A]" />}
+                        <span className="overline text-[#4A4A4A] group-hover:text-black">También aparece en</span>
+                        <span className="text-[11px] font-semibold px-1.5 py-0.5 bg-black/5 text-[#4A4A4A]">{others.length}</span>
+                        <span className="overline text-[#9CA3AF]">· informativo · no suma</span>
+                    </button>
+                    {othersOpen && (
+                        <>
+                            <p className="text-[11px] text-[#9CA3AF] leading-snug mb-2 mt-2">
+                                Tesis donde {ticker} fue añadida desde otros planes o tesis. No cuentan en los totales de arriba para mantener la coherencia con tu plan.
+                            </p>
+                            <div className="space-y-0">
+                                {others.map((r) => (
+                                    <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2 border-b border-black/10 opacity-70`} data-testid={`qual-other-row-${r.thesis_id}`}>
+                                        <div className="min-w-0">
+                                            <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline inline-flex items-center gap-1 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
+                                                <span className="truncate">{r.thesis_title}</span>
+                                                <ArrowRight size={11} className="shrink-0" />
+                                            </Link>
+                                            {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}
+                                        </div>
+                                        <div className="flex justify-center">
+                                            <ValueBox text={r.overall_score ?? "—"} color={scoreColor(r.overall_score)} testid={`qual-other-overall-${r.thesis_id}`} />
+                                        </div>
+                                        <div className="flex justify-center">
+                                            <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-other-tam-${r.thesis_id}`} />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
+                        </>
+                    )}
                 </div>
             )}
 

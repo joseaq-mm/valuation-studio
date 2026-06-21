@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { compare } from "@/lib/api";
+import React, { useState, useEffect } from "react";
+import { compare, thesisVisualData } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
@@ -14,9 +14,21 @@ export default function Compare() {
     const [tickers, setTickers] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const { display: displayCur, convert: fxConvert } = useFx();
     const { t } = useI18n();
     useThresholds();
+
+    // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
+    useEffect(() => {
+        thesisVisualData()
+            .then((d) => {
+                const m = {};
+                (d.rows || []).forEach((r) => { m[r.ticker] = { score: r.avg_overall_score, tam: r.sum_tam_score, kpi_coef: r.kpi_coef }; });
+                setQual(m);
+            })
+            .catch(() => setQual({}));
+    }, []);
 
     const useDisplay = displayCur && displayCur !== "NATIVE";
     const convPrice = (r) => useDisplay ? fxConvert(r.current_price, r.currency) : r.current_price;
@@ -83,6 +95,18 @@ export default function Compare() {
             const v = r.custom_ratios?.ratio_compra_pct;
             return <span className="overline px-2 py-1 border border-black" style={{ color: ratioColor(v) }}>{signalLabel(v)}</span>;
         }, align: "center" },
+        { label: t("compare.row_score"), get: r => {
+            const v = qual[r.ticker]?.score;
+            return v == null ? "—" : <span style={{ color: v >= 70 ? "#1D7044" : v >= 50 ? "#B8860B" : "#B32A22" }}>{Number(v).toFixed(1)}</span>;
+        }, align: "right" },
+        { label: t("compare.row_tam"), get: r => {
+            const v = qual[r.ticker]?.tam;
+            return v == null ? "—" : Number(v).toFixed(2);
+        }, align: "right" },
+        { label: t("compare.row_kpi"), get: r => {
+            const v = qual[r.ticker]?.kpi_coef;
+            return v == null ? "—" : <span style={{ color: v > 1.05 ? "#1D7044" : v < 0.95 ? "#B32A22" : "#B8860B", fontWeight: 600 }}>{Number(v).toFixed(2)}</span>;
+        }, align: "right" },
         { label: "Trailing P/E", get: r => fmtNum(r.classic_ratios?.trailing_pe), align: "right" },
         { label: "Forward P/E", get: r => fmtNum(r.classic_ratios?.forward_pe), align: "right" },
         { label: "P/B", get: r => fmtNum(r.classic_ratios?.price_to_book), align: "right" },
