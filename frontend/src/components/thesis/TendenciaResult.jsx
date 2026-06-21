@@ -13,6 +13,16 @@ function catBadge(category) {
     return { txt: "Competidor", cls: "bg-[#4A4A4A] text-white" };
 }
 
+function fitLabel(fit) {
+    return fit === "pura" ? "Pura" : fit === "alta" ? "Alta" : fit === "parcial" ? "Parcial" : fit;
+}
+function fitStyle(fit) {
+    if (fit === "pura") return { color: "#1D7044", borderColor: "#1D7044" };
+    if (fit === "alta") return { color: "#B8860B", borderColor: "#B8860B" };
+    return { color: "#7A7A7A", borderColor: "#7A7A7A" }; // parcial / unknown
+}
+
+
 // TAM expressed in USD billions. Show $B, or $T when ≥1000.
 function fmtTam(busd) {
     if (busd == null || isNaN(busd)) return null;
@@ -226,10 +236,21 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
                                     </a>
                                     <span className="shrink-0 overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A]">{e.kind || "ETF"}</span>
                                 </div>
-                                <div className="text-[11px] text-[#9CA3AF] mt-0.5">
-                                    {e.provider}{e.provider && e.ticker ? " · " : ""}{e.ticker && <span className="font-mono">{e.ticker}</span>}
+                                <div className="text-[11px] text-[#9CA3AF] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    {e.fit && (
+                                        <span
+                                            className="overline px-1.5 py-0.5 border"
+                                            style={fitStyle(e.fit)}
+                                            title={e.fit_note || ""}
+                                            data-testid={`tendencia-etf-fit-${i}`}
+                                        >
+                                            {fitLabel(e.fit)}
+                                        </span>
+                                    )}
+                                    <span>{e.provider}{e.provider && e.ticker ? " · " : ""}{e.ticker && <span className="font-mono">{e.ticker}</span>}</span>
                                 </div>
                                 {e.universe && <p className="text-xs text-[#4A4A4A] leading-snug mt-1.5">{e.universe}</p>}
+                                {e.fit === "parcial" && e.fit_note && <p className="text-[11px] text-[#B8860B] leading-snug mt-1">⚠ {e.fit_note}</p>}
                             </div>
                         ))}
                     </div>

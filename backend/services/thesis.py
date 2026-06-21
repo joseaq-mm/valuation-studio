@@ -551,13 +551,15 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         '  "cagr_4y": 0, "cagr_note": "1 frase: supuesto del crecimiento compuesto anual a 4 años",\n'
         '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
         '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "su rol/posición real en la cadena de valor", "category": "leader|competitor|disruptor", "why": "1-2 frases: por qué se incluye en esa categoría; si es disruptor, qué criterio cumple"}],\n'
-        '  "etfs": [{"name": "nombre COMPLETO del ETF o fondo", "ticker": "TICKER o null", "kind": "ETF|Fondo", "provider": "gestora (iShares, Xtrackers, Global X, ARK…)", "universe": "descripción EXACTA del universo de inversión: qué incluye, enfoque temático concreto, geografía y tipo de réplica si aplica"}]\n'
+        '  "etfs": [{"name": "nombre COMPLETO del ETF o fondo", "ticker": "TICKER o null", "kind": "ETF|Fondo", "provider": "gestora (iShares, Xtrackers, Global X, ARK…)", "universe": "descripción EXACTA del universo de inversión: qué incluye, enfoque temático concreto, geografía y tipo de réplica si aplica", "fit": "pura|alta|parcial", "fit_note": "por qué ese nivel de ajuste al NICHO exacto"}]\n'
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
         "- 'cagr_4y' = crecimiento compuesto anual estimado del MERCADO de la tendencia para los próximos 4 años (~2027→2031), en PORCENTAJE como número (ej. 18.5), SIN el símbolo %.\n"
         "- 'companies': incluye HASTA 2 'leader' (líderes esperados), HASTA 2 'competitor' (competidores que GANAN TERRENO al líder) y HASTA 2 'disruptor' (misma definición estricta de disruptor). Si en alguna categoría no hay 2 empresas cotizadas reales BIEN encajadas, incluye solo las que haya (o ninguna): NO rellenes con empresas mal encajadas.\n"
-        "- 'etfs': HASTA 4 ETFs o fondos de inversión REALES y genuinamente temáticos de ESTA tendencia (no índices genéricos tipo S&P 500). Nombre COMPLETO y oficial, gestora y una descripción precisa de su universo de inversión. NO inventes ISIN ni lo incluyas. Si no hay vehículos claramente temáticos, devuelve menos o una lista vacía: NO rellenes con fondos mal encajados.\n"
+        "- 'etfs': HASTA 4 ETFs o fondos REALES, ORDENADOS de MAYOR a MENOR especificidad respecto al NICHO EXACTO de esta tendencia. Prioriza vehículos 'pure-play' del nicho concreto; solo si no existen, ofrece los más cercanos (p.ej. un ETF amplio de semiconductores para un nicho de memoria) marcándolos honestamente como 'parcial'. NUNCA presentes un ETF genérico como si fuese temático del nicho.\n"
+        "  · 'fit' = 'pura' (≈la totalidad de la cartera es exactamente este nicho), 'alta' (el nicho es la temática dominante del fondo) o 'parcial' (el nicho es solo una porción de un fondo más amplio). Explica el porqué en 'fit_note'.\n"
+        "  · Si NO existe ningún ETF/fondo realmente específico del nicho, dilo en 'fit_note' y ofrece a lo sumo 1-2 de los más cercanos marcados 'parcial'; mejor pocos y honestos que muchos genéricos. NO inventes ISIN ni lo incluyas.\n"
         "- Solo empresas COTIZADAS reales con su TICKER canónico de Yahoo Finance.\n"
         "- 'value_chain_role' describe la actividad/posición real de la empresa (información adicional)."
     )
@@ -595,6 +597,8 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
             "kind": (e.get("kind") or "ETF").strip(),
             "provider": (e.get("provider") or "").strip() or None,
             "universe": (e.get("universe") or "").strip(),
+            "fit": (e.get("fit") or "").strip().lower() or None,
+            "fit_note": (e.get("fit_note") or "").strip() or None,
         })
     return {
         "type": "tendencia",
