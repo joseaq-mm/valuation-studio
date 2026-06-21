@@ -29,32 +29,34 @@ export default function Home() {
             <section className="border border-black bg-white p-8 sm:p-12 mb-8" data-testid="hero-section">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="overline text-[#B32A22] mb-4">{t("home.tag")}</div>
-                    <div className="flex flex-col items-end gap-3" data-testid="home-help-buttons">
-                        <div className="flex items-center gap-2">
-                            <Link
-                                to="/instrucciones"
-                                className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-white text-black hover:bg-black hover:text-[#FDF1E6] transition-colors"
-                                data-testid="home-btn-instructions"
-                            >
-                                <BookOpen size={14} /> {t("home.instructions")}
-                            </Link>
-                            <button
-                                onClick={() => tour && tour.start()}
-                                className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-[#052049] text-white hover:bg-black transition-colors"
-                                data-testid="home-btn-tour"
-                            >
-                                <Compass size={14} /> {t("home.tour")}
-                            </button>
-                        </div>
-                        <HomeSearch />
+                    <div className="flex items-center gap-2" data-testid="home-help-buttons">
+                        <Link
+                            to="/instrucciones"
+                            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-white text-black hover:bg-black hover:text-[#FDF1E6] transition-colors"
+                            data-testid="home-btn-instructions"
+                        >
+                            <BookOpen size={14} /> {t("home.instructions")}
+                        </Link>
+                        <button
+                            onClick={() => tour && tour.start()}
+                            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] font-semibold px-3 py-1.5 border border-black bg-[#052049] text-white hover:bg-black transition-colors"
+                            data-testid="home-btn-tour"
+                        >
+                            <Compass size={14} /> {t("home.tour")}
+                        </button>
                     </div>
                 </div>
                 <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none font-medium mb-6 max-w-3xl">
                     {t("home.hero_title_pre")} <em className="text-[#B32A22]">{t("home.hero_title_em_cara")}</em> {t("home.hero_title_or")} <em className="text-[#1D7044]">{t("home.hero_title_em_barata")}</em>.
                 </h1>
-                <p className="text-base sm:text-lg text-[#4A4A4A] max-w-2xl mb-6">
-                    {t("home.hero_sub")}
-                </p>
+                <div className="flex flex-col lg:flex-row lg:items-center gap-6 mb-6">
+                    <p className="text-base sm:text-lg text-[#4A4A4A] max-w-2xl">
+                        {t("home.hero_sub")}
+                    </p>
+                    <div className="lg:ml-auto shrink-0">
+                        <HomeSearch />
+                    </div>
+                </div>
                 <div className="flex flex-wrap gap-3 items-center text-sm">
                     <span className="overline text-[#4A4A4A]">{t("home.try_with")}</span>
                     {POPULAR.slice(0, 6).map(p => (

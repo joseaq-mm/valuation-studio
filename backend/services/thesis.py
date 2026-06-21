@@ -550,12 +550,14 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         '  "tam": {"global_busd": 0, "year": 2027, "note": "1 frase: alcance y supuesto del TAM global"},\n'
         '  "cagr_4y": 0, "cagr_note": "1 frase: supuesto del crecimiento compuesto anual a 4 años",\n'
         '  "value_chain": [{"stage": "nombre del eslabón", "description": "qué ocurre aquí", "tam_busd": 0}],\n'
-        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "su rol/posición real en la cadena de valor", "category": "leader|competitor|disruptor", "why": "1-2 frases: por qué se incluye en esa categoría; si es disruptor, qué criterio cumple"}]\n'
+        '  "companies": [{"name": "Nombre", "ticker": "TICKER", "value_chain_role": "su rol/posición real en la cadena de valor", "category": "leader|competitor|disruptor", "why": "1-2 frases: por qué se incluye en esa categoría; si es disruptor, qué criterio cumple"}],\n'
+        '  "etfs": [{"name": "nombre COMPLETO del ETF o fondo", "ticker": "TICKER o null", "kind": "ETF|Fondo", "provider": "gestora (iShares, Xtrackers, Global X, ARK…)", "universe": "descripción EXACTA del universo de inversión: qué incluye, enfoque temático concreto, geografía y tipo de réplica si aplica"}]\n'
         "}\n"
         "REGLAS:\n"
         "- 'global_busd' y 'tam_busd' son números en miles de millones de USD a 2027 (TTM).\n"
         "- 'cagr_4y' = crecimiento compuesto anual estimado del MERCADO de la tendencia para los próximos 4 años (~2027→2031), en PORCENTAJE como número (ej. 18.5), SIN el símbolo %.\n"
         "- 'companies': incluye HASTA 2 'leader' (líderes esperados), HASTA 2 'competitor' (competidores que GANAN TERRENO al líder) y HASTA 2 'disruptor' (misma definición estricta de disruptor). Si en alguna categoría no hay 2 empresas cotizadas reales BIEN encajadas, incluye solo las que haya (o ninguna): NO rellenes con empresas mal encajadas.\n"
+        "- 'etfs': HASTA 4 ETFs o fondos de inversión REALES y genuinamente temáticos de ESTA tendencia (no índices genéricos tipo S&P 500). Nombre COMPLETO y oficial, gestora y una descripción precisa de su universo de inversión. NO inventes ISIN ni lo incluyas. Si no hay vehículos claramente temáticos, devuelve menos o una lista vacía: NO rellenes con fondos mal encajados.\n"
         "- Solo empresas COTIZADAS reales con su TICKER canónico de Yahoo Finance.\n"
         "- 'value_chain_role' describe la actividad/posición real de la empresa (información adicional)."
     )
@@ -582,6 +584,18 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
     merged = caps["leader"] + caps["competitor"] + caps["disruptor"]
     if not merged:
         raise ValueError("No se pudieron identificar empresas para esta tendencia. Prueba a reformularla.")
+    etfs = []
+    for e in (inv.get("etfs") or [])[:4]:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        etfs.append({
+            "name": name,
+            "ticker": (e.get("ticker") or "").upper().strip() or None,
+            "kind": (e.get("kind") or "ETF").strip(),
+            "provider": (e.get("provider") or "").strip() or None,
+            "universe": (e.get("universe") or "").strip(),
+        })
     return {
         "type": "tendencia",
         "query": trend,
@@ -592,6 +606,7 @@ async def run_trend_explore(trend: str, sources: list) -> dict:
         "cagr_note": inv.get("cagr_note"),
         "value_chain": _normalize_value_chain(inv.get("value_chain")),
         "companies": merged,
+        "etfs": etfs,
         "sources": sources,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

@@ -226,7 +226,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                     {othersOpen && (
                         <>
                             <p className="text-[11px] text-[#9CA3AF] leading-snug mb-2 mt-2">
-                                Tesis donde {ticker} fue añadida desde otros planes o tesis. No cuentan en los totales de arriba para mantener la coherencia con tu plan.
+                                Tesis donde {ticker} fue añadida desde las tesis desarrolladas desde los planes de otras empresas. No cuentan en los totales de arriba para mantener la coherencia con el plan de esta empresa.
                             </p>
                             <div className="space-y-0">
                                 {others.map((r) => (

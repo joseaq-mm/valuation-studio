@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Sparkles, Bookmark, X, Flame, ExternalLink, TrendingUp } from "lucide-react";
+import { ArrowRight, Sparkles, Bookmark, X, Flame, ExternalLink, TrendingUp, Layers } from "lucide-react";
 import HoverTip from "@/components/HoverTip";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
@@ -200,6 +200,41 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
                     testid="tendencia-disruptors"
                 />
             </div>
+
+            {/* Thematic ETFs / funds */}
+            {tendencia.etfs?.length > 0 && (
+                <div className="mt-8" data-testid="tendencia-etfs">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Layers size={15} className="text-[#052049]" />
+                        <h3 className="font-serif text-xl">ETFs / Fondos de esta temática</h3>
+                    </div>
+                    <p className="text-[11px] text-[#9CA3AF] leading-snug mb-3 max-w-3xl">
+                        Vehículos diversificados para exponerte a la tendencia sin elegir una sola empresa. Pulsa el título para buscar la ficha oficial (gestora, política y composición). Información orientativa: verifica siempre el folleto antes de invertir.
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                        {tendencia.etfs.map((e, i) => (
+                            <div key={i} className="border border-black/15 bg-white p-3" data-testid={`tendencia-etf-${i}`}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <a
+                                        href={`https://duckduckgo.com/?q=${encodeURIComponent(`${e.name} ${e.provider || ""} ETF fondo ficha`)}`}
+                                        target="_blank" rel="noopener noreferrer"
+                                        className="font-semibold text-[#052049] hover:underline inline-flex items-start gap-1 leading-tight"
+                                        data-testid={`tendencia-etf-link-${i}`}
+                                    >
+                                        {e.name}
+                                        <ExternalLink size={12} className="shrink-0 mt-0.5" />
+                                    </a>
+                                    <span className="shrink-0 overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A]">{e.kind || "ETF"}</span>
+                                </div>
+                                <div className="text-[11px] text-[#9CA3AF] mt-0.5">
+                                    {e.provider}{e.provider && e.ticker ? " · " : ""}{e.ticker && <span className="font-mono">{e.ticker}</span>}
+                                </div>
+                                {e.universe && <p className="text-xs text-[#4A4A4A] leading-snug mt-1.5">{e.universe}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Sources */}
             {tendencia.sources?.length > 0 && (
