@@ -14,8 +14,8 @@ const CONTENT = {
                 h: "1. ¿Qué puedes hacer? (las pantallas)",
                 bullets: [
                     ["Empresa", "busca cualquier ticker (AAPL, SAP.DE, SAN.MC…) y ves sus KPIs, ratios clásicos, métricas de crecimiento, gráficos y los precios objetivo POC/POV. Puedes editar los inputs a mano y recalcular en vivo."],
-                    ["Watchlist", "lista de seguimiento con snapshots manuales y alertas por fila (campana) cuando una empresa cruza de cara a barata."],
-                    ["Cartera", "tus posiciones reales con P/L vivo, P/L % y KPIs totales; también posiciones de «solo seguimiento»."],
+                    ["Nivel 2", "acciones que no son tus preferidas pero te interesan: lista de seguimiento con snapshots manuales y alertas por fila (campana) cuando una empresa cruza de cara a barata."],
+                    ["Nivel 1", "tus acciones preferidas y posiciones reales con P/L vivo, P/L % y KPIs totales; también posiciones de «solo seguimiento»."],
                     ["Comparar", "hasta 6 empresas lado a lado."],
                     ["Tesis (Thesis Engine)", "el cerebro cualitativo: explora tendencias, genera tesis por empresa y agrupa todo en «Megatesis»."],
                 ],
@@ -55,7 +55,7 @@ const CONTENT = {
                 bullets: [
                     ["1", "Busca una empresa que conozcas y mira su POC, POV y los puntos de salud de los ratios."],
                     ["2", "Edita algún input (p. ej. el crecimiento) y recalcula para ver cómo se mueve el POC."],
-                    ["3", "Añádela a tu Watchlist y activa la campana para recibir alertas cuando cruce a «barata»."],
+                    ["3", "Añádela a tu Nivel 2 (o Nivel 1) y activa la campana para recibir alertas cuando cruce a «barata»."],
                     ["4", "Ve a «Tesis», explora una tendencia o genera una tesis y observa los scores."],
                     ["5", "Inicia sesión con Google para sincronizar todo entre dispositivos y activar las alertas por email."],
                 ],
@@ -74,8 +74,8 @@ const CONTENT = {
                 h: "1. What can you do? (the screens)",
                 bullets: [
                     ["Company", "search any ticker (AAPL, SAP.DE, SAN.MC…) and see its KPIs, classic ratios, growth metrics, charts and the POC/POV target prices. You can edit inputs and recompute live."],
-                    ["Watchlist", "a watchlist with manual snapshots and per-row alerts (bell) when a company crosses from expensive to cheap."],
-                    ["Portfolio", "your real positions with live P/L, P/L % and totals; also «watch-only» positions."],
+                    ["Level 2", "stocks that aren't your favorites but interest you: a watchlist with manual snapshots and per-row alerts (bell) when a company crosses from expensive to cheap."],
+                    ["Level 1", "your preferred stocks and real positions with live P/L, P/L % and totals; also «watch-only» positions."],
                     ["Compare", "up to 6 companies side by side."],
                     ["Thesis (Thesis Engine)", "the qualitative brain: explore trends, generate theses per company and group everything into «Megatheses»."],
                 ],
@@ -115,7 +115,7 @@ const CONTENT = {
                 bullets: [
                     ["1", "Search a company you know and look at its POC, POV and the ratio health dots."],
                     ["2", "Edit an input (e.g. growth) and recompute to see how POC moves."],
-                    ["3", "Add it to your Watchlist and turn on the bell to get alerts when it turns «cheap»."],
+                    ["3", "Add it to your Level 2 (or Level 1) and turn on the bell to get alerts when it turns «cheap»."],
                     ["4", "Go to «Thesis», explore a trend or generate a thesis and look at the scores."],
                     ["5", "Sign in with Google to sync everything across devices and enable email alerts."],
                 ],

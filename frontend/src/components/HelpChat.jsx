@@ -16,8 +16,8 @@ export default function HelpChat() {
     const scrollRef = useRef(null);
 
     const greeting = lang === "en"
-        ? "Hi 👋 I'm the Valuation Studio assistant. Ask me anything about the app: POC/POV, the scores, the Thesis Engine, watchlist, alerts…"
-        : "¡Hola! 👋 Soy el asistente de Valuation Studio. Pregúntame lo que quieras sobre la app: POC/POV, los scores, el Thesis Engine, la watchlist, las alertas…";
+        ? "Hi 👋 I'm the Valuation Studio assistant. Ask me anything about the app: POC/POV, the scores, the Thesis Engine, Level 2, alerts…"
+        : "¡Hola! 👋 Soy el asistente de Valuation Studio. Pregúntame lo que quieras sobre la app: POC/POV, los scores, el Thesis Engine, el Nivel 2, las alertas…";
 
     const [messages, setMessages] = useState([{ role: "assistant", text: greeting }]);
 

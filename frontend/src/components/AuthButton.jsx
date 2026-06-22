@@ -32,9 +32,9 @@ export default function AuthButton() {
             replaceWatchlist(merged);
             // Push the merged result so cloud and local are aligned
             await cloudWatchlistPut(merged);
-            toast.success(`Watchlist sincronizada (${merged.length} acciones).`);
+            toast.success(`Nivel 2 sincronizado (${merged.length} acciones).`);
         } catch (e) {
-            toast.error("Error al sincronizar la watchlist.");
+            toast.error("Error al sincronizar el Nivel 2.");
         } finally {
             setSyncing(false);
         }
@@ -56,7 +56,7 @@ export default function AuthButton() {
                 <button
                     onClick={handleSyncFromCloud}
                     className="btn-ghost flex items-center gap-1 !py-1 !px-2 text-xs"
-                    title="Sincronizar watchlist con la nube"
+                    title="Sincronizar Nivel 2 con la nube"
                     data-testid="auth-sync"
                     disabled={syncing}
                 >

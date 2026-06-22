@@ -8,6 +8,7 @@ import AuthButton from "./AuthButton";
 import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
+import HoverTip from "./HoverTip";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -116,8 +117,12 @@ export default function Layout({ children }) {
                     <div className="py-2 flex items-center justify-between gap-4 flex-wrap">
                         <nav className="flex items-center gap-1 flex-wrap">
                             <Link to="/" className={navClass("/")} data-testid="nav-link-home">{t("nav.home")}</Link>
-                            <Link to="/portfolio" className={navClass("/portfolio")} data-testid="nav-link-portfolio">{t("nav.portfolio")}</Link>
-                            <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
+                            <HoverTip text={t("nav.portfolio_tip")}>
+                                <Link to="/portfolio" className={navClass("/portfolio")} data-testid="nav-link-portfolio">{t("nav.portfolio")}</Link>
+                            </HoverTip>
+                            <HoverTip text={t("nav.watchlist_tip")}>
+                                <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
+                            </HoverTip>
                             <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">{t("nav.compare")}</Link>
                             <Link to="/thesis" className={navClass("/thesis")} data-testid="nav-link-thesis">{t("nav.thesis")}</Link>
                             <Link to="/visual" className={navClass("/visual")} data-testid="nav-link-visual">Visual</Link>

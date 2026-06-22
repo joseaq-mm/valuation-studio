@@ -33,7 +33,7 @@ const STEPS = [
     },
     {
         path: "/watchlist", target: '[data-testid="watchlist-page"]',
-        title: { es: "Watchlist", en: "Watchlist" },
+        title: { es: "Nivel 2", en: "Level 2" },
         body: {
             es: "Tu lista de seguimiento. Guarda ajustes manuales por empresa y activa la campana para recibir alertas cuando una acción cruce de cara a barata.",
             en: "Your watchlist. Save manual tweaks per company and turn on the bell to get alerts when a stock crosses from expensive to cheap.",
@@ -41,7 +41,7 @@ const STEPS = [
     },
     {
         path: "/portfolio", target: '[data-testid="portfolio-page"]',
-        title: { es: "Cartera", en: "Portfolio" },
+        title: { es: "Nivel 1", en: "Level 1" },
         body: {
             es: "Registra tus posiciones reales y mira el P/L vivo, el P/L % y los totales. También puedes añadir posiciones de «solo seguimiento» sin compra.",
             en: "Track your real positions and see live P/L, P/L % and totals. You can also add 'watch-only' positions without a purchase.",

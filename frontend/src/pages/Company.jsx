@@ -405,7 +405,7 @@ export default function Company() {
         const newEntry = list.find(e => e.ticker === ticker.toUpperCase());
         setWlEntry(newEntry);
         setSessionEdits({});
-        toast.success(Object.keys(overrides).length ? "Guardada con tus overrides" : "Añadida a watchlist");
+        toast.success(Object.keys(overrides).length ? "Guardada con tus overrides" : "Añadida a Nivel 2");
     };
 
     const doConfirmOverwrite = () => {
@@ -415,13 +415,13 @@ export default function Company() {
         setWlEntry(newEntry);
         setSessionEdits({});
         setConfirmOverwrite(false);
-        toast.success("Watchlist actualizada");
+        toast.success("Nivel 2 actualizado");
     };
 
     const handleRemoveFromWatchlist = () => {
         removeFromWatchlist(ticker);
         setWlEntry(null);
-        toast("Quitada de watchlist");
+        toast("Quitada de Nivel 2");
     };
 
     const handleSaveToPortfolio = () => {
@@ -435,7 +435,7 @@ export default function Company() {
         const newEntry = list.find(e => (e.ticker || "").toUpperCase() === ticker.toUpperCase());
         setPfEntry(newEntry);
         setSessionEdits({});
-        toast.success(Object.keys(overrides).length ? "Añadida a cartera con tus overrides" : "Añadida a cartera");
+        toast.success(Object.keys(overrides).length ? "Añadida a Nivel 1 con tus overrides" : "Añadida a Nivel 1");
     };
 
     const doConfirmOverwritePortfolio = () => {
@@ -445,13 +445,13 @@ export default function Company() {
         setPfEntry(newEntry);
         setSessionEdits({});
         setConfirmOverwritePortfolio(false);
-        toast.success("Cartera actualizada");
+        toast.success("Nivel 1 actualizado");
     };
 
     const handleRemoveFromPortfolio = () => {
         removePosition(ticker);
         setPfEntry(null);
-        toast("Quitada de cartera");
+        toast("Quitada de Nivel 1");
     };
 
     const updateInput = (key, num) => {
@@ -857,12 +857,12 @@ export default function Company() {
                                 onClick={handleSaveToWatchlist}
                                 className={hasSessionEdits ? "btn-primary flex items-center gap-2" : "btn-ghost flex items-center gap-2"}
                                 data-testid="watchlist-save"
-                                title={hasSessionEdits ? "Guardar cambios actuales en watchlist" : "Ya guardada"}
+                                title={hasSessionEdits ? "Guardar cambios actuales en Nivel 2" : "Ya guardada"}
                             >
-                                <Save size={14} /> {hasSessionEdits ? "Guardar en watchlist" : "En watchlist"}
+                                <Save size={14} /> {hasSessionEdits ? "Guardar en Nivel 2" : "En Nivel 2"}
                             </button>
                             <button onClick={handleRemoveFromWatchlist} className="btn-ghost flex items-center gap-2" data-testid="watchlist-remove">
-                                <X size={14} /> Quitar de watchlist
+                                <X size={14} /> Quitar de Nivel 2
                             </button>
                             {wlEntry.mode === "manual" && (
                                 <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid="manual-badge">MANUAL</span>
@@ -870,7 +870,7 @@ export default function Company() {
                         </>
                     ) : (
                         <button onClick={handleSaveToWatchlist} className="btn-ghost flex items-center gap-2" data-testid="watchlist-add">
-                            <Star size={14} /> Añadir a watchlist
+                            <Star size={14} /> Añadir a Nivel 2
                         </button>
                     )}
 
@@ -880,12 +880,12 @@ export default function Company() {
                                 onClick={handleSaveToPortfolio}
                                 className={hasSessionEdits ? "btn-primary flex items-center gap-2" : "btn-ghost flex items-center gap-2"}
                                 data-testid="portfolio-save"
-                                title={hasSessionEdits ? "Guardar cambios actuales en cartera" : "Ya en cartera"}
+                                title={hasSessionEdits ? "Guardar cambios actuales en Nivel 1" : "Ya en Nivel 1"}
                             >
-                                <Save size={14} /> {hasSessionEdits ? "Guardar en cartera" : "En cartera"}
+                                <Save size={14} /> {hasSessionEdits ? "Guardar en Nivel 1" : "En Nivel 1"}
                             </button>
                             <button onClick={handleRemoveFromPortfolio} className="btn-ghost flex items-center gap-2" data-testid="portfolio-remove-btn">
-                                <X size={14} /> Quitar de cartera
+                                <X size={14} /> Quitar de Nivel 1
                             </button>
                             {pfEntry.mode === "manual" && (
                                 <span className="overline px-2 py-1 border border-[#1D7044] text-[#1D7044] bg-white" data-testid="manual-badge-pf">MANUAL</span>
@@ -893,7 +893,7 @@ export default function Company() {
                         </>
                     ) : (
                         <button onClick={handleSaveToPortfolio} className="btn-ghost flex items-center gap-2" data-testid="portfolio-add-btn">
-                            <Briefcase size={14} /> Añadir a cartera
+                            <Briefcase size={14} /> Añadir a Nivel 1
                         </button>
                     )}
 
@@ -901,8 +901,8 @@ export default function Company() {
                         <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refrescar
                     </button>
                     {hasSessionEdits && (
-                        <span className="text-xs font-mono text-[#D97706]" data-testid="unsaved-indicator" title="Pulsa 'Guardar en watchlist' o 'Guardar en cartera' para conservar estos cambios">
-                            ● Cambios sin guardar, añade a cartera o watchlist
+                        <span className="text-xs font-mono text-[#D97706]" data-testid="unsaved-indicator" title="Pulsa 'Guardar en Nivel 1' o 'Guardar en Nivel 2' para conservar estos cambios">
+                            ● Cambios sin guardar, añade a Nivel 1 o Nivel 2
                         </span>
                     )}
                 </div>
@@ -983,7 +983,7 @@ export default function Company() {
                         <div className="mt-4 pt-3 border-t border-black/10" data-testid="auto-correct-gross-margin-section">
                             <div className="mb-2">
                                 <div className="overline text-[#1D7044]">Auto-corregir</div>
-                                <div className="text-xs text-[#4A4A4A]">Yahoo reporta un margen bruto del {(grossMarginPreRevenue.gm * 100).toFixed(1)}% con ingresos de solo {fmtCompact(grossMarginPreRevenue.latestRevenue / 1e9)} (último año fiscal). Cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado — es casi siempre un artefacto contable. El factor (1 + GM) = {(1 + grossMarginPreRevenue.gm).toFixed(2)} multiplica POC por ~2× sin sustento operativo real. Auto-corregimos a 50% (semiconductor / hardware pre-revenue típico). Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
+                                <div className="text-xs text-[#4A4A4A]">Yahoo reporta un margen bruto del {(grossMarginPreRevenue.gm * 100).toFixed(1)}% con ingresos de solo {fmtCompact(grossMarginPreRevenue.latestRevenue / 1e9)} (último año fiscal). Cuando los ingresos son tan pequeños, la mayoría de costes caen por debajo de la línea de beneficio bruto y el ratio sale inflado — es casi siempre un artefacto contable. El factor (1 + GM) = {(1 + grossMarginPreRevenue.gm).toFixed(2)} multiplica POC por ~2× sin sustento operativo real. Auto-corregimos a 50% (semiconductor / hardware pre-revenue típico). Quedará marcado como edición sin guardar para que revises antes de guardarlo en Nivel 2.</div>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 items-center">
                                 <div className="border border-black/10 bg-[#FAF6EE] p-2 text-xs font-mono" data-testid="correction-gross-margin">
@@ -1008,7 +1008,7 @@ export default function Company() {
                             <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
                                 <div>
                                     <div className="overline text-[#1D7044]">Auto-corregir</div>
-                                    <div className="text-xs text-[#4A4A4A]">Aplica heurísticas sensatas a los inputs problemáticos. Quedará marcado como edición sin guardar para que revises antes de guardarlo en watchlist.</div>
+                                    <div className="text-xs text-[#4A4A4A]">Aplica heurísticas sensatas a los inputs problemáticos. Quedará marcado como edición sin guardar para que revises antes de guardarlo en Nivel 2.</div>
                                 </div>
                                 <button onClick={applyAutoCorrections} className="btn-primary whitespace-nowrap" data-testid="auto-correct-apply">
                                     Aplicar {pocPovCorrections.length} corrección{pocPovCorrections.length > 1 ? "es" : ""}
@@ -1066,7 +1066,7 @@ export default function Company() {
                             <AlertCircle size={18} className="text-[#D97706]" />
                             <div className="overline text-[#D97706] text-sm">Avisos sobre las proyecciones automáticas</div>
                         </div>
-                        <ul className="text-sm text-[#3A3A3A] space-y-1.5 list-disc pl-5 font-sans">
+                        <ul className="text-[13px] leading-snug text-[#3A3A3A] space-y-1.5 list-disc pl-5 font-sans">
                             {warnings.map((w, i) => <li key={i} data-testid={`warning-${i}`}>{w}</li>)}
                         </ul>
                         <div className="text-xs text-[#4A4A4A] mt-3 font-mono">
@@ -1342,10 +1342,10 @@ export default function Company() {
             {pendingNav && (
                 <Modal title="Cambios sin guardar" testid="nav-guard-modal">
                     <p className="text-sm text-[#4A4A4A] mb-4">
-                        Tienes cambios manuales en los inputs que no se han guardado en la watchlist. Si sales ahora se perderán.
+                        Tienes cambios manuales en los inputs que no se han guardado en el Nivel 2. Si sales ahora se perderán.
                     </p>
                     <p className="text-xs font-mono text-[#4A4A4A] mb-6">
-                        Tip: pulsa "Guardar cambios" en la cabecera para añadir esta acción a la watchlist con tus valores actuales.
+                        Tip: pulsa "Guardar cambios" en la cabecera para añadir esta acción al Nivel 2 con tus valores actuales.
                     </p>
                     <div className="flex gap-2 justify-end">
                         <button onClick={() => setPendingNav(null)} className="btn-ghost" data-testid="nav-guard-stay">Quedarme aquí</button>
@@ -1358,7 +1358,7 @@ export default function Company() {
             {confirmOverwrite && (
                 <Modal title="Sobrescribir snapshot guardado" testid="overwrite-modal">
                     <p className="text-sm text-[#4A4A4A] mb-4">
-                        Esta acción ya está en tu watchlist con valores guardados.
+                        Esta acción ya está en tu Nivel 2 con valores guardados.
                         Vas a sobrescribir ese snapshot con los valores actuales (incluidos los cambios sin guardar).
                     </p>
                     <p className="text-xs font-mono text-[#4A4A4A] mb-6">
@@ -1373,9 +1373,9 @@ export default function Company() {
 
             {/* Confirm overwrite modal — Portfolio */}
             {confirmOverwritePortfolio && (
-                <Modal title="Sobrescribir snapshot en cartera" testid="overwrite-portfolio-modal">
+                <Modal title="Sobrescribir snapshot en Nivel 1" testid="overwrite-portfolio-modal">
                     <p className="text-sm text-[#4A4A4A] mb-4">
-                        Esta acción ya está en tu cartera con valores guardados.
+                        Esta acción ya está en tu Nivel 1 con valores guardados.
                         Vas a sobrescribir ese snapshot con los valores actuales (incluidos los cambios sin guardar).
                     </p>
                     <p className="text-xs font-mono text-[#4A4A4A] mb-6">¿Continuar?</p>
@@ -1397,17 +1397,17 @@ export default function Company() {
                         </p>
                         {hasWlOverrides && (
                             <p className="text-sm text-[#B32A22] mb-3" data-testid="refresh-warning-saved">
-                                ⚠ Esta acción está en tu watchlist en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. El ticker seguirá en la watchlist.
+                                ⚠ Esta acción está en tu Nivel 2 en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. El ticker seguirá en el Nivel 2.
                             </p>
                         )}
                         {hasPfOverrides && (
                             <p className="text-sm text-[#B32A22] mb-3" data-testid="refresh-warning-pf">
-                                ⚠ Esta acción está en tu cartera en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. La posición se mantiene.
+                                ⚠ Esta acción está en tu Nivel 1 en modo MANUAL. Los valores guardados se eliminarán y volverá a modo AUTO. La posición se mantiene.
                             </p>
                         )}
                         {hasSessionEdits && (
                             <p className="text-sm text-[#D97706] mb-3" data-testid="refresh-warning-session">
-                                ⚠ Tienes cambios sin guardar. Pulsa cancelar y luego "Guardar en watchlist" o "Guardar en cartera" para conservarlos.
+                                ⚠ Tienes cambios sin guardar. Pulsa cancelar y luego "Guardar en Nivel 2" o "Guardar en Nivel 1" para conservarlos.
                             </p>
                         )}
                         <p className="text-xs font-mono text-[#4A4A4A] mb-6">¿Continuar?</p>
