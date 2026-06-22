@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { getWatchlist, getWatchlistTickers, removeFromWatchlist, setWatchlistAlert, setAllWatchlistAlerts } from "@/lib/storage";
-import { compare } from "@/lib/api";
+import { compare, thesisVisualData } from "@/lib/api";
 import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
@@ -17,7 +17,7 @@ import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
-const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv"]);
+const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv", "score", "tam", "kpi"]);
 const WL_ACCESSORS = {
     ticker: (row) => row.data?.ticker,
     name: (row) => row.data?.name,
@@ -49,6 +49,7 @@ const applyEntryOverrides = (companyData, entry) => {
 export default function Watchlist() {
     const [entries, setEntries] = useState([]);
     const [rows, setRows] = useState([]);
+    const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [sort, setSort] = useState(null);
     const { user } = useAuth();
@@ -56,6 +57,17 @@ export default function Watchlist() {
     const { display: displayCur, convert: fxConvert } = useFx();
     const { t } = useI18n();
     useThresholds(); // re-render on threshold changes
+
+    // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
+    useEffect(() => {
+        thesisVisualData()
+            .then((d) => {
+                const m = {};
+                (d.rows || []).forEach((r) => { m[r.ticker] = { score: r.avg_overall_score, tam: r.sum_tam_score, kpi_coef: r.kpi_coef }; });
+                setQual(m);
+            })
+            .catch(() => setQual({}));
+    }, []);
 
     useEffect(() => {
         if (!user) { setNotify(null); return; }
@@ -141,10 +153,17 @@ export default function Watchlist() {
     };
 
     const onSort = (key) => setSort((prev) => nextSort(prev, key, WL_NUMERIC_KEYS));
+    const accessors = {
+        ...WL_ACCESSORS,
+        score: (row) => qual[row.data?.ticker]?.score,
+        tam: (row) => qual[row.data?.ticker]?.tam,
+        kpi: (row) => qual[row.data?.ticker]?.kpi_coef,
+    };
     const sortedRows = useMemo(() => {
-        if (!sort || !WL_ACCESSORS[sort.key]) return rows;
-        return [...rows].sort(makeSorter(WL_ACCESSORS[sort.key], sort.dir));
-    }, [rows, sort]);
+        if (!sort || !accessors[sort.key]) return rows;
+        return [...rows].sort(makeSorter(accessors[sort.key], sort.dir));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rows, sort, qual]);
 
     return (
         <div data-testid="watchlist-page">
@@ -184,8 +203,8 @@ export default function Watchlist() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" />
-                                <SortableTh label={t("watchlist.col_company")} sortKey="name" sort={sort} onSort={onSort} align="left" />
+                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" className="sticky left-0 z-20 bg-white w-[76px] min-w-[76px]" />
+                                <SortableTh label={t("watchlist.col_company")} sortKey="name" sort={sort} onSort={onSort} align="left" className="sticky left-[76px] z-20 bg-white" />
                                 <th className="overline text-center px-2 py-2">{t("watchlist.col_mode")}</th>
                                 <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
@@ -201,6 +220,9 @@ export default function Watchlist() {
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
                                     </HoverTip>
                                 </th>
+                                <SortableTh label={t("metrics.score")} sortKey="score" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("metrics.tam")} sortKey="tam" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("metrics.kpi")} sortKey="kpi" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <MasterAlertToggle
                                         total={entries.length}
@@ -213,12 +235,12 @@ export default function Watchlist() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="11" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="14" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {sortedRows.map(({ entry, data: r }) => {
                                 if (r.error) return (
                                     <tr key={r.ticker} className="border-b border-black/10">
-                                        <td className="px-2 py-2 font-mono">{r.ticker}</td>
-                                        <td colSpan="9" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td className="px-2 py-2 font-mono sticky left-0 z-10 bg-white">{r.ticker}</td>
+                                        <td colSpan="12" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(r.ticker)} data-testid={`remove-${r.ticker}`}><Trash2 size={12} /></button>
                                         </td>
@@ -227,11 +249,11 @@ export default function Watchlist() {
                                 const cr = r.custom_ratios || {};
                                 const isManual = entry.mode === "manual";
                                 return (
-                                    <tr key={r.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`watchlist-row-${r.ticker}`}>
-                                        <td className="px-2 py-2 font-mono font-semibold">
+                                    <tr key={r.ticker} className="group border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`watchlist-row-${r.ticker}`}>
+                                        <td className="px-2 py-2 font-mono font-semibold sticky left-0 z-10 bg-white group-hover:bg-[#F5E4D4]">
                                             <Link to={`/company/${r.ticker}`} className="underline-offset-2 hover:underline">{r.ticker}</Link>
                                         </td>
-                                        <td className="px-2 py-2 text-[#4A4A4A]">{r.name}</td>
+                                        <td className="px-2 py-2 text-[#4A4A4A] sticky left-[76px] z-10 bg-white group-hover:bg-[#F5E4D4]">{r.name}</td>
                                         <td className="px-2 py-2 text-center">
                                             {isManual ? (
                                                 <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] bg-white text-[10px]" data-testid={`mode-${r.ticker}`}>MAN</span>
@@ -257,6 +279,11 @@ export default function Watchlist() {
                                                 {signalLabel(cr.ratio_venta_pct, "venta")}
                                             </span>
                                         </td>
+                                        {(() => { const q = qual[r.ticker]; return (<>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`score-${r.ticker}`}>{q?.score == null ? "—" : <span style={{ color: q.score >= 70 ? "#1D7044" : q.score >= 50 ? "#B8860B" : "#B32A22" }}>{Number(q.score).toFixed(1)}</span>}</td>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`tam-${r.ticker}`}>{q?.tam == null ? "—" : Number(q.tam).toFixed(2)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`kpi-${r.ticker}`}>{q?.kpi_coef == null ? "—" : <span style={{ color: q.kpi_coef > 1.05 ? "#1D7044" : q.kpi_coef < 0.95 ? "#B32A22" : "#B8860B", fontWeight: 600 }}>{Number(q.kpi_coef).toFixed(2)}</span>}</td>
+                                        </>); })()}
                                         <td className="px-2 py-2 text-center">
                                             <AlertToggle
                                                 enabled={!!entry.alert_enabled}

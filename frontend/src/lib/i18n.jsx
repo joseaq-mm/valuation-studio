@@ -68,6 +68,9 @@ const DICT = {
         "compare.row_score": "Score cualitativo",
         "compare.row_tam": "TAM Score",
         "compare.row_kpi": "Coef KPI",
+        "metrics.score": "Score",
+        "metrics.tam": "TAM",
+        "metrics.kpi": "Coef KPI",
         // Company hero / actions
         "company.price_now": "Precio actual",
         "company.add_watchlist": "Añadir a watchlist",
@@ -208,6 +211,9 @@ const DICT = {
         "compare.row_score": "Qualitative score",
         "compare.row_tam": "TAM Score",
         "compare.row_kpi": "KPI coef",
+        "metrics.score": "Score",
+        "metrics.tam": "TAM",
+        "metrics.kpi": "KPI coef",
         // Company hero / actions
         "company.price_now": "Current price",
         "company.add_watchlist": "Add to watchlist",

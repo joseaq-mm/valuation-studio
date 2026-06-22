@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Trash2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { compare } from "@/lib/api";
+import { compare, thesisVisualData } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { computeCustomRatios } from "@/lib/customRatios";
@@ -17,7 +17,7 @@ import HoverTip from "@/components/HoverTip";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 
-const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv"]);
+const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv", "score", "tam", "kpi"]);
 
 // Apply manual overrides to the API-fetched company snapshot before recomputing
 // ratios. Mirrors the same logic the Watchlist page uses.
@@ -51,11 +51,23 @@ export default function Portfolio() {
     const { display: displayCur, convert: fxConvert } = useFx();
     const [positions, setPositions] = useState([]);
     const [rows, setRows] = useState([]);
+    const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [showAdd, setShowAdd] = useState(false);
     const [editing, setEditing] = useState(null);
     const [sort, setSort] = useState(null);
     useThresholds();
+
+    // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
+    useEffect(() => {
+        thesisVisualData()
+            .then((d) => {
+                const m = {};
+                (d.rows || []).forEach((r) => { m[r.ticker] = { score: r.avg_overall_score, tam: r.sum_tam_score, kpi_coef: r.kpi_coef }; });
+                setQual(m);
+            })
+            .catch(() => setQual({}));
+    }, []);
 
     const load = async (poss) => {
         if (!poss.length) { setRows([]); return; }
@@ -132,6 +144,9 @@ export default function Portfolio() {
             case "pl_pct": return (p.buy_price && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
             case "rc": return r.custom_ratios?.ratio_compra_pct;
             case "rv": return r.custom_ratios?.ratio_venta_pct;
+            case "score": return qual[p.ticker]?.score;
+            case "tam": return qual[p.ticker]?.tam;
+            case "kpi": return qual[p.ticker]?.kpi_coef;
             default: return null;
         }
     };
@@ -139,7 +154,7 @@ export default function Portfolio() {
         if (!sort) return rows;
         return [...rows].sort(makeSorter((r) => sortVal(sort.key, r), sort.dir));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rows, sort, displayCur]);
+    }, [rows, sort, displayCur, qual]);
 
     // Totals across all rows (converted to display currency for cross-ticker addition).
     // Positions with no shares or no buy_price are NOT counted into invested/now; we just
@@ -217,7 +232,7 @@ export default function Portfolio() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr className="border-b border-black">
-                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" />
+                                <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" className="sticky left-0 z-20 bg-white" />
                                 <SortableTh label={t("portfolio.col_shares")} sortKey="shares" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("portfolio.col_buy_price")} sortKey="buy_price" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("portfolio.col_invested")} sortKey="invested" sort={sort} onSort={onSort} align="right" />
@@ -246,6 +261,9 @@ export default function Portfolio() {
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("watchlist.col_signal_sell")}</span>
                                     </HoverTip>
                                 </th>
+                                <SortableTh label={t("metrics.score")} sortKey="score" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("metrics.tam")} sortKey="tam" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("metrics.kpi")} sortKey="kpi" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <MasterAlertToggle
                                         total={positions.length}
@@ -258,13 +276,13 @@ export default function Portfolio() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="15" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="18" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {!loading && sortedRows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">
-                                        <td className="px-2 py-2 font-mono">{p.ticker}</td>
-                                        <td colSpan="13" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td className="px-2 py-2 font-mono sticky left-0 z-10 bg-white">{p.ticker}</td>
+                                        <td colSpan="16" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(p.ticker)} data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
                                         </td>
@@ -293,8 +311,8 @@ export default function Portfolio() {
                                     <span className="overline ml-2 px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px] align-middle" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>
                                 );
                                 return (
-                                    <tr key={p.ticker} className="border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
-                                        <td className="px-2 py-2 font-mono font-semibold">
+                                    <tr key={p.ticker} className="group border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
+                                        <td className="px-2 py-2 font-mono font-semibold sticky left-0 z-10 bg-white group-hover:bg-[#F5E4D4]">
                                             <Link to={`/company/${p.ticker}`} className="hover:underline">{p.ticker}</Link>
                                             {trackedTag}
                                             {manualTag}
@@ -317,6 +335,11 @@ export default function Portfolio() {
                                         <td className="px-2 py-2 text-center">
                                             <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }}>{signalLabel(cr.ratio_venta_pct, "venta")}</span>
                                         </td>
+                                        {(() => { const q = qual[p.ticker]; return (<>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`score-${p.ticker}`}>{q?.score == null ? "—" : <span style={{ color: q.score >= 70 ? "#1D7044" : q.score >= 50 ? "#B8860B" : "#B32A22" }}>{Number(q.score).toFixed(1)}</span>}</td>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`tam-${p.ticker}`}>{q?.tam == null ? "—" : Number(q.tam).toFixed(2)}</td>
+                                        <td className="px-2 py-2 text-right font-mono" data-testid={`kpi-${p.ticker}`}>{q?.kpi_coef == null ? "—" : <span style={{ color: q.kpi_coef > 1.05 ? "#1D7044" : q.kpi_coef < 0.95 ? "#B32A22" : "#B8860B", fontWeight: 600 }}>{Number(q.kpi_coef).toFixed(2)}</span>}</td>
+                                        </>); })()}
                                         <td className="px-2 py-2 text-center">
                                             <AlertToggle enabled={!!p.alert_enabled} onChange={(v) => toggleAlert(p.ticker, v)} testid={p.ticker} />
                                         </td>
