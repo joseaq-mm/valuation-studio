@@ -221,18 +221,8 @@ export default function Kpis() {
                             })()}
                         </div>
                         <div className="flex items-center gap-2">
-                            {!editing ? (
-                                <>
-                                    {snap.kpis?.length > 0 && (
-                                        <button onClick={startEdit} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-edit-btn"><Pencil size={13} /> Editar</button>
-                                    )}
-                                    <button onClick={analyze} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
-                                </>
-                            ) : (
-                                <>
-                                    <button onClick={() => setEditing(false)} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-cancel-edit"><X size={13} /> Cancelar</button>
-                                    <button onClick={saveEdit} className="btn-primary inline-flex items-center gap-1.5" data-testid="kpi-save-edit"><Check size={13} /> Guardar</button>
-                                </>
+                            {!editing && (
+                                <button onClick={analyze} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
                             )}
                         </div>
                     </div>
@@ -283,7 +273,19 @@ export default function Kpis() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="border-b border-black text-left overline text-[#4A4A4A]">
-                                        <th className="p-2">KPI</th>
+                                        <th className="p-2">
+                                            <div className="flex items-center gap-2">
+                                                <span>KPI</span>
+                                                {!editing ? (
+                                                    <button onClick={startEdit} className="btn-ghost inline-flex items-center gap-1 !py-0.5 !px-1.5 normal-case text-xs" data-testid="kpi-edit-btn"><Pencil size={12} /> Editar</button>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => setEditing(false)} className="btn-ghost inline-flex items-center gap-1 !py-0.5 !px-1.5 normal-case text-xs" data-testid="kpi-cancel-edit"><X size={12} /> Cancelar</button>
+                                                        <button onClick={saveEdit} className="btn-primary inline-flex items-center gap-1 !py-0.5 !px-1.5 normal-case text-xs" data-testid="kpi-save-edit"><Check size={12} /> Guardar</button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </th>
                                         <th className="p-2 text-right">Actual</th>
                                         <th className="p-2 text-right">Anterior</th>
                                         <th className="p-2 text-right">YoY</th>
