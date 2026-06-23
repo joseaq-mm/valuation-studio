@@ -236,8 +236,6 @@ export default function Portfolio() {
                                 <SortableTh label={t("portfolio.col_shares")} sortKey="shares" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("portfolio.col_buy_price")} sortKey="buy_price" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("portfolio.col_invested")} sortKey="invested" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("portfolio.col_now")} sortKey="now" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh sortKey="pl" sort={sort} onSort={onSort} align="right">
                                     <HoverTip text={t("portfolio.tt_pl")}>
@@ -249,6 +247,8 @@ export default function Portfolio() {
                                         <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl_pct")}</span>
                                     </HoverTip>
                                 </SortableTh>
+                                <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_buy_signal")}>
@@ -322,11 +322,11 @@ export default function Portfolio() {
                                         <td className="px-2 py-2 text-right font-mono">{hasShares ? fmtNum(p.shares) : "—"}</td>
                                         <td className="px-2 py-2 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
                                         <td className="px-2 py-2 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
-                                        <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
-                                        <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
                                         <td className="px-2 py-2 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
+                                        <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
                                         <td className="px-2 py-2 text-center">
                                             <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{signalLabel(cr.ratio_compra_pct)}</span>
