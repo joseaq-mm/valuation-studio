@@ -15,8 +15,22 @@ export default function ThesisDetail() {
     const [thesis, setThesis] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [sourceCompany, setSourceCompany] = useState(null);
     const [generatingContra, setGeneratingContra] = useState(false);
     const [generatingPlan, setGeneratingPlan] = useState(false);
+
+    // If this thesis was born from a company plan, resolve the origin company's
+    // name so we can offer a "back to <company>" link to its plan page.
+    useEffect(() => {
+        const srcId = thesis?.source_company_thesis_id;
+        if (!srcId) { setSourceCompany(null); return; }
+        let alive = true;
+        thesisGet(srcId)
+            .then((d) => { if (alive) setSourceCompany({ id: srcId, name: d?.company?.name || thesis?.origin_ticker || "la empresa" }); })
+            .catch(() => { if (alive) setSourceCompany({ id: srcId, name: thesis?.origin_ticker || "la empresa" }); });
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [thesis?.source_company_thesis_id]);
 
     useEffect(() => {
         let alive = true;
@@ -76,10 +90,17 @@ export default function ThesisDetail() {
 
     return (
         <div data-testid="thesis-detail-page">
-            <div className="flex items-center justify-between gap-3 mb-4">
-                <Link to="/thesis" className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline" data-testid="back-to-thesis">
-                    <ArrowLeft size={14} /> Volver a Tesis
-                </Link>
+            <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex flex-col gap-1">
+                    <Link to="/thesis" className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline" data-testid="back-to-thesis">
+                        <ArrowLeft size={14} /> Volver a Tesis
+                    </Link>
+                    {sourceCompany && (
+                        <Link to={`/thesis/${sourceCompany.id}`} className="inline-flex items-center gap-1 text-sm text-[#052049] hover:underline" data-testid="back-to-source-company">
+                            <ArrowLeft size={14} /> Volver a {sourceCompany.name}
+                        </Link>
+                    )}
+                </div>
                 {user && thesis && !isTendencia && <RefreshButton onRefresh={refresh} testid="thesis-detail-refresh" />}
             </div>
             {loading && (
