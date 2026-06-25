@@ -576,7 +576,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
     const mergedNames = useMemo(() => new Set(mergedTrends.map((t) => _norm(t.name))), [mergedTrends]);
     const absorbedByTarget = useMemo(() => {
         const m = {};
-        mergedTrends.forEach((t) => { if (t.covered) return; const k = _norm(t.merged_into); (m[k] || (m[k] = [])).push(t); });
+        mergedTrends.forEach((t) => { const k = _norm(t.merged_into); (m[k] || (m[k] = [])).push(t); });
         return m;
     }, [mergedTrends]);
 
@@ -849,7 +849,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                                     <div key={i} className="flex items-center justify-between gap-2 border border-[#B8860B]/40 bg-[#FBF3E0] px-3 py-2" data-testid={`merged-row-${_norm(t.name).slice(0, 12)}`}>
                                         <div className="text-xs text-[#7a5a10] min-w-0">
                                             <GitMerge size={12} className="inline mr-1 -mt-0.5" />
-                                            «<strong>{t.name}</strong>» → {t.covered ? "ya cubierta por" : "fusionada en"} «<strong>{t.merged_into}</strong>»
+                                            «<strong>{t.name}</strong>» → fusionada en «<strong>{t.merged_into}</strong>»
                                         </div>
                                         <button onClick={() => doUnmerge(t.name)} className="text-[11px] uppercase tracking-[0.1em] font-semibold border border-[#B8860B] text-[#7a5a10] px-2.5 py-1 hover:bg-[#B8860B] hover:text-white transition-colors shrink-0" data-testid={`unmerge-${_norm(t.name).slice(0, 12)}`}>
                                             Revertir

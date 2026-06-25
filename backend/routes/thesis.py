@@ -2351,21 +2351,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=404, detail="No se encontró la tesis origen")
         if src.get("merged_into"):
             raise HTTPException(status_code=400, detail="Esa tesis ya está fusionada")
-        # Target is either another PROPOSAL (additive merge: its TAM is summed) OR an
-        # existing SAVED trend thesis (a "covered" merge: the proposal is deemed already
-        # included in that thesis → marked covered, NO TAM added; avoids double counting).
+        # Target must be another PROPOSAL in this same plan (additive merge: its TAM
+        # is summed into the destination). Sibling drivers are mutually exclusive by
+        # construction, so merging just consolidates two exclusive slices.
         tgt = next((t for t in trends if nrm(t.get("name")) == ntgt), None)
-        covered = False
-        if tgt:
-            if tgt.get("merged_into"):
-                raise HTTPException(status_code=400, detail="No puedes fusionar en una tesis que ya está fusionada")
-            target_label = tgt.get("name")
-        else:
-            saved = await db.theses.find_one({"user_id": uid, "type": "trend", "title": req.target}, {"_id": 0, "id": 1, "title": 1})
-            if not saved:
-                raise HTTPException(status_code=404, detail="No se encontró la tesis destino")
-            covered = True
-            target_label = saved.get("title")
+        if not tgt:
+            raise HTTPException(status_code=404, detail="No se encontró la tesis destino")
+        if tgt.get("merged_into"):
+            raise HTTPException(status_code=400, detail="No puedes fusionar en una tesis que ya está fusionada")
+        target_label = tgt.get("name")
 
         # If the source was already developed, remove the company from each developed
         # trend thesis and remember what we removed (for a clean revert).
@@ -2394,10 +2388,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             if nrm(t.get("name")) == nsrc:
                 t["merged_into"] = target_label
                 t["merged_removed"] = removed
-                if covered:
-                    t["covered"] = True
-                else:
-                    t.pop("covered", None)
+                t.pop("covered", None)
         await db.theses.update_one({"id": thesis_id, "user_id": uid}, {"$set": {"trends": trends}})
         await recompute_and_store_tam(db, uid)
         return await db.theses.find_one({"id": thesis_id, "user_id": uid}, {"_id": 0})
