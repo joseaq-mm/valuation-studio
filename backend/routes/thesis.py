@@ -1314,7 +1314,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         company_docs = await db.theses.find(
             {"user_id": uid, "type": "company"},
             {"_id": 0, "id": 1, "title": 1, "folder_id": 1, "company": 1,
-             "overall_relevance": 1, "trends": 1, "split_dev": 1, "created_at": 1},
+             "overall_relevance": 1, "trends": 1, "split_dev": 1, "created_at": 1,
+             "updated_at": 1, "generated_at": 1},
         ).sort("created_at", -1).to_list(length=1000)
         folders = await db.thesis_folders.find(
             {"user_id": uid}, {"_id": 0}
@@ -1332,13 +1333,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 tk = (c.get("ticker") or "").upper().strip()
                 if tk:
                     tickers.add(tk)
+        for d in company_docs:  # include company-plan tickers (for mrq / staleness)
+            tk = ((d.get("company") or {}).get("ticker") or "").upper().strip()
+            if tk:
+                tickers.add(tk)
         rev_map: Dict[str, float] = {}
+        mrq_map: Dict[str, Optional[str]] = {}  # ticker → most_recent_quarter (ISO date)
         if tickers:
             cached = await db.fundamentals.find(
                 {"ticker": {"$in": list(tickers)}}, {"_id": 0, "ticker": 1, "data": 1}
             ).to_list(length=2000)
             for cd in cached:
                 data = cd.get("data") or {}
+                mrq_map[cd.get("ticker")] = data.get("most_recent_quarter")
                 rev2y = (data.get("auto_projections") or {}).get("revenue_2y")
                 if rev2y is None:
                     continue
@@ -1354,12 +1361,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         # so we can roll up TAM/score per company ONLY from the trends BORN from its
         # own plan — matching the planning view and the standalone company page.
         ticker_to_plan_id: Dict[str, str] = {}
+        ticker_to_updated: Dict[str, Optional[str]] = {}  # latest complete plan's update date
         for d in company_docs:  # already sorted by created_at desc
             tkc = ((d.get("company") or {}).get("ticker") or "").upper().strip()
             if not tkc or tkc in ticker_to_plan_id:
                 continue
             if company_is_complete(d):
                 ticker_to_plan_id[tkc] = d.get("id")
+                ticker_to_updated[tkc] = d.get("updated_at") or d.get("generated_at") or d.get("created_at")
         for t in trend_docs:
             vc = t.get("value_chain") or []
             gtam = (t.get("tam") or {}).get("global_busd")
@@ -1415,6 +1424,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "ticker": tk, "name": a["name"] or ticker_to_name.get(tk),
                 "avg_overall_score": avg, "sum_tam_score": stam,
                 "trends": a["trends"], "trend_count": len(a["trends"]),
+                "updated_at": ticker_to_updated.get(tk),
+                "most_recent_quarter": mrq_map.get(tk),
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 
@@ -1467,6 +1478,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "id": d.get("id"), "title": d.get("title"), "folder_id": d.get("folder_id"),
                 "ticker": tk or None, "overall_relevance": d.get("overall_relevance"),
                 "fit_trends": fit,
+                "updated_at": d.get("updated_at") or d.get("generated_at") or d.get("created_at"),
+                "most_recent_quarter": mrq_map.get(tk) if tk else None,
             })
 
         # Convergencia: empresas que aparecen en VARIAS de las tendencias del usuario
@@ -1584,6 +1597,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "currency": currency,
                 "trends": c.get("trends") or [],
                 "trend_count": c.get("trend_count") or 0,
+                "thesis_updated_at": c.get("updated_at"),
+                "most_recent_quarter": c.get("most_recent_quarter"),
             })
 
         return {"rows": rows}
@@ -1751,6 +1766,16 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "coef_global": snap.get("coef_global"),
                 "kpi_generated_at": snap.get("generated_at"),
             })
+        # Attach the latest reported quarter (from the fundamentals cache) so the UI can
+        # flag a KPI snapshot as stale when the company has reported since it was generated.
+        if out:
+            cached = await db.fundamentals.find(
+                {"ticker": {"$in": [o["ticker"] for o in out]}},
+                {"_id": 0, "ticker": 1, "data.most_recent_quarter": 1},
+            ).to_list(length=len(out))
+            mrq = {cd["ticker"]: (cd.get("data") or {}).get("most_recent_quarter") for cd in cached}
+            for o in out:
+                o["most_recent_quarter"] = mrq.get(o["ticker"])
         return {"companies": out}
 
     @router.post("/{company_id}/kpis")

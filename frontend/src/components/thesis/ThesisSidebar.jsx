@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, TrendingUp, Building2, Trash2, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
+import { FreshnessBadge } from "../FreshnessBadge";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
@@ -152,6 +153,7 @@ function CompanyRow({ c, onRemove }) {
                 <span className="text-[10px] uppercase tracking-wider text-[#052049] flex items-center gap-1 shrink-0">
                     <Building2 size={10} /> Empresa
                 </span>
+                <FreshnessBadge updatedAt={c.updated_at} mostRecentQuarter={c.most_recent_quarter} noun="la última actualización de la tesis" testid={`sidebar-company-fresh-${c.ticker}`} className="text-[10px] shrink-0" />
                 <div className="ml-auto shrink-0">
                     <CompanyTrendsDropdown company={c} />
                 </div>

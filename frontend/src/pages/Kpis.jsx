@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
 import KpiNews from "@/components/kpi/KpiNews";
 import HoverTip from "@/components/HoverTip";
+import { freshnessInfo, freshnessTip } from "@/lib/freshness";
 import { toast } from "sonner";
 
 const COEF_TIP = "Coeficiente de validación (C = 1 + α·S, α=0,5): resume si los KPIs validan la tesis. >1 (verde) se valida, <1 (rojo) se deteriora, ≈1 neutral. La S es la señal agregada (−1 a +1): el promedio, ponderado por la relevancia de cada KPI, de cuánto apoyan (+) o contradicen (−) la tesis. Ej.: S=+0,5 → C=1,25; S=0 → C=1,00; S=−0,5 → C=0,75.";
@@ -152,13 +153,26 @@ export default function Kpis() {
                     <button
                         key={c.id}
                         onClick={() => selectCompany(c.id)}
-                        className={`text-xs font-semibold px-3 py-1.5 border transition-colors flex items-center gap-1.5 ${selId === c.id ? "bg-black text-[#FDF1E6] border-black" : "bg-white text-black border-black/30 hover:border-black"}`}
+                        className={`text-xs font-semibold px-3 py-1.5 border transition-colors flex flex-col items-start gap-0.5 ${selId === c.id ? "bg-black text-[#FDF1E6] border-black" : "bg-white text-black border-black/30 hover:border-black"}`}
                         data-testid={`kpi-company-${c.ticker}`}
                     >
-                        {c.ticker}
-                        {c.has_kpis && c.coef_global != null && (
-                            <span className="tabular-nums" style={{ color: selId === c.id ? "#fff" : coefColor(c.coef_global) }}>· {c.coef_global.toFixed(2)}</span>
-                        )}
+                        <span className="flex items-center gap-1.5">
+                            {c.ticker}
+                            {c.has_kpis && c.coef_global != null && (
+                                <span className="tabular-nums" style={{ color: selId === c.id ? "#fff" : coefColor(c.coef_global) }}>· {c.coef_global.toFixed(2)}</span>
+                            )}
+                        </span>
+                        {c.has_kpis && (() => {
+                            const info = freshnessInfo(c.kpi_generated_at, c.most_recent_quarter);
+                            if (!info) return null;
+                            const col = info.stale ? (selId === c.id ? "#FCA5A5" : "#B32A22") : (selId === c.id ? "#D1D5DB" : "#9CA3AF");
+                            return (
+                                <span className="text-[9px] font-normal tabular-nums" style={{ color: col, fontWeight: info.stale ? 700 : 400 }}
+                                    title={freshnessTip(info, "la última actualización del KPI")} data-testid={`kpi-fresh-${c.ticker}`}>
+                                    hace {info.days}d
+                                </span>
+                            );
+                        })()}
                     </button>
                 ))}
                 {companies.length === 0 && <span className="text-sm text-[#4A4A4A]">No tienes empresas con tesis desarrollada todavía.</span>}

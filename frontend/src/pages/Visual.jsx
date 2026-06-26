@@ -5,6 +5,7 @@ import { Loader2, RotateCcw, ArrowUp, ArrowDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
+import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { signalFor } from "@/lib/thresholds";
 
 // ---------- Helpers ----------
@@ -384,6 +385,7 @@ export default function Visual() {
                             </th>
                             <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" />
                             <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
+                            <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha reportado un trimestre posterior (conviene reanalizar)." />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Coef</span><span>KPI</span></span>} k="kpi_coef" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.kpi} />
@@ -395,7 +397,7 @@ export default function Visual() {
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 && !loading && (
-                            <tr><td colSpan={10} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
+                            <tr><td colSpan={11} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
                         )}
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
@@ -405,6 +407,7 @@ export default function Visual() {
                                     <td className="p-2"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
                                     <td className="p-2 font-semibold"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
+                                    <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} mostRecentQuarter={r.most_recent_quarter} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
                                     <td className="p-2 text-right" data-testid={`visual-kpi-${r.ticker}`}>

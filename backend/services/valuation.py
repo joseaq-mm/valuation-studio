@@ -743,6 +743,16 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "is_profitable_fcf": (base_fcf > 0) if base_fcf is not None else None,
     }
 
+    # Most recent reported quarter end (Unix ts → ISO date). Used to flag a thesis/KPI
+    # as stale when the company has reported a quarter AFTER its last update.
+    _mrq = info.get("mostRecentQuarter")
+    most_recent_quarter = None
+    if _mrq:
+        try:
+            most_recent_quarter = datetime.fromtimestamp(int(_mrq), tz=timezone.utc).date().isoformat()
+        except Exception:
+            most_recent_quarter = None
+
     payload = {
         "ticker": ticker.upper(),
         "name": info.get("longName") or info.get("shortName") or ticker.upper(),
@@ -753,6 +763,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "country": info.get("country"),
         "website": info.get("website"),
         "long_business_summary": (info.get("longBusinessSummary") or "")[:600],
+        "most_recent_quarter": most_recent_quarter,
         "current_price": current_price,
         "shares_outstanding": shares,
         "market_cap": market_cap,
