@@ -1695,17 +1695,22 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             drivers = _company_drivers(doc)
             # Option A: read full content of top results + auto-ingest PDFs BEFORE
             # querying files, so the freshly stored auto docs are picked up below.
-            web_sources = await _auto_fetch_for_kpis(company_id, user_id, company, ticker)
+            # Run the heavy document fetch (Fase 2/3) and the news refresh (Fase 4) in
+            # PARALLEL — they are independent (news is only consumed later, by the judge).
+            async def _refresh_news():
+                try:
+                    fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, None)
+                    await _news_merge_prune(company_id, user_id, ticker, fresh, "analysis")
+                except Exception as ne:
+                    logger.warning(f"kpi news refresh failed ({company_id}): {ne}")
+            web_sources, _ = await asyncio.gather(
+                _auto_fetch_for_kpis(company_id, user_id, company, ticker),
+                _refresh_news(),
+            )
             files = await db.kpi_files.find(
                 {"company_id": company_id, "user_id": user_id, "is_deleted": False,
                  "status": "ready", "selected": True}, {"_id": 0}).to_list(length=20)
             docs = _selected_doc_sources(files)
-            # Refresh qualitative news and feed the current (decayed/pruned) list as context.
-            try:
-                fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, None)
-                await _news_merge_prune(company_id, user_id, ticker, fresh, "analysis")
-            except Exception as ne:
-                logger.warning(f"kpi news refresh failed ({company_id}): {ne}")
             context_news = await _load_company_news(company_id, user_id)
             snap = await asyncio.to_thread(_kpi_sync, company, ticker, drivers, docs, context_news, web_sources)
             snap.pop("_cost", None)
