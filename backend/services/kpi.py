@@ -19,6 +19,7 @@ Models (independent of the global thesis preset, per product decision):
 import logging
 import os
 import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 
@@ -100,6 +101,7 @@ Devuelve SOLO JSON:
 JUDGE_SYS = """Eres un analista de inversión. Tu tarea: juzgar si la TESIS de una empresa se está VALIDANDO o REFUTANDO según sus últimos KPIs operativos.
 
 Para CADA KPI asigna:
+- `driver`: asígnalo SIEMPRE a EXACTAMENTE uno de los nombres de driver dados (cópialo literal). Elige el área más relacionada AUNQUE el KPI esté en otro idioma (p. ej. "defense demand" → el driver de defensa/gobierno; "new contracts AIP" → el driver de la plataforma AIP). Usa "general" SOLO si el KPI es genuinamente transversal a toda la empresa y no encaja en ningún área concreta.
 - `signal` ∈ [-1, 1]: cuánto APOYA (+) o CONTRADICE (−) el driver/tesis AHORA, teniendo en cuenta dirección y momentum (p. ej. NRR 110% pero bajando = ligeramente negativo; backlog creciendo con fuerza = muy positivo; churn subiendo = negativo).
 - `weight` ∈ [0, 1]: relevancia de ese KPI para el driver/tesis (un KPI central pesa ~0.9; uno accesorio ~0.3).
 - `rationale`: una frase BREVE en español justificando la señal.
@@ -160,9 +162,11 @@ async def _judge_kpis(company: str, drivers: list, kpis: list, context_news: lis
     if nb:
         news_ctx = ("\n\nNOTICIAS RECIENTES (contexto cualitativo — úsalas SOLO para matizar señal/peso y "
                     "verdict; el dato cuantitativo del KPI manda):\n" + nb)
+    names = ", ".join(d.get("name") for d in drivers if d.get("name")) or "general"
     user = (f"EMPRESA: {company}\n\nDRIVERS (tesis):\n{_drivers_block(drivers)}\n\n"
+            f"Nombres válidos de driver (usa EXACTAMENTE uno por KPI): {names}, general\n\n"
             f"KPIs EXTRAÍDOS:\n" + "\n".join(kpi_lines) + news_ctx +
-            "\n\nJuzga señal y peso por KPI + verdict por driver, en JSON.")
+            "\n\nAsigna el driver de cada KPI al área más relacionada, juzga señal y peso por KPI + verdict por driver, en JSON.")
     raw = await _llm(*KPI_JUDGE_MODEL, f"kpi-judge-{datetime.now(timezone.utc).timestamp()}",
                      JUDGE_SYS, user)
     data = _extract_json(raw)
@@ -218,15 +222,16 @@ def compute_kpi_coefficients(kpis: list, driver_names: list, alpha: float = ALPH
 # ---------------------- Pipeline ----------------------
 
 def _merge_judge(kpis: list, judged: dict) -> list:
-    """Attach signal/weight/rationale from the judge onto the extracted KPIs
-    (match by name+driver, fallback positional)."""
+    """Attach signal/weight/rationale from the judge onto the extracted KPIs and adopt
+    the judge's `driver` re-assignment (more reliable / multilingual). Match by name,
+    fallback positional."""
     jk = (judged or {}).get("kpis") or []
-    by_key = {}
+    by_name = {}
     for j in jk:
-        by_key[(_norm(j.get("name")), _norm(j.get("driver")))] = j
+        by_name.setdefault(_norm(j.get("name")), j)
     out = []
     for i, k in enumerate(kpis):
-        j = by_key.get((_norm(k.get("name")), _norm(k.get("driver"))))
+        j = by_name.get(_norm(k.get("name")))
         if j is None and i < len(jk):
             j = jk[i]  # positional fallback
         k = dict(k)
@@ -234,11 +239,55 @@ def _merge_judge(kpis: list, judged: dict) -> list:
             k["signal"] = j.get("signal")
             k["weight"] = j.get("weight")
             k["rationale"] = j.get("rationale")
+            jd = (j.get("driver") or "").strip()
+            if jd:
+                k["driver"] = jd  # judge maps each KPI to the closest thesis area
         else:
             k.setdefault("signal", 0.0)
             k.setdefault("weight", 0.0)
         out.append(k)
     return out
+
+
+def _toks(s: str) -> set:
+    s = unicodedata.normalize("NFKD", (s or "")).encode("ascii", "ignore").decode().lower()
+    return {w for w in re.split(r"[^a-z0-9]+", s) if len(w) >= 3}
+
+
+def _tok_match(a: str, b: str) -> bool:
+    # equal, or share a >=5-char prefix → handles EN/ES cognates (defense/defensa).
+    return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+def _resolve_driver_assignments(kpis: list, drivers: list) -> list:
+    """Deterministic fallback: snap each KPI whose `driver` doesn't match any thesis
+    driver (incl. 'general') to the closest area by multilingual token overlap. Keeps
+    'general' only when nothing matches. Mutates kpi['driver']. Runs AFTER the judge."""
+    names = [d.get("name") for d in drivers if d.get("name")]
+    nset = {_norm(n) for n in names}
+    name_tok = {}   # core identity tokens (denominator)
+    match_tok = {}  # name + demand + fit tokens (searchable)
+    for d in drivers:
+        n = d.get("name")
+        if n:
+            name_tok[n] = _toks(n)
+            match_tok[n] = _toks(n) | _toks(d.get("demand_driver")) | _toks(d.get("fit_description"))
+    for k in kpis:
+        if _norm(k.get("driver")) in nset:
+            continue  # already a valid exact area
+        kt = _toks(k.get("name")) | _toks(k.get("rationale")) | _toks(k.get("driver"))
+        kt.discard("general")
+        best, best_s = None, 0.0
+        for n in names:
+            dt = match_tok.get(n) or set()
+            denom = len(name_tok.get(n) or set()) or 1
+            hit = sum(1 for d in dt if any(_tok_match(d, w) for w in kt))
+            s = hit / denom
+            if s > best_s:
+                best, best_s = n, s
+        if best and best_s >= 0.3:
+            k["driver"] = best
+    return kpis
 
 
 async def run_company_kpis(company: str, ticker: str, drivers: list, sources: list, context_news: list = None) -> dict:
@@ -260,6 +309,7 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
 
     judged = await _judge_kpis(company, drivers, kpis, context_news)
     kpis = _merge_judge(kpis, judged)
+    kpis = _resolve_driver_assignments(kpis, drivers)  # snap leftover 'general'/mismatched KPIs to closest area
     coeff = compute_kpi_coefficients(kpis, driver_names, ALPHA)
 
     # Attach the per-driver verdict text from the judge
@@ -353,6 +403,7 @@ async def run_kpi_search(company: str, ticker: str, drivers: list, query: str, s
         return {"kpis": [], "note": data.get("note") or "No se encontró el dato en las fuentes recientes.", "judged_drivers": []}
     judged = await _judge_kpis(company, drivers, kpis)
     kpis = _merge_judge(kpis, judged)
+    kpis = _resolve_driver_assignments(kpis, drivers)
     return {"kpis": kpis, "note": None, "judged_drivers": judged.get("drivers") or []}
 
 
