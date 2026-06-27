@@ -10,7 +10,7 @@ export function FreshnessBadge({ updatedAt, mostRecentQuarter, noun = "la últim
         <HoverTip text={freshnessTip(info, noun)}>
             <span
                 className={`font-mono tabular-nums cursor-help ${className}`}
-                style={{ color: info.stale ? "#B32A22" : "#9CA3AF", fontWeight: info.stale ? 700 : 400 }}
+                style={{ color: info.stale ? "#B32A22" : "#111111", fontWeight: info.stale ? 700 : 400 }}
                 data-testid={testid}
             >
                 {info.days}d

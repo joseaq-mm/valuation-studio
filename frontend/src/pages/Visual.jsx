@@ -216,9 +216,11 @@ export default function Visual() {
     // Sorting (table) — always over ALL rows. String columns (ticker/name) sort
     // alphabetically; the rest numerically.
     const STRING_KEYS = useMemo(() => new Set(["ticker", "name"]), []);
+    const DATE_KEYS = useMemo(() => new Set(["thesis_updated_at"]), []);
     const sortedRows = useMemo(() => {
         const arr = [...rows];
         const isStr = STRING_KEYS.has(sortKey);
+        const isDate = DATE_KEYS.has(sortKey);
         arr.sort((a, b) => {
             const av = a[sortKey]; const bv = b[sortKey];
             if (av == null && bv == null) return 0;
@@ -228,10 +230,14 @@ export default function Visual() {
                 const c = String(av).localeCompare(String(bv), "es", { sensitivity: "base" });
                 return sortDir === "asc" ? c : -c;
             }
+            if (isDate) {
+                const at = Date.parse(av); const bt = Date.parse(bv);
+                return sortDir === "asc" ? at - bt : bt - at;
+            }
             return sortDir === "asc" ? av - bv : bv - av;
         });
         return arr;
-    }, [rows, sortKey, sortDir, STRING_KEYS]);
+    }, [rows, sortKey, sortDir, STRING_KEYS, DATE_KEYS]);
 
     const onSort = (k) => {
         if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));

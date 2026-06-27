@@ -165,7 +165,7 @@ export default function Kpis() {
                         {c.has_kpis && (() => {
                             const info = freshnessInfo(c.kpi_generated_at, c.most_recent_quarter);
                             if (!info) return null;
-                            const col = info.stale ? (selId === c.id ? "#FCA5A5" : "#B32A22") : (selId === c.id ? "#D1D5DB" : "#9CA3AF");
+                            const col = info.stale ? (selId === c.id ? "#FCA5A5" : "#B32A22") : (selId === c.id ? "#D1D5DB" : "#111111");
                             return (
                                 <span className="text-[9px] font-normal tabular-nums" style={{ color: col, fontWeight: info.stale ? 700 : 400 }}
                                     title={freshnessTip(info, "la última actualización del KPI")} data-testid={`kpi-fresh-${c.ticker}`}>
