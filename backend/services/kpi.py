@@ -75,6 +75,8 @@ REGLAS:
 - Da el valor actual y el del periodo comparable anterior (si está disponible) para ver el momentum.
 - Asigna cada KPI al driver más relacionado (usa EXACTAMENTE uno de los nombres de driver dados; si es transversal a la empresa, usa "general").
 - `higher_is_better`: true si que el KPI suba es bueno (entregas, ARR, clientes, backlog, GMV, MW, abonados), false si bajar es bueno (churn, morosidad, combined ratio).
+- NO repitas un mismo KPI: un único registro por métrica (no listes "ingresos totales" dos veces aunque aparezca en varias fuentes).
+- PRIORIZA métricas OPERATIVAS y por SEGMENTO/driver (volumen, unidades, uso, backlog, clientes, contratos por área). EVITA quedarte solo con cifras agregadas genéricas (ingresos totales, beneficio neto, crecimiento de ingresos total) salvo que sean lo único disponible en las fuentes.
 - 4 a 10 KPIs como máximo. Prioriza los más centrales para la tesis.
 
 Devuelve SOLO JSON:
@@ -296,6 +298,15 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
     sblock = _sources_block(sources)
     ext = await _extract_kpis(company, drivers, sblock)
     kpis = ext.get("kpis") or []
+    # Dedupe by normalized name (the same metric can appear across deck + SEC + web).
+    _seen, _uniq = set(), []
+    for k in kpis:
+        key = _norm(k.get("name"))
+        if key and key in _seen:
+            continue
+        _seen.add(key)
+        _uniq.append(k)
+    kpis = _uniq
     period = ext.get("period")
     driver_names = [d.get("name") for d in drivers if d.get("name")]
 

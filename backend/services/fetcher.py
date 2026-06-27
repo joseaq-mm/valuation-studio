@@ -23,8 +23,6 @@ FETCH_TOTAL_CHARS = 40000     # global text budget across pages
 FETCH_PDF_MAX_BYTES = 15 * 1024 * 1024
 _REQ_TIMEOUT = 9.0
 _DEADLINE_SECS = 35.0
-_POST_PDF_GRACE_SECS = 8.0     # once the deck PDF is captured, only spend a little more
-_MIN_PAGES_WITH_PDF = 2        # HTML pages of context that suffice when we already have the deck
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; ValuationStudio/1.0)"}
 
 _GENERIC_TOKENS = {"inc", "corp", "corporation", "the", "ltd", "plc", "sa", "ag",
@@ -93,16 +91,10 @@ def fetch_full_sources(results, company="", ticker="", max_pages=FETCH_MAX_PAGES
     opened = 0
     attempts = 0
     deadline = time.monotonic() + _DEADLINE_SECS
-    pdf_deadline = None  # set once the deck PDF is captured → adaptive early-stop
     try:
         with httpx.Client(timeout=_REQ_TIMEOUT, headers=_HEADERS, follow_redirects=True) as client:
             for r in enriched:
                 if attempts >= FETCH_MAX_ATTEMPTS or time.monotonic() > deadline:
-                    break
-                # Adaptive early-stop: once we have the deck PDF (the richest source),
-                # grab a little HTML context then stop instead of burning the full deadline.
-                if len(pdfs) >= max_pdfs and pdf_deadline is not None and (
-                    opened >= _MIN_PAGES_WITH_PDF or time.monotonic() > pdf_deadline):
                     break
                 if opened >= max_pages and len(pdfs) >= max_pdfs:
                     break
@@ -125,8 +117,6 @@ def fetch_full_sources(results, company="", ticker="", max_pages=FETCH_MAX_PAGES
                             if not fname.lower().endswith(".pdf"):
                                 fname += ".pdf"
                             pdfs.append({"url": url, "filename": fname, "data": resp.content, "mime": "application/pdf"})
-                            if pdf_deadline is None:
-                                pdf_deadline = time.monotonic() + _POST_PDF_GRACE_SECS
                         continue
                     if "html" not in ctype and "text" not in ctype:
                         continue
