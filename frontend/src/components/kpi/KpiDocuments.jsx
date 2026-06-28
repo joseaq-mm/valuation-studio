@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, Download } from "lucide-react";
-import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileDownload } from "@/lib/api";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, Download, RotateCw } from "lucide-react";
+import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileDownload, kpiFileRetry } from "@/lib/api";
 import { toast } from "sonner";
 
 const fileIcon = (f) => {
@@ -105,6 +105,12 @@ export default function KpiDocuments({ companyId }) {
         setFiles((prev) => prev.filter((x) => x.id !== f.id));
         try { await kpiFileDelete(companyId, f.id); toast.success("Archivo borrado"); }
         catch { load(); }
+    };
+
+    const retry = async (f) => {
+        setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, status: "processing", error: null } : x)));
+        try { await kpiFileRetry(companyId, f.id); toast.info("Reintentando lectura del documento…"); }
+        catch (err) { toast.error(err?.response?.data?.detail || "No se pudo reintentar la lectura"); load(); }
     };
 
     const startEdit = (f) => { setEditId(f.id); setEditName(f.display_name || f.original_filename || ""); setEditDesc(f.description || ""); };
@@ -229,6 +235,11 @@ export default function KpiDocuments({ companyId }) {
                                                 {f.status === "ready" && f.has_text && <span className="text-[#1D7044] ml-1">· listo</span>}
                                                 {f.status === "error" && <span className="text-[#B32A22] ml-1 inline-flex items-center gap-1"><AlertCircle size={10} /> {f.error || "error"}</span>}
                                             </div>
+                                            {f.status === "error" && f.downloadable && (
+                                                <button onClick={() => retry(f)} className="mt-1 text-[11px] text-[#052049] font-semibold inline-flex items-center gap-1 hover:underline" data-testid={`kpi-file-retry-${f.id}`}>
+                                                    <RotateCw size={11} /> Reintentar lectura
+                                                </button>
+                                            )}
                                             {f.supersedes && (
                                                 <div className="mt-1.5 text-[11px] bg-[#FFF8E6] border border-[#B8860B]/40 px-2 py-1.5" data-testid={`kpi-file-supersedes-${f.id}`}>
                                                     <div className="text-[#7a5c00] leading-snug">Parece una versión más reciente de «<strong>{f.supersedes.name}</strong>». ¿Mantener ambos o borrar el antiguo?</div>

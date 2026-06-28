@@ -26,7 +26,7 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
-from services.kpi import gather_kpi_sources, run_company_kpis, run_company_kpis_incremental, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
+from services.kpi import gather_kpi_sources, run_company_kpis, run_company_kpis_incremental, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, extract_document_text_from_text, extract_pdf_text_local, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
 from services.fetcher import fetch_full_sources
 from services.sec import fetch_latest_sec_report
 from storage import put_object, get_object, APP_NAME, MIME_TYPES
@@ -289,25 +289,39 @@ def _period_rank(name: str) -> int:
     return year * 4 + q
 
 
+def _split_doc_title(raw: str) -> dict:
+    """Split the extractor output into the suggested TÍTULO (first line) + KPI digest."""
+    raw = (raw or "").strip()
+    title, body = None, raw
+    lines = raw.splitlines()
+    if lines:
+        first = lines[0].strip().lstrip("*# ").strip()
+        norm = first.upper().replace("Í", "I")
+        if norm.startswith("TITULO:"):
+            title = first.split(":", 1)[1].strip().strip("*").strip()[:120]
+            body = "\n".join(lines[1:]).strip()
+    return {"title": title or None, "text": body}
 
-    """Write the uploaded bytes to a temp file, run the multimodal extraction, and
-    split out the suggested TÍTULO (first line) from the KPI digest."""
+
+def _doc_extract_sync(data: bytes, ext: str, mime: str, company: str, filename: str) -> dict:
+    """Extract an operational-KPI digest from an uploaded PDF/image.
+
+    Strategy: for TEXT-BASED PDFs, extract text locally with pypdf (fast, no vision
+    cost) and digest it with a cheap Gemini text call. Only image-heavy/scanned PDFs
+    and images fall back to the multimodal reader (with retries)."""
     import tempfile
+    if ext == "pdf":
+        local_text = extract_pdf_text_local(data)
+        if local_text and len(local_text) >= 200:
+            raw, _cost = run_costed(extract_document_text_from_text(local_text, company, filename))
+            return _split_doc_title(raw)
+    # Fallback: multimodal vision read (images, scanned/graphic PDFs).
     with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tf:
         tf.write(data)
         path = tf.name
     try:
         raw, _cost = run_costed(extract_document_text(path, mime, company, filename))
-        raw = (raw or "").strip()
-        title, body = None, raw
-        lines = raw.splitlines()
-        if lines:
-            first = lines[0].strip().lstrip("*# ").strip()
-            norm = first.upper().replace("Í", "I")
-            if norm.startswith("TITULO:") or norm.startswith("TÍTULO:"):
-                title = first.split(":", 1)[1].strip().strip("*").strip()[:120]
-                body = "\n".join(lines[1:]).strip()
-        return {"title": title or None, "text": body}
+        return _split_doc_title(raw)
     finally:
         try:
             os.unlink(path)
@@ -2114,7 +2128,36 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=404, detail="Archivo no encontrado")
         return {"ok": True}
 
-    @router.get("/{company_id}/kpis/files/{file_id}/download")
+    @router.post("/{company_id}/kpis/files/{file_id}/retry")
+    async def retry_kpi_file(company_id: str, file_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Re-run extraction for a document stuck in `error` (or any uploaded file).
+        Re-downloads the stored bytes and re-launches the background extractor."""
+        rec = await db.kpi_files.find_one(
+            {"id": file_id, "company_id": company_id, "user_id": user["user_id"], "is_deleted": False},
+            {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        if not rec.get("storage_path"):
+            raise HTTPException(status_code=400, detail="Este documento no se puede reprocesar (sin archivo original).")
+        cdoc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "company": 1})
+        company = ((cdoc or {}).get("company") or {}).get("name") or company_id
+        try:
+            data, _ctype = await asyncio.to_thread(get_object, rec["storage_path"])
+        except Exception as e:
+            logger.error(f"retry: storage fetch failed ({file_id}): {e}")
+            raise HTTPException(status_code=502, detail="No se pudo recuperar el archivo para reprocesar.")
+        await db.kpi_files.update_one(
+            {"id": file_id, "user_id": user["user_id"]},
+            {"$set": {"status": "processing"}, "$unset": {"error": ""}})
+        ext = rec.get("ext") or "pdf"
+        mime = rec.get("content_type") or MIME_TYPES.get(ext, "application/octet-stream")
+        _spawn(_run_doc_extract(file_id, user["user_id"], data, ext, mime, company, rec.get("original_filename") or "documento"))
+        rec["status"] = "processing"
+        rec.pop("error", None)
+        return {"ok": True, "file": _file_public(rec)}
+
+
     async def download_kpi_file(company_id: str, file_id: str, auth: str = Query(None), authorization: str = Header(None), session_token: str = Cookie(None)):
         token = None
         if authorization and authorization.lower().startswith("bearer "):

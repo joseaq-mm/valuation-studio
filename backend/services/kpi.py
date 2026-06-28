@@ -16,6 +16,7 @@ Models (independent of the global thesis preset, per product decision):
   - Extractor: Gemini Flash (cheap)
   - Judge:     Claude Sonnet (quality)
 """
+import asyncio
 import logging
 import os
 import re
@@ -393,19 +394,65 @@ REGLAS:
 - Resumen claro en texto plano, centrado SOLO en métricas operativas y cifras. Conciso pero completo."""
 
 
+def extract_pdf_text_local(data: bytes) -> str:
+    """Local, LLM-free text extraction for TEXT-BASED PDFs (pypdf). Returns "" for
+    image-only/scanned PDFs (no embedded text) so the caller falls back to vision."""
+    try:
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        parts = []
+        for page in reader.pages:
+            try:
+                t = page.extract_text() or ""
+            except Exception:
+                t = ""
+            if t.strip():
+                parts.append(t.strip())
+        return "\n".join(parts).strip()
+    except Exception as e:
+        logger.warning(f"pypdf local extract failed: {e}")
+        return ""
+
+
+async def extract_document_text_from_text(text: str, company: str, filename: str = "") -> str:
+    """Turn already-extracted PDF text into the compact operational-KPI digest using
+    a CHEAP Gemini Flash TEXT call (no vision cost). Primary path for text-based PDFs."""
+    user = (f"EMPRESA: {company}\nDOCUMENTO: {filename}\n\n"
+            f"TEXTO EXTRAÍDO DEL DOCUMENTO:\n{(text or '')[:60000]}\n\n"
+            "Extrae todas las métricas operativas y KPIs con sus cifras y periodos.")
+    raw = await _llm(*KPI_EXTRACTOR_MODEL, f"kpi-doc-txt-{datetime.now(timezone.utc).timestamp()}",
+                     DOC_EXTRACT_SYS, user)
+    return (raw or "").strip()
+
+
 async def extract_document_text(file_path: str, mime_type: str, company: str, filename: str = "") -> str:
     """One-time pre-extraction of a PDF/image into a compact operational-KPI digest
-    (Gemini Flash multimodal). Stored on the file record and reused as a cheap text
-    source in later KPI analyses (so we don't re-pay vision cost each run)."""
+    (Gemini Flash multimodal). Used for images and image-heavy/scanned PDFs where local
+    text extraction yields nothing. Retries 2-3 times since long/heavy docs occasionally
+    time out, leaving the document unreadable."""
     from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
     api_key = os.environ["EMERGENT_LLM_KEY"]
-    chat = LlmChat(api_key=api_key, session_id=f"kpi-doc-{datetime.now(timezone.utc).timestamp()}",
-                   system_message=DOC_EXTRACT_SYS).with_model(*KPI_EXTRACTOR_MODEL)
     fc = FileContentWithMimeType(file_path=file_path, mime_type=mime_type)
     prompt = (f"EMPRESA: {company}\nDOCUMENTO: {filename}\n\n"
               "Extrae todas las métricas operativas y KPIs con sus cifras y periodos.")
-    resp = await chat.send_message(UserMessage(text=prompt, file_contents=[fc]))
-    return (resp or "").strip()
+    last_err = None
+    for attempt in range(3):
+        try:
+            chat = LlmChat(api_key=api_key,
+                           session_id=f"kpi-doc-{datetime.now(timezone.utc).timestamp()}-{attempt}",
+                           system_message=DOC_EXTRACT_SYS).with_model(*KPI_EXTRACTOR_MODEL)
+            resp = (await chat.send_message(UserMessage(text=prompt, file_contents=[fc])) or "").strip()
+            if resp:
+                return resp
+            last_err = ValueError("respuesta vacía del extractor multimodal")
+        except Exception as e:
+            last_err = e
+            logger.warning(f"multimodal doc extract attempt {attempt + 1}/3 failed: {e}")
+        await asyncio.sleep(1.5 * (attempt + 1))
+    if last_err:
+        raise last_err
+    return ""
 
 
 # ---------------------- Targeted single-KPI search ----------------------
