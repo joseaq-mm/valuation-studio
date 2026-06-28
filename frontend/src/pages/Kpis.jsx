@@ -172,7 +172,7 @@ export default function Kpis() {
                 {[
                     { k: "analysis", label: "Antigüedad de análisis", tip: "Ordena por cuándo se analizó o reanalizó por última vez (lo más antiguo —o sin analizar— primero; lo que más conviene actualizar)." },
                     { k: "alpha", label: "Alfabético", tip: "Ordena las empresas por ticker, de la A a la Z." },
-                    { k: "thesis", label: "Por tesis", tip: "Antigüedad en la página: orden en que se generaron las empresas desde su tesis (orden por defecto)." },
+                    { k: "thesis", label: "Por tesis", tip: "Orden por defecto: por antigüedad del plan de tesis. Una empresa aparece aquí cuando desarrollas su plan de tesis; se listan en el orden en que fuiste creando esos planes en tu cuenta (igual que en la página de Tesis)." },
                 ].map((o) => (
                     <HoverTip key={o.k} text={o.tip}>
                         <button onClick={() => setSortMode(o.k)}
