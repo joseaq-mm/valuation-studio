@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle } from "lucide-react";
+import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap } from "lucide-react";
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
@@ -70,15 +70,16 @@ export default function Kpis() {
         finally { setLoading(false); }
     };
 
-    const analyze = async () => {
+    const analyze = async (mode = "full") => {
         if (!selId) return;
-        setStatus("Buscando resultados y comunicados…"); setLoading(true);
+        const incr = mode === "incremental";
+        setStatus(incr ? "Actualizando con los cambios…" : "Buscando resultados y comunicados…"); setLoading(true);
         try {
-            const res = await kpiRun(selId, (s) => setStatus(s?.message || "Analizando KPIs con IA…"));
+            const res = await kpiRun(selId, (s) => setStatus(s?.message || (incr ? "Actualizando KPIs…" : "Analizando KPIs con IA…")), mode);
             const result = res?.result || res;
             setSnap(result);
             await loadCompanies();
-            toast.success("KPIs analizados");
+            toast.success(incr ? "KPIs actualizados" : "KPIs analizados");
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Error analizando KPIs");
         } finally { setStatus(null); setLoading(false); }
@@ -204,7 +205,7 @@ export default function Kpis() {
                 <div className="border border-black bg-white p-8 text-center" data-testid="kpi-empty">
                     <div className="font-serif text-xl mb-1">{selCompany?.name}</div>
                     <p className="text-sm text-[#4A4A4A] mb-4">Aún no se han analizado los KPIs operativos de esta empresa.</p>
-                    <button onClick={analyze} className="btn-primary inline-flex items-center gap-2" data-testid="kpi-analyze-btn">
+                    <button onClick={() => analyze("full")} className="btn-primary inline-flex items-center gap-2" data-testid="kpi-analyze-btn">
                         <Sparkles size={15} /> Analizar KPIs
                     </button>
                 </div>
@@ -236,7 +237,14 @@ export default function Kpis() {
                         </div>
                         <div className="flex items-center gap-2">
                             {!editing && (
-                                <button onClick={analyze} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
+                                <>
+                                    <HoverTip text="Incorpora solo los cambios desde el último análisis: noticias refrescadas y documentos añadidos. Rejuzga con el contexto actual sin volver a buscar ni re-parsear documentos. Rápido y barato; ideal para cambios pequeños y frecuentes.">
+                                        <button onClick={() => analyze("incremental")} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-update-btn"><Zap size={13} /> Actualizar</button>
+                                    </HoverTip>
+                                    <HoverTip text="Reconstrucción completa desde cero: vuelve a buscar fuentes, descarga y re-parsea documentos, refresca noticias y recalcula todo. Más lento y con más coste; úsalo para cambios grandes (p. ej. tras resultados).">
+                                        <button onClick={() => analyze("full")} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
+                                    </HoverTip>
+                                </>
                             )}
                         </div>
                     </div>

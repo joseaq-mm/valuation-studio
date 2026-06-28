@@ -186,8 +186,8 @@ export const kpiCompanies = () =>
     api.get(`/thesis/kpi-companies`).then(r => r.data);
 export const kpiGet = (companyId) =>
     api.get(`/thesis/${companyId}/kpis`).then(r => r.data);
-export const kpiRun = (companyId, onStatus = null) =>
-    api.post(`/thesis/${companyId}/kpis`).then(r => startAndPoll(r.data, onStatus));
+export const kpiRun = (companyId, onStatus = null, mode = "full") =>
+    api.post(`/thesis/${companyId}/kpis`, null, { params: { mode } }).then(r => startAndPoll(r.data, onStatus));
 export const kpiEdit = (companyId, kpis) =>
     api.put(`/thesis/${companyId}/kpis`, { kpis }).then(r => r.data);
 export const kpiSearch = (companyId, query, onStatus = null) =>

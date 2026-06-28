@@ -333,6 +333,51 @@ async def run_company_kpis(company: str, ticker: str, drivers: list, sources: li
     return coeff
 
 
+async def run_company_kpis_incremental(company: str, ticker: str, drivers: list, existing_kpis: list,
+                                       new_doc_sources: list = None, context_news: list = None,
+                                       listing_sources: list = None, period: str = None) -> dict:
+    """Incremental update: extract KPIs ONLY from newly added documents, merge them with
+    the existing snapshot KPIs (new value wins on name collision), then re-judge the full
+    set with the current news. Reuses everything else (no web search, no doc re-parse)."""
+    driver_names = [d.get("name") for d in drivers if d.get("name")]
+    merged, order = {}, []
+    for k in (existing_kpis or []):
+        key = _norm(k.get("name"))
+        if not key:
+            continue
+        if key not in merged:
+            order.append(key)
+        merged[key] = dict(k)
+    if new_doc_sources:
+        ext = await _extract_kpis(company, drivers, _sources_block(new_doc_sources))
+        for k in (ext.get("kpis") or []):
+            key = _norm(k.get("name"))
+            if not key:
+                continue
+            if key not in merged:
+                order.append(key)
+            merged[key] = dict(k)  # newer document's value wins
+        if ext.get("period"):
+            period = ext.get("period")
+    kpis = [merged[key] for key in order]
+    src_list = [{"title": s.get("title"), "url": s.get("url")} for s in (listing_sources or [])][:12]
+    if not kpis:
+        return {"period": period, "kpis": [],
+                "drivers": [{"name": n, "n_kpis": 0, "signal": None, "coef": None, "verdict": None} for n in driver_names],
+                "coef_global": None, "signal_global": None, "alpha": ALPHA, "sources": src_list,
+                "note": "No hay KPIs para actualizar."}
+    judged = await _judge_kpis(company, drivers, kpis, context_news)
+    kpis = _merge_judge(kpis, judged)
+    kpis = _resolve_driver_assignments(kpis, drivers)
+    coeff = compute_kpi_coefficients(kpis, driver_names, ALPHA)
+    verdicts = {_norm(d.get("name")): d.get("verdict") for d in (judged.get("drivers") or [])}
+    for d in coeff["drivers"]:
+        d["verdict"] = verdicts.get(_norm(d.get("name")))
+    coeff["period"] = period
+    coeff["sources"] = src_list
+    return coeff
+
+
 # ---------------------- Document pre-extraction (Gemini Flash, multimodal) ----------------------
 
 DOC_EXTRACT_SYS = """Eres un analista financiero. Vas a leer un documento (presentación de inversores, informe, o imagen de un gráfico) de una empresa y debes EXTRAER de forma fiel toda la información OPERATIVA y de KPIs que contenga: ARR, NRR/net revenue retention, nº de clientes/suscriptores, backlog/RPO, bookings, book-to-bill, churn, ARPU, DAU/MAU, ingresos por segmento/geografía, guidance, y cualquier métrica con su VALOR y PERIODO.
