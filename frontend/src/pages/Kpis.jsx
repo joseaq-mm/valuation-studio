@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap } from "lucide-react";
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -46,6 +46,24 @@ export default function Kpis() {
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null);   // analysis progress text
     const [editing, setEditing] = useState(false);
+    const [sortMode, setSortMode] = useState("thesis");  // thesis | analysis | alpha
+
+    const sortedCompanies = useMemo(() => {
+        const arr = companies.map((c, i) => ({ c, i }));
+        if (sortMode === "alpha") {
+            arr.sort((a, b) => (a.c.ticker || "").localeCompare(b.c.ticker || "", "es"));
+        } else if (sortMode === "analysis") {
+            // Oldest analysis first; never-analyzed treated as oldest (need attention).
+            arr.sort((a, b) => {
+                const ta = a.c.kpi_generated_at ? Date.parse(a.c.kpi_generated_at) : 0;
+                const tb = b.c.kpi_generated_at ? Date.parse(b.c.kpi_generated_at) : 0;
+                return ta - tb;
+            });
+        } else {
+            arr.sort((a, b) => a.i - b.i);  // API order = by thesis generation (default)
+        }
+        return arr.map((x) => x.c);
+    }, [companies, sortMode]);
     const [draft, setDraft] = useState([]);
     const [query, setQuery] = useState("");
     const [searching, setSearching] = useState(false);
@@ -149,8 +167,22 @@ export default function Kpis() {
             </p>
 
             {/* Company selector */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]" data-testid="kpi-sort-controls">
+                <span className="uppercase tracking-wider text-[#7A7A7A] mr-1">Ordenar:</span>
+                {[
+                    { k: "analysis", label: "Antigüedad de análisis", tip: "Ordena por cuándo se analizó o reanalizó por última vez (lo más antiguo —o sin analizar— primero; lo que más conviene actualizar)." },
+                    { k: "alpha", label: "Alfabético", tip: "Ordena las empresas por ticker, de la A a la Z." },
+                    { k: "thesis", label: "Por tesis", tip: "Antigüedad en la página: orden en que se generaron las empresas desde su tesis (orden por defecto)." },
+                ].map((o) => (
+                    <HoverTip key={o.k} text={o.tip}>
+                        <button onClick={() => setSortMode(o.k)}
+                            className={`px-2 py-0.5 border transition-colors ${sortMode === o.k ? "bg-black text-[#FDF1E6] border-black" : "bg-white text-black border-black/30 hover:border-black"}`}
+                            data-testid={`kpi-sort-${o.k}`}>{o.label}</button>
+                    </HoverTip>
+                ))}
+            </div>
             <div className="flex flex-wrap gap-2 mb-6" data-testid="kpi-company-selector">
-                {companies.map((c) => (
+                {sortedCompanies.map((c) => (
                     <button
                         key={c.id}
                         onClick={() => selectCompany(c.id)}
