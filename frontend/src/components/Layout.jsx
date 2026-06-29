@@ -127,6 +127,7 @@ export default function Layout({ children }) {
                             <Link to="/thesis" className={navClass("/thesis")} data-testid="nav-link-thesis">{t("nav.thesis")}</Link>
                             <Link to="/visual" className={navClass("/visual")} data-testid="nav-link-visual">Visual</Link>
                             <Link to="/kpis" className={navClass("/kpis")} data-testid="nav-link-kpis">KPIs</Link>
+                            <Link to="/macro" className={navClass("/macro")} data-testid="nav-link-macro">Macro</Link>
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">
                             <HelpChat />

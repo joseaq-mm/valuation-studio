@@ -42,3 +42,17 @@
 - **Reintentos multimodal:** `extract_document_text()` ahora reintenta 2-3 veces (los docs largos/pesados a veces hacían timeout y quedaban ilegibles).
 - **Reintentar lectura (UI + API):** nuevo `POST /api/thesis/{company_id}/kpis/files/{file_id}/retry` (re-descarga bytes de storage, status→processing, relanza extractor). Botón "Reintentar lectura" (`kpi-file-retry-{id}`) en `KpiDocuments.jsx` para docs en estado `error` con archivo descargable. `kpiFileRetry` en `lib/api.js`.
 - **Verificado (self-test, sin testing_agent):** pypdf extrae texto OK; subida e2e PDF → status `ready`, auto-nombrado "Informe resultados Q3 2025", texto correcto; endpoint retry error→processing→ready OK; página /kpis renderiza sin errores.
+
+## 2026-06-29 — Página Macro (panel macro EEUU vía FRED)
+- **Nueva fuente:** FRED (Reserva Federal de St. Louis), API key gratuita en `backend/.env` → `FRED_API_KEY`. Datos oficiales, dominio público.
+- **Backend:** `services/macro.py` (fetch concurrente httpx + derivadas + caché Mongo `macro_cache`, TTL 6h) y `routes/macro.py` → `GET /api/macro/indicators?refresh=`. Registrado en `server.py`.
+- **6 indicadores:**
+  1. Indicador Buffett (proxy) = `NCBEILQ027S` (renta variable corp. no financiera, $M→$B) ÷ `GDP` ($B) ×100. (Wilshire 5000 ya no está en FRED desde 2023 → se usa este proxy; da ~218%, muy cercano al real).
+  2. Tipo FED = `FEDFUNDS` (%).
+  3. Inflación IPC interanual = `CPIAUCSL` YoY %.
+  4. Productividad = `OPHNFB` YoY % (+ índice 2017=100).
+  5. M2 crecimiento = `M2SL` YoY % (+ nivel $B).
+  6. Petróleo WTI = `DCOILWTICO` ($/barril, + var. ~30 días).
+- **Frontend:** `pages/Macro.jsx` (grid de tarjetas con icono, valor en serif, unidad, interpretación, línea de contexto, frecuencia y fecha del dato), ruta `/macro` en `App.js`, enlace "Macro" en el nav (`Layout.jsx`), `macroIndicators` en `lib/api.js`. Cada tarjeta tiene **tooltip** (icono Info) que explica qué mide, interpretación (↑/↓), unidades/moneda, frecuencia y fuente.
+- **Verificado (self-test):** `GET /api/macro/indicators` devuelve los 6 con valores correctos; página `/macro` renderiza y los tooltips muestran la explicación completa. Página pública (no requiere login).
+- **PENDIENTE (mañana):** definir la fórmula del coeficiente cara/barata (>1 barato, <1 caro) combinando los 6 factores con pesos.

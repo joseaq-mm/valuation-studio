@@ -12,6 +12,7 @@ import Thesis from "@/pages/Thesis";
 import ThesisDetail from "@/pages/ThesisDetail";
 import Visual from "@/pages/Visual";
 import Kpis from "@/pages/Kpis";
+import Macro from "@/pages/Macro";
 import AuthCallback from "@/pages/AuthCallback";
 import Instructions from "@/pages/Instructions";
 import { AuthProvider } from "@/lib/auth";
@@ -39,6 +40,7 @@ function AppRouter() {
                 <Route path="/thesis/:id" element={<ThesisDetail />} />
                 <Route path="/visual" element={<Visual />} />
                 <Route path="/kpis" element={<Kpis />} />
+                <Route path="/macro" element={<Macro />} />
                 <Route path="/instrucciones" element={<Instructions />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
             </Routes>

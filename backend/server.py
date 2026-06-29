@@ -38,6 +38,9 @@ api_router.include_router(make_thesis_router(db, _auth_required, _auth_optional)
 from routes.help import make_router as make_help_router
 api_router.include_router(make_help_router())
 
+from routes.macro import make_router as make_macro_router
+api_router.include_router(make_macro_router(db))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
