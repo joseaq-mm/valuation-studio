@@ -56,3 +56,6 @@
 - **Frontend:** `pages/Macro.jsx` (grid de tarjetas con icono, valor en serif, unidad, interpretación, línea de contexto, frecuencia y fecha del dato), ruta `/macro` en `App.js`, enlace "Macro" en el nav (`Layout.jsx`), `macroIndicators` en `lib/api.js`. Cada tarjeta tiene **tooltip** (icono Info) que explica qué mide, interpretación (↑/↓), unidades/moneda, frecuencia y fuente.
 - **Verificado (self-test):** `GET /api/macro/indicators` devuelve los 6 con valores correctos; página `/macro` renderiza y los tooltips muestran la explicación completa. Página pública (no requiere login).
 - **PENDIENTE (mañana):** definir la fórmula del coeficiente cara/barata (>1 barato, <1 caro) combinando los 6 factores con pesos.
+
+## Backlog anotado (29-jun-2026)
+- [Macro · futuro] Guardar un **histórico del coeficiente** cara/barata + mini-gráfico de tendencia en la página Macro ("¿el mercado está cada vez más caro o más barato?"). Aprobado por el usuario para implementar MÁS TARDE (después de definir la fórmula del coeficiente).
