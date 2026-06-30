@@ -46,12 +46,21 @@ export default function Kpis() {
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null);   // analysis progress text
     const [editing, setEditing] = useState(false);
-    const [sortMode, setSortMode] = useState("thesis");  // thesis | analysis | alpha
+    const [sortMode, setSortMode] = useState("thesis");  // thesis | analysis | alpha | coef
 
     const sortedCompanies = useMemo(() => {
         const arr = companies.map((c, i) => ({ c, i }));
         if (sortMode === "alpha") {
             arr.sort((a, b) => (a.c.ticker || "").localeCompare(b.c.ticker || "", "es"));
+        } else if (sortMode === "coef") {
+            // Highest coefficient first; companies without coefficient go last.
+            arr.sort((a, b) => {
+                const ca = a.c.coef_global, cb = b.c.coef_global;
+                if (ca == null && cb == null) return a.i - b.i;
+                if (ca == null) return 1;
+                if (cb == null) return -1;
+                return cb - ca;
+            });
         } else if (sortMode === "analysis") {
             // Oldest analysis first; never-analyzed treated as oldest (need attention).
             arr.sort((a, b) => {
@@ -172,6 +181,7 @@ export default function Kpis() {
                 {[
                     { k: "analysis", label: "Antigüedad de análisis", tip: "Ordena por cuándo se analizó o reanalizó por última vez (lo más antiguo —o sin analizar— primero; lo que más conviene actualizar)." },
                     { k: "alpha", label: "Alfabético", tip: "Ordena las empresas por ticker, de la A a la Z." },
+                    { k: "coef", label: "Por coeficiente", tip: "Ordena por el coeficiente de validación, de mayor a menor (las tesis que más se están validando primero; las que se deterioran al final). Las empresas sin coeficiente calculado quedan al final." },
                     { k: "thesis", label: "Por tesis", tip: "Orden por defecto: por antigüedad del plan de tesis. Una empresa aparece aquí cuando desarrollas su plan de tesis; se listan en el orden en que fuiste creando esos planes en tu cuenta (igual que en la página de Tesis)." },
                 ].map((o) => (
                     <HoverTip key={o.k} text={o.tip}>
