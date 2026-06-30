@@ -59,3 +59,27 @@
 
 ## Backlog anotado (29-jun-2026)
 - [Macro · futuro] Guardar un **histórico del coeficiente** cara/barata + mini-gráfico de tendencia en la página Macro ("¿el mercado está cada vez más caro o más barato?"). Aprobado por el usuario para implementar MÁS TARDE (después de definir la fórmula del coeficiente).
+
+## Coeficiente Macro cara/barata — DISEÑO EN CURSO (29-jun-2026, NO IMPLEMENTAR aún)
+Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratamiento de factores absolutos/nivel (punto 4). "De momento no hagas nada."
+
+### CONFIRMADO por el usuario:
+- **4 áreas, peso 25% cada una:**
+  1. PRECIO DEL MERCADO (base) = Indicador Buffett.
+  2. FACILIDAD PARA CREAR DINERO (sube precios) = Tipo FED + Inflación.
+  3. PRODUCTIVIDAD (baja precios) = Productividad + Petróleo.
+  4. CREACIÓN REAL DE DINERO = M2.
+- **Métricas que alimentan cada factor (punto 2 confirmado):**
+  - Buffett: valor actual (%). Tipo FED: valor actual (%). Inflación: IPC interanual (%).
+  - Productividad: **NIVEL del índice OPHNFB (2017=100)**, NO la variación.
+  - M2: **NIVEL en miles de M$ (M2SL)**, NO la variación YoY.
+  - Petróleo: precio actual ($/barril).
+- **Signos:** Buffett +, Tipo FED +, Inflación +, Productividad −, M2 −, Petróleo +.
+- **Combinación (punto 3 confirmado):** dentro de cada área media de factores; S global = media de las 4 áreas (equiponderadas) ∈ [−1,+1]. **C = 1 + 0,3·S**, recortado a **[0,7 – 1,3]**. Fuera de rango → recortar pero mostrar **AVISO** (mercado extremadamente caro/barato).
+- **Significado de los extremos:** C=0,7 → mercado barato, aumentar exposición ~30% a renta variable / empresas de alto crecimiento. C=1,3 → caro, tener ~30% en efectivo o defensivas.
+- **Punto 5 confirmado:** las listas de empresas las propone el AGENTE. Defensivas sugeridas: KO, PG, JNJ, WM (revisar). Alto crecimiento sugeridas: NVDA, PLTR, TSLA, SHOP (revisar). Mostrar como ejemplo en los extremos del índice.
+- Áreas/factores/coeficiente y su significado (literal + teoría) → como TOOLTIPS en la futura página.
+
+### PENDIENTE DE DECISIÓN DEL USUARIO (tras sus pruebas):
+- **Punto 1 — Normalización:** z-score vs historia (~20a, ±2σ) vs percentil histórico vs OTRA que proponga el usuario. SIN DECIDIR.
+- **Punto 4 — Factores de nivel monotónico (productividad-nivel y M2-nivel):** nivel absoluto puro (a) vs aceleración/variación respecto a tendencia (b) vs OTRA. SIN DECIDIR. (El usuario quiere darle una vuelta; su teoría: el precio de mercado es el resultado de fuerzas opuestas — productividad baja precios, creación de dinero los sube, y el nivel de M2 eleva el precio admisible de los activos = transición de economía del trabajo a economía de creación/propiedad.)
