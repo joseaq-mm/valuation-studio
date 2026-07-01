@@ -1651,6 +1651,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             u, ttl = s.get("url"), (s.get("title") or "").strip()
             if u and ttl and u not in title_by_url:
                 title_by_url[u] = ttl
+        existing_auto = await db.kpi_files.count_documents(
+            {"company_id": company_id, "user_id": user_id, "is_deleted": False, "auto_fetched": True})
+        added_auto = False
         for pdf in pdfs:
             url = pdf.get("url")
             if not url:
@@ -1692,6 +1695,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             if sup:
                 rec["supersedes"] = sup
             await db.kpi_files.insert_one(rec)
+            added_auto = True
         # SEC EDGAR fallback: if no investor deck PDF was found, US filers still
         # publish the substance in their latest 10-Q/10-K → ingest it as an auto doc.
         if not pdfs and ticker:
@@ -1726,8 +1730,55 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     if sup:
                         rec["supersedes"] = sup
                     await db.kpi_files.insert_one(rec)
+                    added_auto = True
                 except Exception as e:
                     logger.warning(f"SEC ingest failed ({company_id}): {e}")
+        # HTML fallback (Opción A): if nothing official was captured (no deck PDF, no
+        # SEC filing) and the company has no auto document yet, ingest the best earnings/
+        # results WEB PAGE we fully read as an auto document, so there is always a source.
+        if not added_auto and existing_auto == 0 and web_sources:
+            saved_urls = set()
+            for e in await db.kpi_files.find(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False},
+                {"_id": 0, "source_url": 1}).to_list(length=50):
+                if e.get("source_url"):
+                    saved_urls.add(e["source_url"])
+            best = None
+            for s in web_sources:
+                su = (s.get("url") or "").strip()
+                txt = (s.get("snippet") or "").strip()
+                if not su.startswith("http") or su in saved_urls or len(txt) < 500:
+                    continue
+                blob = f"{su} {s.get('title') or ''} {txt}".lower()
+                if any(k in blob for k in ("earnings", "quarter", "result", "investor",
+                                           "shareholder", "revenue", "guidance",
+                                           " q1", " q2", " q3", " q4", "fy2")):
+                    best = s
+                    break
+            count = await db.kpi_files.count_documents(
+                {"company_id": company_id, "user_id": user_id, "is_deleted": False})
+            if best and count < KPI_MAX_FILES:
+                txt = (best.get("snippet") or "").strip()
+                fid = uuid.uuid4().hex
+                storage_path = f"{APP_NAME}/kpi-files/{user_id}/{fid}.txt"
+                try:
+                    res = await asyncio.to_thread(put_object, storage_path, txt.encode("utf-8"), "text/plain")
+                    now = datetime.now(timezone.utc).isoformat()
+                    name = (best.get("title") or title_by_url.get(best.get("url")) or "Página de resultados").strip()[:120]
+                    rec = {
+                        "id": fid, "user_id": user_id, "company_id": company_id,
+                        "storage_path": res.get("path", storage_path),
+                        "original_filename": name, "content_type": "text/html", "size": len(txt.encode("utf-8")),
+                        "ext": "htm", "kind": "auto", "auto_fetched": True, "source": "web",
+                        "source_url": best.get("url"),
+                        "display_name": name,
+                        "description": "Página oficial/de resultados leída automáticamente de la web.",
+                        "status": "ready", "selected": True, "is_deleted": False,
+                        "extracted_text": txt, "created_at": now, "extracted_at": now,
+                    }
+                    await db.kpi_files.insert_one(rec)
+                except Exception as e:
+                    logger.warning(f"HTML fallback ingest failed ({company_id}): {e}")
         return web_sources
 
     async def _run_kpi_job(job_id: str, company_id: str, user_id: str, mode: str = "full"):
@@ -1779,6 +1830,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             snap.pop("_cost", None)
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
+            snap["no_source_doc"] = not files  # E: no official/source document available → UI shows a notice
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": snap}})
             await db.thesis_jobs.update_one(

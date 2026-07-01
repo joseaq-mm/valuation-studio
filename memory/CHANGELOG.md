@@ -83,3 +83,12 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 ### PENDIENTE DE DECISIÓN DEL USUARIO (tras sus pruebas):
 - **Punto 1 — Normalización:** z-score vs historia (~20a, ±2σ) vs percentil histórico vs OTRA que proponga el usuario. SIN DECIDIR.
 - **Punto 4 — Factores de nivel monotónico (productividad-nivel y M2-nivel):** nivel absoluto puro (a) vs aceleración/variación respecto a tendencia (b) vs OTRA. SIN DECIDIR. (El usuario quiere darle una vuelta; su teoría: el precio de mercado es el resultado de fuerzas opuestas — productividad baja precios, creación de dinero los sube, y el nivel de M2 eleva el precio admisible de los activos = transición de economía del trabajo a economía de creación/propiedad.)
+
+## 2026-07-01 — KPIs: orden por coeficiente + auto-descarga informe (A) + aviso sin fuente (E)
+- **Orden "Por coeficiente"** en `Kpis.jsx`: 4º botón de orden (mayor→menor; empresas sin coeficiente al final). `data-testid="kpi-sort-coef"`. Verificado (render + lógica comparador).
+- **A (mejor cobertura de descarga automática del informe oficial):**
+  - `fetcher.py`: `FETCH_MAX_PDFS` 1→3, `FETCH_MAX_ATTEMPTS` 12→18, `FETCH_PDF_MAX_BYTES` 15→25 MB, `_DEADLINE_SECS` 35→50.
+  - `_pdf_relevant` **relajado**: acepta PDFs en dominios de IR fuertes (`ir.`, `/investor`, `investor.`, `sec.gov`, **`q4cdn`/`q4inc`** — CDN dominante de decks con nombre hasheado) aunque el nombre/ticker no esté en la URL; mantiene el rechazo de PDFs ajenos (fondos que solo mencionan la empresa en el cuerpo). Verificado con casos unitarios.
+  - **A3 · fallback HTML** en `_auto_fetch_for_kpis` (`routes/thesis.py`): si no hay deck PDF ni informe SEC y la empresa no tiene documento auto, **ingiere la mejor página de resultados/IR** ya leída como documento auto (`kind:auto`, `ext:htm`, texto extraído = contenido limpio de la página). Así siempre hay una fuente.
+- **E (aviso honesto):** el snapshot marca `no_source_doc=True` cuando no hay ningún documento fuente disponible; `Kpis.jsx` muestra un **aviso rojo** (`kpi-no-source-warning`) indicando subir el PDF o pegar el transcript. Verificado en pantalla.
+- **Nota:** A2/E verificados (unit test + screenshot). A3 no se probó con un análisis LLM en vivo para **ahorrar créditos**; lógica revisada y backend arranca OK.

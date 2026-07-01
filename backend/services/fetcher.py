@@ -16,13 +16,13 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 FETCH_MAX_PAGES = 6            # HTML results to open and read fully
-FETCH_MAX_PDFS = 1            # PDFs downloaded per analysis (decks are heavy → keep low)
-FETCH_MAX_ATTEMPTS = 12       # total URLs to try before giving up
+FETCH_MAX_PDFS = 3            # PDFs downloaded per analysis (decks/press releases)
+FETCH_MAX_ATTEMPTS = 18       # total URLs to try before giving up
 FETCH_PER_PAGE_CHARS = 6000   # chars kept per HTML page
 FETCH_TOTAL_CHARS = 40000     # global text budget across pages
-FETCH_PDF_MAX_BYTES = 15 * 1024 * 1024
+FETCH_PDF_MAX_BYTES = 25 * 1024 * 1024
 _REQ_TIMEOUT = 9.0
-_DEADLINE_SECS = 35.0
+_DEADLINE_SECS = 50.0
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; ValuationStudio/1.0)"}
 
 _GENERIC_TOKENS = {"inc", "corp", "corporation", "the", "ltd", "plc", "sa", "ag",
@@ -36,19 +36,22 @@ def _name_tokens(company: str):
 
 def _pdf_relevant(url, title, snippet, name_tokens, ticker):
     """A downloaded PDF must (1) clearly belong to the company — its ticker/name in the
-    URL or TITLE (not merely mentioned in the body, which would also match a fund's
-    holdings report) — and (2) look like an INVESTOR document."""
+    URL or TITLE, OR it sits on a strong investor-relations domain (covers decks with
+    hashed filenames on IR CDNs like s2.q4cdn.com) — and (2) look like an INVESTOR
+    document. The search is already scoped to the company, so an IR-domain hit is
+    almost certainly this company's."""
+    ur = url.lower()
+    strong_ir = any(k in ur for k in ("ir.", "/investor", "investor.", "sec.gov", "q4cdn", "q4inc"))
     where = f"{url} {title}".lower()
     company_match = (ticker and len(ticker) >= 2 and ticker.lower() in where) or any(tok in where for tok in name_tokens)
-    if not company_match:
+    if not (company_match or strong_ir):
         return False
     hay = f"{url} {title} {snippet}".lower()
     doc_signal = any(k in hay for k in (
         "update", "result", "quarter", "earnings", "shareholder", "presentation",
         "annual report", "investor", "press release", "10-q", "10-k", "8-k",
         " fy2", " q1", " q2", " q3", " q4", "-q1", "-q2", "-q3", "-q4"))
-    ir_domain = any(k in url.lower() for k in (
-        "ir.", "/investor", "investor.", "sec.gov", "/static-files/", "/financials"))
+    ir_domain = strong_ir or any(k in ur for k in ("/static-files/", "/financials"))
     return doc_signal or ir_domain
 
 

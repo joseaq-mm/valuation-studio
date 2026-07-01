@@ -291,6 +291,16 @@ export default function Kpis() {
                         </div>
                     </div>
 
+                    {snap.no_source_doc && (
+                        <div className="border border-[#B32A22]/50 bg-[#FBE9E7] p-3 mb-4 flex items-start gap-2 max-w-3xl" data-testid="kpi-no-source-warning">
+                            <AlertTriangle size={16} className="text-[#B32A22] shrink-0 mt-0.5" />
+                            <div className="text-[13px] text-[#8a2318] leading-snug">
+                                No se encontró ningún <strong>informe o deck oficial</strong> de {selCompany?.name} para descargar automáticamente, así que el coeficiente se ha calculado solo con búsquedas web (menos fiable).
+                                Para una validación robusta, <strong>sube el PDF de resultados</strong> o <strong>pega el transcript</strong> de la llamada en la sección «Documentos como fuente» de abajo y pulsa <em>Actualizar</em>.
+                            </div>
+                        </div>
+                    )}
+
                     {snap.note && <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-3 text-sm text-[#7a5a10] mb-4">{snap.note}</div>}
 
                     {/* Targeted KPI search — adds a specific datapoint and recomputes the coefficient */}
