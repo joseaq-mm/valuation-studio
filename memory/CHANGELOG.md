@@ -92,3 +92,8 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
   - **A3 · fallback HTML** en `_auto_fetch_for_kpis` (`routes/thesis.py`): si no hay deck PDF ni informe SEC y la empresa no tiene documento auto, **ingiere la mejor página de resultados/IR** ya leída como documento auto (`kind:auto`, `ext:htm`, texto extraído = contenido limpio de la página). Así siempre hay una fuente.
 - **E (aviso honesto):** el snapshot marca `no_source_doc=True` cuando no hay ningún documento fuente disponible; `Kpis.jsx` muestra un **aviso rojo** (`kpi-no-source-warning`) indicando subir el PDF o pegar el transcript. Verificado en pantalla.
 - **Nota:** A2/E verificados (unit test + screenshot). A3 no se probó con un análisis LLM en vivo para **ahorrar créditos**; lógica revisada y backend arranca OK.
+
+## 2026-07-01 (fix) — KPIs: el documento auto-descargado no aparecía tras analizar
+- **Bug reportado (Neurocrine/NBIX):** al analizar no aparecía ni documento ni aviso. **Causa raíz:** el backend SÍ descargaba el documento (10-Q de SEC EDGAR) y `no_source_doc=False` (correcto), pero el panel `KpiDocuments` del frontend NO se refrescaba tras el análisis → el documento recién añadido no se veía hasta recargar la página.
+- **Fix:** en `Kpis.jsx`, `analyze()` incrementa `docsRefresh` tras `loadCompanies()`; se pasa `refreshKey={docsRefresh}` a `<KpiDocuments>`, cuyo `useEffect` de carga ahora depende de `[load, refreshKey]` → recarga la lista de archivos al terminar cada análisis (full o incremental).
+- **Verificado por testing_agent (frontend, 100%):** 0 archivos antes de Analizar → 1 doc '10-Q · SEC EDGAR' (badge AUTO·WEB, estado 'listo') inmediatamente después SIN recargar; sin aviso falso; coeficiente global mostrado. Sin issues.
