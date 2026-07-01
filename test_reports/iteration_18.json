@@ -1,0 +1,23 @@
+{
+  "summary": "Verified BUG FIX for KPI documents auto-refresh in /kpis page for Neurocrine (NBIX). After clicking 'Analizar' with an empty state, the SEC EDGAR 10-Q PDF is auto-fetched by the backend and now appears in the 'Documentos como fuente' panel WITHOUT any manual page reload (thanks to the setDocsRefresh bump in analyze() and refreshKey prop in KpiDocuments). No 'no-source' warning is displayed since a source doc was successfully retrieved. kpi-result shows global coefficient 1.38 (Validándose · S=0.77).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Kpis.jsx analyze() correctly sequences: setSnap(result) → await loadCompanies() → setDocsRefresh(n+1). This triggers KpiDocuments useEffect([load, refreshKey]) to refetch the file list — verified end-to-end.",
+    "Minor: line 45 comment is clear. No issue found. The kpi-file-input testid (file input element) shares the 'kpi-file-' prefix — while it doesn't affect the fix, a stricter regex in tests (kpi-file-<hex>) avoids false positives (already handled in this test)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only test)", "frontend": "100%"},
+  "test_credentials": "cookie session_token=test_profile_token_fixed_123 on valuation-studio.preview.emergentagent.com (user_id test_profile_user_123). Session validated (GET /api/auth/me → 200).",
+  "seed_data_creation": "None — reused pre-seeded thesis_test_nbix (Neurocrine, NBIX) with no snapshot/files. Test consumed one full analysis (LLM + SEC EDGAR fetch) as expected.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Full-analysis flow on NBIX (thesis_test_nbix) auto-downloads a SEC EDGAR 10-Q PDF (~1.1 MB, filename '10-Q YYYY-MM-DD · SEC EDGAR', badge 'AUTO · WEB', status 'listo'). After a successful full analysis the company now has a snapshot + one document, so to re-run this test the seed must be reset (unset kpi_snapshot & delete kpi_files for thesis_test_nbix, or reseed). Analysis takes ~60-90s (Emergent LLM + PDF download). The fix is a small React-state change (refreshKey bump) — safe and low risk.",
+  "rca_of_the_issue": "Root cause of the original bug: analyze() updated `snap` locally but never signaled the sibling <KpiDocuments> component to reload its file list; auto-fetched files were persisted by the backend but the panel kept its stale in-memory state until a manual page reload. Fix: add docsRefresh state in Kpis.jsx, bump it after each analysis, and pass refreshKey into KpiDocuments so its load() effect re-runs. Verified live: 0 files before Analizar → 1 SEC EDGAR 10-Q file immediately after Analizar completes, no page reload; kpi-no-source-warning absent; kpi-result shows global coef 1.38."
+}

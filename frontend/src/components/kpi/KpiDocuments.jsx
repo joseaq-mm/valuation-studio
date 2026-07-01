@@ -13,7 +13,7 @@ const fmtSize = (b) => (b == null ? "" : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` 
 
 // Per-company document sources for KPI analysis: upload PDF/images (pre-extracted
 // by AI on upload), paste a transcript, select which to use, delete obsolete.
-export default function KpiDocuments({ companyId }) {
+export default function KpiDocuments({ companyId, refreshKey }) {
     const [files, setFiles] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [tOpen, setTOpen] = useState(false);
@@ -31,7 +31,7 @@ export default function KpiDocuments({ companyId }) {
         catch { setFiles([]); }
     }, [companyId]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { load(); }, [load, refreshKey]);
 
     // Poll while any file is still being processed (pre-extraction).
     useEffect(() => {

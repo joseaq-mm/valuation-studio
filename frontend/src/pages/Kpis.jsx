@@ -42,6 +42,7 @@ export default function Kpis() {
     const { user } = useAuth();
     const [companies, setCompanies] = useState([]);
     const [selId, setSelId] = useState(null);
+    const [docsRefresh, setDocsRefresh] = useState(0);  // bump → KpiDocuments reloads (show auto-fetched docs after analysis)
     const [snap, setSnap] = useState(null);
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null);   // analysis progress text
@@ -106,6 +107,7 @@ export default function Kpis() {
             const result = res?.result || res;
             setSnap(result);
             await loadCompanies();
+            setDocsRefresh((n) => n + 1);  // reveal auto-fetched docs (SEC/deck/página) added during the analysis
             toast.success(incr ? "KPIs actualizados" : "KPIs analizados");
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Error analizando KPIs");
@@ -224,7 +226,7 @@ export default function Kpis() {
             {!selId && <div className="text-sm text-[#4A4A4A] border border-dashed border-black/30 p-6 text-center">Elige una empresa para empezar.</div>}
 
             {/* Document sources (available before & after analysis) */}
-            {selId && <KpiDocuments companyId={selId} />}
+            {selId && <KpiDocuments companyId={selId} refreshKey={docsRefresh} />}
 
             {/* Qualitative news (informs scores; aged out over time) */}
             {selId && <KpiNews companyId={selId} />}
