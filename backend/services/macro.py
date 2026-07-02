@@ -161,30 +161,40 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
 
     indicators = []
 
-    # 1) Buffett indicator (proxy): equities ($M → $B) / GDP ($B) × 100
-    buffett = None
-    extra_b = {}
-    if equities and gdp:
-        eq_busd = equities[0]["value"] / 1000.0      # millions → billions
-        gdp_busd = gdp[0]["value"]
-        if gdp_busd:
-            buffett = round(eq_busd / gdp_busd * 100, 1)
-        extra_b = {"market_cap_busd": round(eq_busd, 1), "gdp_busd": round(gdp_busd, 1)}
+    def _q_yoy(obs):
+        if obs and len(obs) > 4 and obs[4]["value"]:
+            return round((obs[0]["value"] - obs[4]["value"]) / obs[4]["value"] * 100, 2)
+        return None
+
+    # 1) Renta variable de EEUU (numerador del clásico indicador Buffett)
     indicators.append({
-        "key": "buffett",
-        "label": "Indicador Buffett (proxy)",
-        "value": buffett,
-        "unit": "%",
+        "key": "equities",
+        "label": "Renta variable (EEUU)",
+        "value": round(equities[0]["value"] / 1000.0, 1) if equities else None,  # millones → miles de M$
+        "unit": "miles de M$",
         "as_of": equities[0]["date"] if equities else None,
         "frequency": "Trimestral",
-        "description": ("Capitalización de la renta variable corporativa no financiera de EEUU dividida entre el PIB, "
-                        "en porcentaje. Mide cómo de cara está la bolsa frente al tamaño de la economía real. "
-                        "Como referencia histórica: por debajo de ~75% se considera barato, entre ~90-115% razonable, "
-                        "y por encima de ~120% caro/sobrevalorado."),
-        "interpretation": "↑ más caro · ↓ más barato",
-        "extra": extra_b,
-        "source": "FRED · NCBEILQ027S ÷ GDP",
-        "note": "Proxy: el índice Wilshire 5000 dejó de publicarse en FRED (2023); se usa la renta variable corporativa no financiera.",
+        "description": ("Valor de mercado de la renta variable corporativa no financiera de EEUU (capitalización "
+                        "bursátil agregada). Es el numerador del clásico 'indicador Buffett' (renta variable ÷ PIB). "
+                        "Cuanto mayor frente al PIB, más cara está la bolsa."),
+        "interpretation": "↑ bolsa más valorada",
+        "extra": {"yoy_pct": _q_yoy(equities)},
+        "source": "FRED · NCBEILQ027S",
+    })
+
+    # 2) PIB de EEUU (denominador del indicador Buffett)
+    indicators.append({
+        "key": "gdp",
+        "label": "PIB (EEUU)",
+        "value": round(gdp[0]["value"], 1) if gdp else None,
+        "unit": "miles de M$",
+        "as_of": gdp[0]["date"] if gdp else None,
+        "frequency": "Trimestral",
+        "description": ("Producto Interior Bruto de EEUU (tamaño de la economía real, anualizado). Es el denominador "
+                        "del 'indicador Buffett'; sirve para relativizar cómo de grande es la bolsa frente a la economía."),
+        "interpretation": "↑ economía mayor",
+        "extra": {"yoy_pct": _q_yoy(gdp)},
+        "source": "FRED · GDP",
     })
 
     # 2) Fed funds rate
@@ -219,39 +229,24 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
         "source": "FRED · CPIAUCSL",
     })
 
-    # 4) Labor productivity (index + YoY) — quarterly, 4 periods back
+    # 4) Labor productivity (index level, YoY as context) — quarterly, 4 periods back
     prod_val, prod_date, prod_yoy = _yoy(prod, 4)
     indicators.append({
         "key": "productivity",
         "label": "Productividad (output por hora)",
-        "value": prod_yoy,
-        "unit": "% interanual",
+        "value": round(prod_val, 1) if prod_val is not None else None,
+        "unit": "índice (2017=100)",
         "as_of": prod_date,
         "frequency": "Trimestral",
-        "description": ("Productividad laboral del sector empresarial no agrícola de EEUU (producción por hora trabajada), "
-                        "mostrada como variación interanual. Más productividad permite crecer sin inflación y sostiene los márgenes "
-                        "empresariales; es un viento de cola estructural para la bolsa."),
+        "description": ("Productividad laboral del sector empresarial no agrícola de EEUU (producción por hora "
+                        "trabajada), como índice (base 2017=100). Más productividad permite crecer sin inflación y "
+                        "sostiene los márgenes empresariales; es un viento de cola estructural para la bolsa."),
         "interpretation": "↑ economía más eficiente (positivo)",
-        "extra": {"index_value": prod_val, "index_base": "2017=100"},
+        "extra": {"yoy_pct": prod_yoy},
         "source": "FRED · OPHNFB",
     })
 
-    # 5) M2 money supply (YoY) — 12 monthly periods back
-    m2_val, m2_date, m2_yoy = _yoy(m2, 12)
-    indicators.append({
-        "key": "m2_growth",
-        "label": "Masa monetaria M2 (crecimiento)",
-        "value": m2_yoy,
-        "unit": "% interanual",
-        "as_of": m2_date,
-        "frequency": "Mensual",
-        "description": ("Variación interanual de la masa monetaria M2 de EEUU (efectivo, depósitos y equivalentes líquidos). "
-                        "Cuánto crece el dinero en circulación. Un crecimiento fuerte tiende a inflar activos (bolsa, inmuebles) "
-                        "y, a la larga, los precios; una contracción endurece las condiciones financieras."),
-        "interpretation": "↑ más liquidez (suele inflar activos) · ↓ contracción",
-        "extra": {"level_busd": round(m2_val, 1) if m2_val else None},
-        "source": "FRED · M2SL",
-    })
+    # M2 se consulta para el M3 proxy pero ya no se muestra como ficha propia.
 
     # 5b) M3 (proxy) — up-to-date broad money: M2 + large time deposits +
     # institutional money market funds (ICI) + commercial paper. The Fed stopped

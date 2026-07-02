@@ -117,3 +117,10 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - **Congelación ante fallo de lectura (petición del usuario):** `resolve_ici_institutional(db)` guarda el último valor bueno en `db.macro_ici`; si la lectura semanal del ICI falla, usa ese último valor, lo marca `frozen=True` y la tarjeta muestra un **aviso** ("se ha CONGELADO en su último valor válido (<fecha>)") + marca "⚠ congelado" en el componente. Si nunca hubo lectura válida, se omite el componente con aviso.
 - Backend: `import asyncio` a nivel de módulo (bug: NameError en fetch ICI), helper `_fmt_date_es`. Frontend: aviso `macro-warning-{key}` y marca de congelado por componente. YoY del proxy se calcula sobre M2+depósitos+papel (los que tienen histórico anual); indicado en la nota.
 - Verificado (self-test): endpoint con ICI OK (31.773,7 B$), simulación de fallo → congela 4.816,3 con aviso, y tarjeta+desglose renderizan en pantalla.
+
+## 2026-07-02 (c) — Macro: reestructuración de fichas
+- **Indicador Buffett eliminado** → sustituido por 2 fichas independientes: **Renta variable (EEUU)** (`equities`, NCBEILQ027S, nivel en miles de M$ + YoY) y **PIB (EEUU)** (`gdp`, GDP, nivel + YoY).
+- **Productividad**: ahora el valor principal es el **índice (2017=100)** y el crecimiento interanual % pasa a línea de info adicional.
+- **Ficha M2 eliminada** (M2SL se sigue consultando solo para el M3 proxy).
+- UI: fichas más compactas (p-3, cifra text-3xl, icono/label reducidos) y pie de tarjeta más visible (frecuencia text-[11px] y fecha del dato en azul marino negrita, testid `macro-asof-{key}`).
+- Verificado en pantalla: 7 fichas (equities, gdp, fed_rate, inflation, productivity, m3_proxy, oil); buffett y m2_growth ausentes.
