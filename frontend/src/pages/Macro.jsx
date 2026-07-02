@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Banknote, Droplet } from "lucide-react";
+import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Banknote, Droplet, Layers, AlertTriangle } from "lucide-react";
 import { macroIndicators } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ const ICONS = {
     inflation: Flame,
     productivity: Gauge,
     m2_growth: Banknote,
+    m3: Layers,
     oil: Droplet,
 };
 
@@ -37,6 +38,8 @@ const extraLine = (ind) => {
             return e.index_value != null ? `Índice: ${nf.format(e.index_value)} (${e.index_base})` : null;
         case "m2_growth":
             return e.level_busd != null ? `Nivel M2: ${nf.format(e.level_busd)} B$` : null;
+        case "m3":
+            return e.yoy_pct != null ? `Crecimiento interanual: ${signedPct(e.yoy_pct)} (a esa fecha)` : null;
         case "oil":
             return e.change_30d_pct != null ? `~30 días: ${signedPct(e.change_30d_pct)}` : null;
         default:
@@ -72,7 +75,13 @@ const MacroCard = ({ ind }) => {
 
             <div className="mt-auto pt-3 flex items-center justify-between text-[10px] text-[#9A9A9A]">
                 <span className="uppercase tracking-wide">{ind.frequency}</span>
-                <span className="tabular-nums">Dato: {fmtDate(ind.as_of)}</span>
+                {ind.stale ? (
+                    <span className="inline-flex items-center gap-1 text-[#B8860B] font-semibold" data-testid={`macro-stale-${ind.key}`} title="La fuente ya no actualiza esta serie; es el último dato disponible">
+                        <AlertTriangle size={11} /> Desactualizada · {fmtDate(ind.as_of)}
+                    </span>
+                ) : (
+                    <span className="tabular-nums">Dato: {fmtDate(ind.as_of)}</span>
+                )}
             </div>
         </div>
     );

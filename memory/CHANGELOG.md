@@ -97,3 +97,9 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - **Bug reportado (Neurocrine/NBIX):** al analizar no aparecía ni documento ni aviso. **Causa raíz:** el backend SÍ descargaba el documento (10-Q de SEC EDGAR) y `no_source_doc=False` (correcto), pero el panel `KpiDocuments` del frontend NO se refrescaba tras el análisis → el documento recién añadido no se veía hasta recargar la página.
 - **Fix:** en `Kpis.jsx`, `analyze()` incrementa `docsRefresh` tras `loadCompanies()`; se pasa `refreshKey={docsRefresh}` a `<KpiDocuments>`, cuyo `useEffect` de carga ahora depende de `[load, refreshKey]` → recarga la lista de archivos al terminar cada análisis (full o incremental).
 - **Verificado por testing_agent (frontend, 100%):** 0 archivos antes de Analizar → 1 doc '10-Q · SEC EDGAR' (badge AUTO·WEB, estado 'listo') inmediatamente después SIN recargar; sin aviso falso; coeficiente global mostrado. Sin issues.
+
+## 2026-07-02 — Macro: tarjeta M3 (con aviso de serie desactualizada)
+- Añadida 7ª tarjeta **Masa monetaria M3** en `/macro`. Serie FRED `MABMM301USM189S` (M3 amplio de EEUU, OCDE).
+- **Limitación honesta:** la Fed dejó de publicar M3 en 2006; la serie OCDE es la mejor disponible pero su último dato es de finales de 2023 → se muestra badge ámbar **"Desactualizada · <fecha>"** (`macro-stale-{key}`) y nota en el tooltip. Backend marca `stale=True` vía `_is_stale()` (>150 días).
+- Muestra: nivel en miles de M$ (B$) como valor principal + crecimiento interanual en la línea de contexto. Icono `Layers`.
+- Verificado: endpoint devuelve M3 (nivel 20.767,4 B$, YoY −2,95%, as_of 2023-11, stale True) y la tarjeta + badge renderizan en pantalla.

@@ -61,17 +61,29 @@ def _yoy(obs: list, periods: int) -> tuple:
     return latest["value"], latest["date"], yoy
 
 
+def _is_stale(date_str: str, max_days: int = 150) -> bool:
+    """True if the latest observation is older than `max_days` (series not kept current)."""
+    if not date_str:
+        return True
+    try:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - d).days > max_days
+    except (ValueError, TypeError):
+        return False
+
+
 async def fetch_macro_indicators() -> dict:
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, oil = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, m3, oil = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 8),
             _observations(client, "GDP", 8),
             _observations(client, "FEDFUNDS", 16),
             _observations(client, "CPIAUCSL", 16),
             _observations(client, "OPHNFB", 8),
             _observations(client, "M2SL", 16),
+            _observations(client, "MABMM301USM189S", 16),
             _observations(client, "DCOILWTICO", 40),
         )
 
@@ -167,6 +179,33 @@ async def fetch_macro_indicators() -> dict:
         "interpretation": "↑ más liquidez (suele inflar activos) · ↓ contracción",
         "extra": {"level_busd": round(m2_val, 1) if m2_val else None},
         "source": "FRED · M2SL",
+    })
+
+    # 5b) M3 broad money (level + YoY). FRED no longer publishes a current US M3;
+    # the OECD series (MABMM301USM189S) is the best available but is not kept current.
+    m3_level_busd = m3_yoy = m3_date = None
+    if m3:
+        m3_date = m3[0]["date"]
+        m3_level_busd = round(m3[0]["value"] / 1e9, 1)  # raw USD → billions
+        if len(m3) > 12 and m3[12]["value"]:
+            m3_yoy = round((m3[0]["value"] - m3[12]["value"]) / m3[12]["value"] * 100, 2)
+    indicators.append({
+        "key": "m3",
+        "label": "Masa monetaria M3",
+        "value": m3_level_busd,
+        "unit": "miles de M$",
+        "as_of": m3_date,
+        "frequency": "Mensual (OCDE)",
+        "stale": _is_stale(m3_date),
+        "description": ("M3 = agregado monetario AMPLIO de EEUU: incluye todo el M2 más instrumentos menos "
+                        "líquidos (grandes depósitos a plazo, repos, fondos monetarios institucionales, "
+                        "eurodólares…). Mide el dinero 'amplio' de la economía. IMPORTANTE: la Reserva Federal "
+                        "DEJÓ de publicar M3 en 2006; esta serie la mantiene la OCDE y su última actualización "
+                        "disponible es de finales de 2023, por lo que NO está al día."),
+        "interpretation": "↑ más liquidez amplia (suele inflar activos) · ↓ contracción",
+        "extra": {"yoy_pct": m3_yoy},
+        "source": "FRED · MABMM301USM189S (OCDE)",
+        "note": "Serie discontinua/desactualizada: FRED ya no dispone de un M3 de EEUU en tiempo real (se muestra el último dato publicado).",
     })
 
     # 6) Oil (WTI)
