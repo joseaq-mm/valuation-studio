@@ -10,7 +10,7 @@ const ICONS = {
     inflation: Flame,
     productivity: Gauge,
     m2_growth: Banknote,
-    m3: Layers,
+    m3_proxy: Layers,
     oil: Droplet,
 };
 
@@ -38,8 +38,8 @@ const extraLine = (ind) => {
             return e.index_value != null ? `Índice: ${nf.format(e.index_value)} (${e.index_base})` : null;
         case "m2_growth":
             return e.level_busd != null ? `Nivel M2: ${nf.format(e.level_busd)} B$` : null;
-        case "m3":
-            return e.yoy_pct != null ? `Crecimiento interanual: ${signedPct(e.yoy_pct)} (a esa fecha)` : null;
+        case "m3_proxy":
+            return e.yoy_pct != null ? `Crecimiento interanual: ${signedPct(e.yoy_pct)}` : null;
         case "oil":
             return e.change_30d_pct != null ? `~30 días: ${signedPct(e.change_30d_pct)}` : null;
         default:
@@ -72,6 +72,23 @@ const MacroCard = ({ ind }) => {
 
             <div className="text-[11px] text-[#7A7A7A] mt-2">{ind.interpretation}</div>
             {extra && <div className="text-[11px] text-[#9A9A9A] mt-1 tabular-nums">{extra}</div>}
+
+            {ind.components && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-breakdown-${ind.key}`}>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Desglose (miles de M$)</div>
+                    {ind.components.map((c) => (
+                        <div key={c.series} className="flex items-center justify-between text-[11px] tabular-nums py-0.5">
+                            <span className="text-[#4A4A4A]">{c.label}</span>
+                            <span className="text-[#052049] font-medium">{fmtVal(c.value)}</span>
+                        </div>
+                    ))}
+                    {ind.formula && (
+                        <div className="text-[10px] text-[#7A7A7A] mt-1.5 leading-snug border-t border-black/5 pt-1.5" data-testid={`macro-formula-${ind.key}`}>
+                            {ind.formula}
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="mt-auto pt-3 flex items-center justify-between text-[10px] text-[#9A9A9A]">
                 <span className="uppercase tracking-wide">{ind.frequency}</span>

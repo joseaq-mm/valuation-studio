@@ -103,3 +103,10 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - **Limitación honesta:** la Fed dejó de publicar M3 en 2006; la serie OCDE es la mejor disponible pero su último dato es de finales de 2023 → se muestra badge ámbar **"Desactualizada · <fecha>"** (`macro-stale-{key}`) y nota en el tooltip. Backend marca `stale=True` vía `_is_stale()` (>150 días).
 - Muestra: nivel en miles de M$ (B$) como valor principal + crecimiento interanual en la línea de contexto. Icono `Layers`.
 - Verificado: endpoint devuelve M3 (nivel 20.767,4 B$, YoY −2,95%, as_of 2023-11, stale True) y la tarjeta + badge renderizan en pantalla.
+
+## 2026-07-02 — Macro: M3 sustituido por proxy AL DÍA (con desglose y fórmula)
+- Sustituida la tarjeta M3 (OCDE, congelada en 2023) por **M3 (proxy) · dinero amplio**, calculado con series FRED actuales:
+  **M3 (proxy) = M2 (`M2SL`) + Grandes depósitos a plazo (`LTDACBW027SBOG`) + Papel comercial (`COMPOUT`)**.
+- La tarjeta muestra: valor total (miles de M$), crecimiento interanual, **desglose de cada componente** (`macro-breakdown-m3_proxy`) y la **fórmula** (`macro-formula-m3_proxy`). Icono `Layers`.
+- Motivo (decisión del usuario): las letras del Tesoro ≤2a no tienen serie limpia/actual en FRED; los grandes depósitos a plazo SÍ son el componente real que M3 añade a M2 → proxy más fiel y actualizado. No incluye repos ni eurodólares (no disponibles limpios) → indicado en el tooltip/nota.
+- Eliminado helper backend `_is_stale` (sin uso). Verificado: endpoint (26.957,4 B$ = 23.052,3 + 2.508 + 1.397,1; YoY +4,91%) y tarjeta con desglose+fórmula en pantalla; tarjeta M3 antigua eliminada.

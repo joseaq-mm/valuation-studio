@@ -61,29 +61,19 @@ def _yoy(obs: list, periods: int) -> tuple:
     return latest["value"], latest["date"], yoy
 
 
-def _is_stale(date_str: str, max_days: int = 150) -> bool:
-    """True if the latest observation is older than `max_days` (series not kept current)."""
-    if not date_str:
-        return True
-    try:
-        d = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - d).days > max_days
-    except (ValueError, TypeError):
-        return False
-
-
 async def fetch_macro_indicators() -> dict:
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, m3, oil = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 8),
             _observations(client, "GDP", 8),
             _observations(client, "FEDFUNDS", 16),
             _observations(client, "CPIAUCSL", 16),
             _observations(client, "OPHNFB", 8),
             _observations(client, "M2SL", 16),
-            _observations(client, "MABMM301USM189S", 16),
+            _observations(client, "LTDACBW027SBOG", 56),
+            _observations(client, "COMPOUT", 56),
             _observations(client, "DCOILWTICO", 40),
         )
 
@@ -181,31 +171,50 @@ async def fetch_macro_indicators() -> dict:
         "source": "FRED · M2SL",
     })
 
-    # 5b) M3 broad money (level + YoY). FRED no longer publishes a current US M3;
-    # the OECD series (MABMM301USM189S) is the best available but is not kept current.
-    m3_level_busd = m3_yoy = m3_date = None
-    if m3:
-        m3_date = m3[0]["date"]
-        m3_level_busd = round(m3[0]["value"] / 1e9, 1)  # raw USD → billions
-        if len(m3) > 12 and m3[12]["value"]:
-            m3_yoy = round((m3[0]["value"] - m3[12]["value"]) / m3[12]["value"] * 100, 2)
+    # 5b) M3 (proxy) — up-to-date broad money: M2 + large time deposits + commercial paper.
+    # The Fed stopped publishing M3 in 2006; this reconstructs the bulk of the non-M2
+    # components from current FRED series (repos/eurodollars unavailable → excluded).
+    def _first(o):
+        return o[0]["value"] if o else None
+
+    def _back(o, n):
+        return o[n]["value"] if len(o) > n else None
+
+    m2_now, ltd_now, cp_now = _first(m2), _first(ltd), _first(cp)
+    parts = [v for v in (m2_now, ltd_now, cp_now) if v is not None]
+    proxy_now = round(sum(parts), 1) if parts else None
+    m2_p, ltd_p, cp_p = _back(m2, 12), _back(ltd, 52), _back(cp, 52)
+    m3p_yoy = None
+    if None not in (m2_now, ltd_now, cp_now, m2_p, ltd_p, cp_p):
+        prev = m2_p + ltd_p + cp_p
+        if prev:
+            m3p_yoy = round((proxy_now - prev) / prev * 100, 2)
+    components = [
+        {"label": "M2", "value": round(m2_now, 1) if m2_now is not None else None,
+         "as_of": m2[0]["date"] if m2 else None, "series": "M2SL"},
+        {"label": "Grandes depósitos a plazo", "value": round(ltd_now, 1) if ltd_now is not None else None,
+         "as_of": ltd[0]["date"] if ltd else None, "series": "LTDACBW027SBOG"},
+        {"label": "Papel comercial", "value": round(cp_now, 1) if cp_now is not None else None,
+         "as_of": cp[0]["date"] if cp else None, "series": "COMPOUT"},
+    ]
+    m3p_dates = [c["as_of"] for c in components if c["as_of"]]
     indicators.append({
-        "key": "m3",
-        "label": "Masa monetaria M3",
-        "value": m3_level_busd,
+        "key": "m3_proxy",
+        "label": "M3 (proxy) · dinero amplio",
+        "value": proxy_now,
         "unit": "miles de M$",
-        "as_of": m3_date,
-        "frequency": "Mensual (OCDE)",
-        "stale": _is_stale(m3_date),
-        "description": ("M3 = agregado monetario AMPLIO de EEUU: incluye todo el M2 más instrumentos menos "
-                        "líquidos (grandes depósitos a plazo, repos, fondos monetarios institucionales, "
-                        "eurodólares…). Mide el dinero 'amplio' de la economía. IMPORTANTE: la Reserva Federal "
-                        "DEJÓ de publicar M3 en 2006; esta serie la mantiene la OCDE y su última actualización "
-                        "disponible es de finales de 2023, por lo que NO está al día."),
+        "as_of": min(m3p_dates) if m3p_dates else None,
+        "frequency": "Semanal/Mensual",
+        "formula": "M3 (proxy) = M2 + Grandes depósitos a plazo + Papel comercial",
+        "components": components,
+        "description": ("Proxy AL DÍA del M3 (dinero amplio). La Reserva Federal dejó de publicar el M3 en 2006, "
+                        "así que lo reconstruimos con series actuales de FRED: M2 (dinero) + grandes depósitos a "
+                        "plazo (el principal componente que M3 añade a M2) + papel comercial (deuda privada a corto). "
+                        "Refleja la liquidez amplia de la economía."),
         "interpretation": "↑ más liquidez amplia (suele inflar activos) · ↓ contracción",
-        "extra": {"yoy_pct": m3_yoy},
-        "source": "FRED · MABMM301USM189S (OCDE)",
-        "note": "Serie discontinua/desactualizada: FRED ya no dispone de un M3 de EEUU en tiempo real (se muestra el último dato publicado).",
+        "extra": {"yoy_pct": m3p_yoy},
+        "source": "FRED · M2SL + LTDACBW027SBOG + COMPOUT",
+        "note": "Proxy: no incluye repos ni eurodólares (no disponibles limpios en FRED); es una aproximación del M3, no la cifra oficial.",
     })
 
     # 6) Oil (WTI)
