@@ -124,3 +124,8 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - **Ficha M2 eliminada** (M2SL se sigue consultando solo para el M3 proxy).
 - UI: fichas más compactas (p-3, cifra text-3xl, icono/label reducidos) y pie de tarjeta más visible (frecuencia text-[11px] y fecha del dato en azul marino negrita, testid `macro-asof-{key}`).
 - Verificado en pantalla: 7 fichas (equities, gdp, fed_rate, inflation, productivity, m3_proxy, oil); buffett y m2_growth ausentes.
+
+## 2026-07-02 (d) — Macro: nueva ficha "Petróleo vs media histórica" con dial
+- Nueva serie FRED `MCOILWTICO` (WTI mensual desde 1986); se envían 252 meses de histórico al frontend en el indicador `oil_avg`.
+- Ficha nueva con **dial (slider 1-20 años, por defecto 4)**: al mover el dial, el navegador recalcula al instante la **media simple** de los precios mensuales del WTI del periodo elegido, el **precio actual** y el **% actual vs media** (verde=barato, rojo=caro). data-testids: oil-avg-slider, oil-avg-years, oil-avg-value, oil-avg-diff.
+- Verificado (self-test + screenshot): 4a → media 76,41 (−5,94% barato); 10a → media 65,99 (+8,9% caro). Recálculo instantáneo sin volver a llamar al servidor.

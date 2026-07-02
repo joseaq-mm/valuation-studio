@@ -147,7 +147,7 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 8),
             _observations(client, "GDP", 8),
             _observations(client, "FEDFUNDS", 16),
@@ -157,6 +157,7 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
             _observations(client, "LTDACBW027SBOG", 56),
             _observations(client, "COMPOUT", 56),
             _observations(client, "DCOILWTICO", 40),
+            _observations(client, "MCOILWTICO", 252),
         )
 
     indicators = []
@@ -333,6 +334,24 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
         "interpretation": "↑ presiona costes/inflación · ↓ alivio (o demanda débil)",
         "extra": {"change_30d_pct": oil_chg},
         "source": "FRED · DCOILWTICO",
+    })
+
+    # 7) Oil vs historical average — monthly WTI history for an interactive dial (1-20y).
+    oil_hist = [{"date": o["date"], "value": round(o["value"], 2)} for o in reversed(oil_m)] if oil_m else []
+    indicators.append({
+        "key": "oil_avg",
+        "label": "Petróleo vs media histórica",
+        "value": oil[0]["value"] if oil else (oil_m[0]["value"] if oil_m else None),
+        "unit": "USD/barril",
+        "as_of": oil[0]["date"] if oil else (oil_m[0]["date"] if oil_m else None),
+        "frequency": "Mensual (histórico WTI)",
+        "description": ("Compara el precio actual del petróleo WTI con su media de los últimos X años (ajustable con "
+                        "el dial). Por encima de la media = caro frente a su historia reciente; por debajo = barato. "
+                        "Media simple de los precios mensuales del WTI (FRED, desde 1986)."),
+        "interpretation": "Mueve el dial para elegir el nº de años de la media",
+        "history": oil_hist,
+        "dial": {"min": 1, "max": 20, "default": 4},
+        "source": "FRED · MCOILWTICO",
     })
 
     return {
