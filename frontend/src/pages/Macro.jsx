@@ -78,13 +78,22 @@ const MacroCard = ({ ind }) => {
                     <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Desglose (miles de M$)</div>
                     {ind.components.map((c) => (
                         <div key={c.series} className="flex items-center justify-between text-[11px] tabular-nums py-0.5">
-                            <span className="text-[#4A4A4A]">{c.label}</span>
+                            <span className="text-[#4A4A4A]">
+                                {c.label}
+                                {c.frozen && <span className="text-[#B8860B] not-italic ml-1" title="Congelado: última lectura válida">⚠ congelado</span>}
+                            </span>
                             <span className="text-[#052049] font-medium">{fmtVal(c.value)}</span>
                         </div>
                     ))}
                     {ind.formula && (
                         <div className="text-[10px] text-[#7A7A7A] mt-1.5 leading-snug border-t border-black/5 pt-1.5" data-testid={`macro-formula-${ind.key}`}>
                             {ind.formula}
+                        </div>
+                    )}
+                    {ind.warning && (
+                        <div className="mt-2 flex items-start gap-1.5 text-[10px] text-[#8a2318] bg-[#FBE9E7] border border-[#B32A22]/40 p-1.5 leading-snug" data-testid={`macro-warning-${ind.key}`}>
+                            <AlertTriangle size={12} className="text-[#B32A22] shrink-0 mt-0.5" />
+                            <span>{ind.warning}</span>
                         </div>
                     )}
                 </div>

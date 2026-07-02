@@ -110,3 +110,10 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - La tarjeta muestra: valor total (miles de M$), crecimiento interanual, **desglose de cada componente** (`macro-breakdown-m3_proxy`) y la **fórmula** (`macro-formula-m3_proxy`). Icono `Layers`.
 - Motivo (decisión del usuario): las letras del Tesoro ≤2a no tienen serie limpia/actual en FRED; los grandes depósitos a plazo SÍ son el componente real que M3 añade a M2 → proxy más fiel y actualizado. No incluye repos ni eurodólares (no disponibles limpios) → indicado en el tooltip/nota.
 - Eliminado helper backend `_is_stale` (sin uso). Verificado: endpoint (26.957,4 B$ = 23.052,3 + 2.508 + 1.397,1; YoY +4,91%) y tarjeta con desglose+fórmula en pantalla; tarjeta M3 antigua eliminada.
+
+## 2026-07-02 (b) — Macro M3 proxy: añadidos Fondos monetarios institucionales (ICI) + congelación ante fallo
+- Añadido 4º componente al M3 proxy: **Fondos monetarios institucionales** desde el **ICI** (fichero semanal `mm_summary_data_{año}.xls`, col 14 = TNA institucional en millones → billones). Nueva dep `xlrd==2.0.2`.
+- Fórmula ahora: **M3 (proxy) = M2 + Grandes depósitos a plazo + Fondos monetarios institucionales + Papel comercial** = 31.773,7 B$ (institucionales 4.816,3 B$, 24-jun-2026).
+- **Congelación ante fallo de lectura (petición del usuario):** `resolve_ici_institutional(db)` guarda el último valor bueno en `db.macro_ici`; si la lectura semanal del ICI falla, usa ese último valor, lo marca `frozen=True` y la tarjeta muestra un **aviso** ("se ha CONGELADO en su último valor válido (<fecha>)") + marca "⚠ congelado" en el componente. Si nunca hubo lectura válida, se omite el componente con aviso.
+- Backend: `import asyncio` a nivel de módulo (bug: NameError en fetch ICI), helper `_fmt_date_es`. Frontend: aviso `macro-warning-{key}` y marca de congelado por componente. YoY del proxy se calcula sobre M2+depósitos+papel (los que tienen histórico anual); indicado en la nota.
+- Verificado (self-test): endpoint con ICI OK (31.773,7 B$), simulación de fallo → congela 4.816,3 con aviso, y tarjeta+desglose renderizan en pantalla.

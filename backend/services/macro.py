@@ -16,6 +16,7 @@ Series chosen (all free, official, public domain):
 """
 import logging
 import os
+import asyncio
 from datetime import datetime, timezone
 
 import httpx
@@ -28,6 +29,19 @@ CACHE_TTL_HOURS = 6
 
 def _key() -> str:
     return os.environ["FRED_API_KEY"]
+
+
+_MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _fmt_date_es(iso: str) -> str:
+    if not iso:
+        return ""
+    try:
+        d = datetime.strptime(iso[:10], "%Y-%m-%d")
+        return f"{d.day:02d} {_MESES_ES[d.month - 1]} {d.year}"
+    except (ValueError, TypeError):
+        return iso
 
 
 async def _observations(client: httpx.AsyncClient, series_id: str, limit: int = 16) -> list:
@@ -61,7 +75,75 @@ def _yoy(obs: list, periods: int) -> tuple:
     return latest["value"], latest["date"], yoy
 
 
-async def fetch_macro_indicators() -> dict:
+ICI_INST_TNA_COL = 14  # 0-based col: INSTITUTIONAL block → TOTAL → TNA (millions of $)
+
+
+def _parse_ici_institutional(data: bytes) -> dict:
+    """Parse the ICI weekly MMF .xls (OLE2) and return the latest INSTITUTIONAL total
+    net assets, converted to billions of dollars, with its as-of date."""
+    import xlrd
+    wb = xlrd.open_workbook(file_contents=data)
+    sh = wb.sheet_by_index(0)
+    last = None
+    for r in range(9, sh.nrows):
+        d = str(sh.cell_value(r, 0)).strip()
+        try:
+            v = float(sh.cell_value(r, ICI_INST_TNA_COL))
+        except (TypeError, ValueError):
+            continue
+        if d and v > 0:
+            last = (d, v)
+    if not last:
+        raise RuntimeError("no se encontró la fila de datos institucionales en el fichero del ICI")
+    date_str, tna_millions = last
+    try:
+        as_of = datetime.strptime(date_str[:10], "%m/%d/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        as_of = date_str
+    return {"value_busd": round(tna_millions / 1000.0, 1), "as_of": as_of}  # millions → billions
+
+
+async def fetch_ici_institutional_mmf() -> dict:
+    """Download the current-year ICI weekly MMF report and extract institutional MMF assets."""
+    year = datetime.now(timezone.utc).year
+    urls = [f"https://www.ici.org/mm_summary_data_{year}.xls",
+            f"https://www.ici.org/mm_summary_data_{year - 1}.xls"]
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; ValuationStudio/1.0)"}
+    data = None
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as client:
+        for u in urls:
+            try:
+                r = await client.get(u)
+                if r.status_code == 200 and r.content[:4] == b"\xd0\xcf\x11\xe0":
+                    data = r.content
+                    break
+            except Exception:
+                continue
+    if not data:
+        raise RuntimeError("no se pudo descargar el fichero del ICI")
+    return await asyncio.to_thread(_parse_ici_institutional, data)
+
+
+async def resolve_ici_institutional(db) -> dict | None:
+    """Fetch institutional MMF from ICI. On success, persist as the last-good value.
+    On failure, FREEZE: return the last-good value flagged as frozen. If never fetched
+    successfully, return None so the proxy drops the component."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        fresh = await fetch_ici_institutional_mmf()
+        await db.macro_ici.update_one(
+            {"id": "ici_inst"},
+            {"$set": {"id": "ici_inst", **fresh, "fetched_at": now_iso}}, upsert=True)
+        return {**fresh, "frozen": False}
+    except Exception as e:
+        logger.warning(f"ICI institutional MMF fetch failed: {e}")
+        last = await db.macro_ici.find_one({"id": "ici_inst"}, {"_id": 0})
+        if last and last.get("value_busd") is not None:
+            return {"value_busd": last["value_busd"], "as_of": last.get("as_of"), "frozen": True}
+        return None
+
+
+async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
@@ -171,32 +253,52 @@ async def fetch_macro_indicators() -> dict:
         "source": "FRED · M2SL",
     })
 
-    # 5b) M3 (proxy) — up-to-date broad money: M2 + large time deposits + commercial paper.
-    # The Fed stopped publishing M3 in 2006; this reconstructs the bulk of the non-M2
-    # components from current FRED series (repos/eurodollars unavailable → excluded).
+    # 5b) M3 (proxy) — up-to-date broad money: M2 + large time deposits +
+    # institutional money market funds (ICI) + commercial paper. The Fed stopped
+    # publishing M3 in 2006; this reconstructs the bulk of the non-M2 components from
+    # current sources (repos/eurodollars unavailable → excluded).
     def _first(o):
         return o[0]["value"] if o else None
 
     def _back(o, n):
         return o[n]["value"] if len(o) > n else None
 
+    inst_now = ici_inst.get("value_busd") if ici_inst else None
+    inst_frozen = bool(ici_inst.get("frozen")) if ici_inst else False
+    inst_asof = ici_inst.get("as_of") if ici_inst else None
+
     m2_now, ltd_now, cp_now = _first(m2), _first(ltd), _first(cp)
-    parts = [v for v in (m2_now, ltd_now, cp_now) if v is not None]
+    parts = [v for v in (m2_now, ltd_now, inst_now, cp_now) if v is not None]
     proxy_now = round(sum(parts), 1) if parts else None
+    # YoY over the components with a full year of history (M2 monthly, LTD/CP weekly).
     m2_p, ltd_p, cp_p = _back(m2, 12), _back(ltd, 52), _back(cp, 52)
     m3p_yoy = None
     if None not in (m2_now, ltd_now, cp_now, m2_p, ltd_p, cp_p):
         prev = m2_p + ltd_p + cp_p
+        now_core = m2_now + ltd_now + cp_now
         if prev:
-            m3p_yoy = round((proxy_now - prev) / prev * 100, 2)
+            m3p_yoy = round((now_core - prev) / prev * 100, 2)
     components = [
         {"label": "M2", "value": round(m2_now, 1) if m2_now is not None else None,
          "as_of": m2[0]["date"] if m2 else None, "series": "M2SL"},
         {"label": "Grandes depósitos a plazo", "value": round(ltd_now, 1) if ltd_now is not None else None,
          "as_of": ltd[0]["date"] if ltd else None, "series": "LTDACBW027SBOG"},
-        {"label": "Papel comercial", "value": round(cp_now, 1) if cp_now is not None else None,
-         "as_of": cp[0]["date"] if cp else None, "series": "COMPOUT"},
     ]
+    if inst_now is not None:
+        components.append({"label": "Fondos monetarios institucionales", "value": round(inst_now, 1),
+                           "as_of": inst_asof, "series": "ICI", "frozen": inst_frozen})
+    components.append({"label": "Papel comercial", "value": round(cp_now, 1) if cp_now is not None else None,
+                       "as_of": cp[0]["date"] if cp else None, "series": "COMPOUT"})
+
+    warning = None
+    if inst_frozen:
+        _f = _fmt_date_es(inst_asof)
+        warning = (f"No se pudo leer el ICI en esta actualización: el componente «Fondos monetarios "
+                   f"institucionales» se ha CONGELADO en su último valor válido ({_f}).")
+    elif inst_now is None:
+        warning = ("No se pudo obtener «Fondos monetarios institucionales» del ICI; el proxy se muestra "
+                   "temporalmente SIN ese componente.")
+
     m3p_dates = [c["as_of"] for c in components if c["as_of"]]
     indicators.append({
         "key": "m3_proxy",
@@ -205,16 +307,17 @@ async def fetch_macro_indicators() -> dict:
         "unit": "miles de M$",
         "as_of": min(m3p_dates) if m3p_dates else None,
         "frequency": "Semanal/Mensual",
-        "formula": "M3 (proxy) = M2 + Grandes depósitos a plazo + Papel comercial",
+        "formula": "M3 (proxy) = M2 + Grandes depósitos a plazo + Fondos monetarios institucionales + Papel comercial",
         "components": components,
+        "warning": warning,
         "description": ("Proxy AL DÍA del M3 (dinero amplio). La Reserva Federal dejó de publicar el M3 en 2006, "
-                        "así que lo reconstruimos con series actuales de FRED: M2 (dinero) + grandes depósitos a "
-                        "plazo (el principal componente que M3 añade a M2) + papel comercial (deuda privada a corto). "
+                        "así que lo reconstruimos con fuentes actuales: M2 (dinero) + grandes depósitos a plazo + "
+                        "fondos monetarios institucionales (ICI, semanal) + papel comercial (deuda privada a corto). "
                         "Refleja la liquidez amplia de la economía."),
         "interpretation": "↑ más liquidez amplia (suele inflar activos) · ↓ contracción",
         "extra": {"yoy_pct": m3p_yoy},
-        "source": "FRED · M2SL + LTDACBW027SBOG + COMPOUT",
-        "note": "Proxy: no incluye repos ni eurodólares (no disponibles limpios en FRED); es una aproximación del M3, no la cifra oficial.",
+        "source": "FRED (M2SL + LTDACBW027SBOG + COMPOUT) + ICI (institucionales)",
+        "note": "Proxy: no incluye repos ni eurodólares (no disponibles limpios); es una aproximación del M3, no la cifra oficial. El crecimiento interanual se calcula sobre M2 + depósitos a plazo + papel comercial.",
     })
 
     # 6) Oil (WTI)
@@ -257,7 +360,8 @@ async def get_macro_indicators(db, refresh: bool = False) -> dict:
                     return cached
             except (ValueError, TypeError):
                 pass
-    data = await fetch_macro_indicators()
+    ici_inst = await resolve_ici_institutional(db)
+    data = await fetch_macro_indicators(ici_inst=ici_inst)
     await db.macro_cache.update_one({"id": "us_macro"}, {"$set": {"id": "us_macro", **data}}, upsert=True)
     data["cached"] = False
     return data
