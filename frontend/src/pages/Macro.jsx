@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, AlertTriangle } from "lucide-react";
+import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle } from "lucide-react";
 import { macroIndicators } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
@@ -183,6 +183,49 @@ const OilAverageCard = ({ ind }) => {
     );
 };
 
+const EnergyMixCard = ({ ind }) => {
+    const comps = ind.components || [];
+    const maxPct = comps.length ? Math.max(...comps.map((c) => c.pct)) : 100;
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid="macro-card-energy_mix">
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Zap size={13} className="text-[#052049]" /> {ind.label}
+                </div>
+                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-energy_mix" aria-label="Más información">
+                        <Info size={14} />
+                    </button>
+                </HoverTip>
+            </div>
+
+            <div className="flex items-baseline gap-1.5">
+                <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid="macro-value-energy_mix">{fmtVal(ind.value)}</span>
+                <span className="text-xs text-[#4A4A4A] font-medium">% petróleo + gas</span>
+            </div>
+            <div className="text-[11px] text-[#7A7A7A] mt-1.5">Cuota de petróleo + gas natural sobre el total de energía primaria</div>
+
+            <div className="mt-3 border-t border-black/10 pt-2 space-y-1" data-testid="macro-breakdown-energy_mix">
+                <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Desglose por fuente</div>
+                {comps.map((c) => (
+                    <div key={c.label} data-testid={`energy-src-${c.label}`}>
+                        <div className="flex items-center justify-between text-[11px] tabular-nums">
+                            <span className="text-[#4A4A4A]">{c.label}</span>
+                            <span className="text-[#052049] font-medium">{fmtVal(c.pct)}%</span>
+                        </div>
+                        <div className="h-1 bg-black/10 mt-0.5"><div className="h-full bg-[#052049]" style={{ width: `${(c.pct / maxPct) * 100}%` }} /></div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
+                <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
+                <span className="tabular-nums text-[#052049] font-semibold">Datos: {ind.as_of}</span>
+            </div>
+        </div>
+    );
+};
+
 export default function Macro() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -235,7 +278,9 @@ export default function Macro() {
                         {data.indicators.map((ind) => (
                             ind.key === "oil_avg"
                                 ? <OilAverageCard key={ind.key} ind={ind} />
-                                : <MacroCard key={ind.key} ind={ind} />
+                                : ind.key === "energy_mix"
+                                    ? <EnergyMixCard key={ind.key} ind={ind} />
+                                    : <MacroCard key={ind.key} ind={ind} />
                         ))}
                     </div>
                     <p className="text-[11px] text-[#9A9A9A] mt-4" data-testid="macro-updated">

@@ -129,3 +129,9 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - Nueva serie FRED `MCOILWTICO` (WTI mensual desde 1986); se envían 252 meses de histórico al frontend en el indicador `oil_avg`.
 - Ficha nueva con **dial (slider 1-20 años, por defecto 4)**: al mover el dial, el navegador recalcula al instante la **media simple** de los precios mensuales del WTI del periodo elegido, el **precio actual** y el **% actual vs media** (verde=barato, rojo=caro). data-testids: oil-avg-slider, oil-avg-years, oil-avg-value, oil-avg-diff.
 - Verificado (self-test + screenshot): 4a → media 76,41 (−5,94% barato); 10a → media 65,99 (+8,9% caro). Recálculo instantáneo sin volver a llamar al servidor.
+
+## 2026-07-02 (e) — Macro: nueva ficha "Mix energético mundial"
+- Nueva ficha `energy_mix` con el reparto MUNDIAL de energía primaria por fuente y el cálculo destacado **(petróleo + gas) / total = 55,1%** (datos 2024).
+- Desglose detallado con barras: Petróleo 31,5% · Carbón 26,2% · Gas natural 23,6% · Hidro 6,2% · Nuclear 3,9% · Eólica 3,5% · Solar 2,9% · Otras renovables 1,4% · Biocombustibles 0,8% (suman 100%).
+- **Fuente: Our World in Data (Energy Institute Statistical Review)** — CSV sin API key, mundial y actual (2024). Backend: `resolve_energy_mix(db)` cachea ~7 días en `db.macro_energy` (con congelación al último valor si falla la descarga). El usuario eligió EIA pero para el mix MUNDIAL de energía primaria OWID es más actual/limpio; **la API key de EIA se guardó en `.env` (`EIA_API_KEY`) para futuros usos** (detalle energético de EEUU).
+- Frontend: componente `EnergyMixCard` (barras por fuente). Verificado en pantalla.

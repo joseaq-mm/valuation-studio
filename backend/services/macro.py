@@ -26,6 +26,84 @@ logger = logging.getLogger(__name__)
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 CACHE_TTL_HOURS = 6
 
+OWID_ENERGY_URL = "https://nyc3.digitaloceanspaces.com/owid-public/data/energy/owid-energy-data.csv"
+ENERGY_TTL_DAYS = 7
+ENERGY_SOURCES = [
+    ("Petróleo", "oil_consumption"),
+    ("Gas natural", "gas_consumption"),
+    ("Carbón", "coal_consumption"),
+    ("Nuclear", "nuclear_consumption"),
+    ("Hidroeléctrica", "hydro_consumption"),
+    ("Eólica", "wind_consumption"),
+    ("Solar", "solar_consumption"),
+    ("Biocombustibles", "biofuel_consumption"),
+    ("Otras renovables", "other_renewable_consumption"),
+]
+
+
+def _parse_owid_energy(data: bytes) -> dict:
+    """Parse OWID energy CSV → World latest-year primary-energy mix by source (TWh + %)."""
+    import csv
+    import io
+    reader = csv.DictReader(io.StringIO(data.decode("utf-8")))
+    best = None
+    for row in reader:
+        if row.get("country") != "World":
+            continue
+        try:
+            year = int(row["year"])
+            vals = {}
+            for _label, col in ENERGY_SOURCES:
+                v = row.get(col)
+                vals[col] = float(v) if v not in (None, "", "NA") else 0.0
+        except (ValueError, TypeError):
+            continue
+        if vals["oil_consumption"] > 0 and vals["gas_consumption"] > 0 and vals["coal_consumption"] > 0:
+            if best is None or year > best["year"]:
+                best = {"year": year, "vals": vals}
+    if not best:
+        raise RuntimeError("no se encontró fila 'World' válida en OWID")
+    total = sum(best["vals"].values())
+    comps = [{"label": lbl, "twh": round(best["vals"][col], 1),
+              "pct": round(best["vals"][col] / total * 100, 1)} for lbl, col in ENERGY_SOURCES]
+    comps.sort(key=lambda c: c["twh"], reverse=True)
+    oil_gas = best["vals"]["oil_consumption"] + best["vals"]["gas_consumption"]
+    return {
+        "year": best["year"],
+        "total_twh": round(total, 1),
+        "oil_gas_pct": round(oil_gas / total * 100, 1),
+        "components": comps,
+    }
+
+
+async def fetch_owid_energy_mix() -> dict:
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.get(OWID_ENERGY_URL)
+        r.raise_for_status()
+        data = r.content
+    return await asyncio.to_thread(_parse_owid_energy, data)
+
+
+async def resolve_energy_mix(db) -> dict | None:
+    """World energy mix from OWID, cached ~7 days (annual data). On failure, return the
+    last cached value (may be stale) or None."""
+    now = datetime.now(timezone.utc)
+    cached = await db.macro_energy.find_one({"id": "world"}, {"_id": 0})
+    if cached and cached.get("fetched_at"):
+        try:
+            if (now - datetime.fromisoformat(cached["fetched_at"])).days < ENERGY_TTL_DAYS:
+                return cached
+        except (ValueError, TypeError):
+            pass
+    try:
+        fresh = await fetch_owid_energy_mix()
+        fresh["fetched_at"] = now.isoformat()
+        await db.macro_energy.update_one({"id": "world"}, {"$set": {"id": "world", **fresh}}, upsert=True)
+        return fresh
+    except Exception as e:
+        logger.warning(f"OWID energy mix fetch failed: {e}")
+        return cached
+
 
 def _key() -> str:
     return os.environ["FRED_API_KEY"]
@@ -143,7 +221,7 @@ async def resolve_ici_institutional(db) -> dict | None:
         return None
 
 
-async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
+async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> dict:
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
@@ -354,6 +432,24 @@ async def fetch_macro_indicators(ici_inst: dict = None) -> dict:
         "source": "FRED · MCOILWTICO",
     })
 
+    # 8) World primary-energy mix by source (OWID) + (oil+gas)/total highlight.
+    if energy and energy.get("components"):
+        indicators.append({
+            "key": "energy_mix",
+            "label": "Mix energético mundial",
+            "value": energy["oil_gas_pct"],
+            "unit": "% (petróleo + gas)",
+            "as_of": str(energy["year"]),
+            "frequency": "Anual",
+            "description": ("Reparto del consumo MUNDIAL de energía primaria por fuente (petróleo, gas natural, carbón, "
+                            "nuclear, hidro, eólica, solar, biocombustibles y otras renovables). La cifra destacada es "
+                            "cuánto representan PETRÓLEO + GAS NATURAL sobre el total de energía primaria."),
+            "interpretation": "Cuota de petróleo + gas sobre el total de energía primaria",
+            "components": energy["components"],
+            "total_twh": energy["total_twh"],
+            "source": "Our World in Data · Energy Institute",
+        })
+
     return {
         "indicators": indicators,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -375,7 +471,8 @@ async def get_macro_indicators(db, refresh: bool = False) -> dict:
             except (ValueError, TypeError):
                 pass
     ici_inst = await resolve_ici_institutional(db)
-    data = await fetch_macro_indicators(ici_inst=ici_inst)
+    energy = await resolve_energy_mix(db)
+    data = await fetch_macro_indicators(ici_inst=ici_inst, energy=energy)
     await db.macro_cache.update_one({"id": "us_macro"}, {"$set": {"id": "us_macro", **data}}, upsert=True)
     data["cached"] = False
     return data
