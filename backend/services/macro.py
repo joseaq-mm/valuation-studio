@@ -394,25 +394,8 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "note": "Proxy: no incluye repos ni eurodólares (no disponibles limpios); es una aproximación del M3, no la cifra oficial. El crecimiento interanual se calcula sobre M2 + depósitos a plazo + papel comercial.",
     })
 
-    # 6) Oil (WTI)
-    oil_prev = oil[20]["value"] if len(oil) > 20 else None
-    oil_chg = None
-    if oil and oil_prev:
-        oil_chg = round((oil[0]["value"] - oil_prev) / oil_prev * 100, 1)
-    indicators.append({
-        "key": "oil",
-        "label": "Petróleo (WTI)",
-        "value": oil[0]["value"] if oil else None,
-        "unit": "USD/barril",
-        "as_of": oil[0]["date"] if oil else None,
-        "frequency": "Diaria",
-        "description": ("Precio del crudo West Texas Intermediate (WTI), referencia de EEUU, en dólares por barril. "
-                        "Es un termómetro de la energía: precios altos encarecen costes y presionan la inflación; "
-                        "precios bajos alivian costes pero pueden señalar debilidad de la demanda."),
-        "interpretation": "↑ presiona costes/inflación · ↓ alivio (o demanda débil)",
-        "extra": {"change_30d_pct": oil_chg},
-        "source": "FRED · DCOILWTICO",
-    })
+    # 6) Oil (WTI) — current price is shown inside the "oil_avg" card (below), so no
+    # standalone card. We still need the daily series for the current price/reference.
 
     # 7) Oil vs historical average — monthly WTI history for an interactive dial (1-20y).
     oil_hist = [{"date": o["date"], "value": round(o["value"], 2)} for o in reversed(oil_m)] if oil_m else []

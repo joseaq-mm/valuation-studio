@@ -135,3 +135,6 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - Desglose detallado con barras: Petróleo 31,5% · Carbón 26,2% · Gas natural 23,6% · Hidro 6,2% · Nuclear 3,9% · Eólica 3,5% · Solar 2,9% · Otras renovables 1,4% · Biocombustibles 0,8% (suman 100%).
 - **Fuente: Our World in Data (Energy Institute Statistical Review)** — CSV sin API key, mundial y actual (2024). Backend: `resolve_energy_mix(db)` cachea ~7 días en `db.macro_energy` (con congelación al último valor si falla la descarga). El usuario eligió EIA pero para el mix MUNDIAL de energía primaria OWID es más actual/limpio; **la API key de EIA se guardó en `.env` (`EIA_API_KEY`) para futuros usos** (detalle energético de EEUU).
 - Frontend: componente `EnergyMixCard` (barras por fuente). Verificado en pantalla.
+
+## 2026-07-02 (f) — Macro: eliminada ficha "Petróleo (WTI)" independiente
+- Quitada la tarjeta `oil` (precio WTI diario) por redundante: la ficha "Petróleo vs media histórica" (`oil_avg`) ya muestra el precio actual del barril. Se sigue consultando DCOILWTICO para ese precio actual. Fichas ahora: equities, gdp, fed_rate, inflation, productivity, m3_proxy, oil_avg, energy_mix.
