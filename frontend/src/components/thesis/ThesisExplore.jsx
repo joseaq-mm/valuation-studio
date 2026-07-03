@@ -16,14 +16,45 @@ const H = 440;
 const fmtTam = (b) => (b == null ? null : b >= 1000 ? `$${(b / 1000).toFixed(1)}T` : b >= 10 ? `$${Math.round(b)}B` : `$${b}B`);
 const fmtCagr = (v) => (v == null ? null : `${v > 0 ? "+" : ""}${v}%`);
 
-function buildItems(view, path, dash, minConv) {
+function buildItems(view, path, dash, minConv, tendMetric) {
     const folders = dash?.folders || [], tendencias = dash?.tendencias || [], companies = dash?.companies || [];
-    // A tendencia cell: size ∝ forward 4y CAGR; shows CAGR% (badge) + TAM (sub).
-    const tendenciaItems = (list) => list.map((t) => ({
-        type: "tendencia", id: t.id, name: t.title,
-        value: t.cagr_4y > 0 ? t.cagr_4y : 1,
-        metric: t.cagr_4y, sub: fmtTam(t.tam_busd) || "", badge: fmtCagr(t.cagr_4y),
-    }));
+    // A tendencia cell. `mode` decides what drives the size/color:
+    //   "cagr"  → CAGR 4a (badge CAGR, sub TAM)
+    //   "tam"   → TAM 2027e (badge TAM, sub CAGR)
+    //   "media" → media normalizada 0–100 de TAM y CAGR (badge índice, sub CAGR · TAM)
+    const tendenciaItems = (list, mode = "cagr") => {
+        if (mode === "tam") {
+            return list.map((t) => ({
+                type: "tendencia", id: t.id, name: t.title,
+                value: t.tam_busd > 0 ? t.tam_busd : 1,
+                metric: t.tam_busd, sub: fmtCagr(t.cagr_4y) || "", badge: fmtTam(t.tam_busd),
+            }));
+        }
+        if (mode === "media") {
+            const tams = list.map((t) => t.tam_busd).filter((v) => v != null);
+            const cagrs = list.map((t) => t.cagr_4y).filter((v) => v != null);
+            const nrm = (x, arr) => {
+                if (x == null || !arr.length) return null;
+                const mn = Math.min(...arr), mx = Math.max(...arr);
+                return mx === mn ? 50 : ((x - mn) / (mx - mn)) * 100;
+            };
+            return list.map((t) => {
+                const parts = [nrm(t.tam_busd, tams), nrm(t.cagr_4y, cagrs)].filter((v) => v != null);
+                const media = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+                return {
+                    type: "tendencia", id: t.id, name: t.title,
+                    value: media != null ? Math.max(media, 1) : 1,
+                    metric: media, badge: media != null ? Math.round(media) : null,
+                    sub: `${fmtCagr(t.cagr_4y) || "—"} · ${fmtTam(t.tam_busd) || "—"}`,
+                };
+            });
+        }
+        return list.map((t) => ({
+            type: "tendencia", id: t.id, name: t.title,
+            value: t.cagr_4y > 0 ? t.cagr_4y : 1,
+            metric: t.cagr_4y, sub: fmtTam(t.tam_busd) || "", badge: fmtCagr(t.cagr_4y),
+        }));
+    };
     if (view === "megatrends") {
         if (path.length === 0) {
             return folders.map((f) => ({
@@ -35,7 +66,7 @@ function buildItems(view, path, dash, minConv) {
         }
         return tendenciaItems(tendencias.filter((t) => t.folder_id === path[0].id));
     }
-    if (view === "tendencias") return tendenciaItems(tendencias);
+    if (view === "tendencias") return tendenciaItems(tendencias, tendMetric);
     if (view === "convergence") {
         // Companies appearing in ≥ minConv of the user's tendencias. Size ∝ count.
         return (dash?.convergence || []).filter((c) => c.count >= minConv).map((c) => ({
@@ -135,6 +166,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [view, setView] = useState("megatrends");
     const [path, setPath] = useState([]);
     const [minConv, setMinConv] = useState(2);
+    const [tendMetric, setTendMetric] = useState("cagr");  // cagr | tam | media (solo vista Tendencias)
     const [tip, setTip] = useState(null);
     const [btnTip, setBtnTip] = useState(null);
     const wrapRef = useRef(null);
@@ -148,7 +180,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
         return () => ro.disconnect();
     }, []);
 
-    const items = useMemo(() => buildItems(view, path, dash, minConv), [view, path, dash, minConv]);
+    const items = useMemo(() => buildItems(view, path, dash, minConv, tendMetric), [view, path, dash, minConv, tendMetric]);
     const metrics = items.map((it) => it.metric).filter((m) => m != null);
     const min = metrics.length ? Math.min(...metrics) : 0;
     const max = metrics.length ? Math.max(...metrics) : 1;
@@ -175,7 +207,11 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const caption = view === "megatrends"
         ? "El tamaño de cada megatendencia es proporcional a la MEDIA del crecimiento compuesto a 4 años (CAGR) de sus tendencias; el badge muestra ese CAGR y el subtítulo el TAM total (suma)."
         : view === "tendencias"
-            ? "El tamaño de cada tendencia es proporcional a su crecimiento compuesto a 4 años (CAGR); el badge muestra el CAGR y el subtítulo el TAM 2027e."
+            ? (tendMetric === "tam"
+                ? "El tamaño de cada tendencia es proporcional a su TAM estimado a 2027; el badge muestra el TAM y el subtítulo el crecimiento compuesto a 4 años (CAGR). Así comparas las tendencias por tamaño de mercado."
+                : tendMetric === "media"
+                    ? "El tamaño de cada tendencia combina —media normalizada 0–100— su TAM y su CAGR, para ver qué tendencias destacan en AMBAS variables a la vez; el badge muestra ese índice combinado (0–100) y el subtítulo el CAGR y el TAM."
+                    : "El tamaño de cada tendencia es proporcional a su crecimiento compuesto a 4 años (CAGR); el badge muestra el CAGR y el subtítulo el TAM 2027e. Así comparas las tendencias por ritmo de crecimiento.")
             : view === "convergence"
                 ? "Empresas que aparecen en varias de tus tendencias (convergencia de megatendencias). El tamaño y el badge son el nº de tendencias; ✓ = ya tiene tesis de empresa desarrollada (clic para abrirla); si no, el clic la prepara en «Empresa → Tesis»."
                 : view === "companies_score"
@@ -187,7 +223,28 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
             {/* View switcher: left group (entities) + right group (completed-company scores) */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3" data-testid="explore-views">
                 <div className="flex border border-black w-fit">
-                    {leftViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
+                    {leftViews.map((v, i) => (
+                        v.id === "tendencias" ? (
+                            <div key={v.id} className={`flex items-stretch ${i > 0 ? "border-l border-black" : ""}`}>
+                                <ViewBtn v={v} i={0} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />
+                                {view === "tendencias" && (
+                                    <select
+                                        value={tendMetric}
+                                        onChange={(e) => setTendMetric(e.target.value)}
+                                        className="bg-black text-[#FDF1E6] text-[11px] uppercase tracking-[0.06em] font-semibold pl-2 pr-1 border-l border-[#FDF1E6]/30 outline-none cursor-pointer"
+                                        title="Elige qué variable dimensiona las tendencias"
+                                        data-testid="tendencias-metric"
+                                    >
+                                        <option value="cagr">por CAGR</option>
+                                        <option value="tam">por TAM</option>
+                                        <option value="media">media (TAM+CAGR)</option>
+                                    </select>
+                                )}
+                            </div>
+                        ) : (
+                            <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />
+                        )
+                    ))}
                 </div>
                 <div className="flex border border-black w-fit" data-testid="explore-views-right">
                     {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
