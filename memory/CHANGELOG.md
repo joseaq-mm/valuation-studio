@@ -138,3 +138,10 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 
 ## 2026-07-02 (f) — Macro: eliminada ficha "Petróleo (WTI)" independiente
 - Quitada la tarjeta `oil` (precio WTI diario) por redundante: la ficha "Petróleo vs media histórica" (`oil_avg`) ya muestra el precio actual del barril. Se sigue consultando DCOILWTICO para ese precio actual. Fichas ahora: equities, gdp, fed_rate, inflation, productivity, m3_proxy, oil_avg, energy_mix.
+
+## 2026-07-03 — Macro: ficha "Coeficiente de mercado" (fórmula del usuario + aguja)
+- Fórmula (definida por el usuario, imagen transcrita): **C = (m71/(m70−m72)) × (1−(m73+m74)/100) × (m75/100) × (1−((m76−m77)×(m78/10000)))**.
+  Códigos: m70 Renta variable, m71 PIB, **m72 = M3 proxy** (corrección del usuario), m73 Tipo FED, m74 Inflación, m75 Productividad (índice), m76 Precio petróleo actual, m77 Media petróleo (según dial), m78 Mix petróleo+gas.
+- **Interpretación (nueva, usuario): C<1 = mercado CARO, C>1 = BARATO, 1 = neutro.**
+- UI: ficha destacada arriba del grid con **aguja/gauge SVG semicircular (180°)**: 1 arriba (neutro gris), izquierda→0 degradado naranja→rojo (caro), derecha→2 verde claro→oscuro (barato). Muestra C, veredicto y cajas de acciones **Caro→Defensivas (KO·PG·JNJ·WM)** vs **Barato→Crecimiento (NVDA·PLTR·TSLA·SHOP)** resaltando la activa, más los 9 valores usados.
+- **m77 usa el dial de la ficha "Petróleo vs media" (estado compartido)** → el coeficiente se recalcula en vivo al mover el dial. Verificado: C 0,95 (4a) → 0,91 (14a). Cálculo 100% en frontend desde el payload de indicadores.
