@@ -401,14 +401,14 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
                         <div className={`border p-2.5 ${expensive ? "border-[#B32A22] bg-[#FBE9E7]" : "border-black/15 opacity-60"}`} data-testid="coef-defensive">
                             <div className="flex items-center justify-between gap-1 mb-1">
                                 <span className="text-[11px] uppercase tracking-wide font-semibold text-[#B32A22]">Caro → Defensivas/efectivo</span>
-                                {expensive && <span className="font-serif font-semibold tabular-nums text-5xl leading-none text-[#B32A22]" data-testid="coef-defensive-pct">{absPct}</span>}
+                                {expensive && <span className="font-semibold tabular-nums text-[11px] text-[#B32A22]" data-testid="coef-defensive-pct">{absPct}</span>}
                             </div>
                             <div className="text-[13px] text-[#4A4A4A] tabular-nums">{DEFENSIVE.join(" · ")}</div>
                         </div>
                         <div className={`border p-2.5 ${cheap ? "border-[#1F7A3D] bg-[#E9F5EC]" : "border-black/15 opacity-60"}`} data-testid="coef-growth">
                             <div className="flex items-center justify-between gap-1 mb-1">
                                 <span className="text-[11px] uppercase tracking-wide font-semibold text-[#1F7A3D]">Barato → Crecimiento/smallcaps</span>
-                                {cheap && <span className="font-serif font-semibold tabular-nums text-5xl leading-none text-[#1F7A3D]" data-testid="coef-growth-pct">{absPct}</span>}
+                                {cheap && <span className="font-semibold tabular-nums text-[11px] text-[#1F7A3D]" data-testid="coef-growth-pct">{absPct}</span>}
                             </div>
                             <div className="text-[13px] text-[#4A4A4A] tabular-nums">{GROWTH.join(" · ")}</div>
                         </div>
