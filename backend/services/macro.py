@@ -225,7 +225,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 8),
             _observations(client, "GDP", 8),
             _observations(client, "FEDFUNDS", 16),
@@ -236,6 +236,9 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             _observations(client, "COMPOUT", 56),
             _observations(client, "DCOILWTICO", 40),
             _observations(client, "MCOILWTICO", 252),
+            _observations(client, "SP500", 400),
+            _observations(client, "NASDAQ100", 400),
+            _observations(client, "DJIA", 400),
         )
 
     indicators = []
@@ -245,19 +248,70 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             return round((obs[0]["value"] - obs[4]["value"]) / obs[4]["value"] * 100, 2)
         return None
 
+    def _index_at(obs, target_iso):
+        """Value of the first observation on/before `target_iso` (obs is descending)."""
+        if not obs or not target_iso:
+            return None
+        for o in obs:
+            if o["date"] <= target_iso:
+                return o["value"]
+        return obs[-1]["value"]  # target older than history → oldest available
+
+    # --- Extrapolación "en vivo" de Renta variable (m70) usando índices bursátiles ---
+    equities_val = round(equities[0]["value"] / 1000.0, 1) if equities else None
+    equities_date = equities[0]["date"] if equities else None
+    equities_live_by_index = {}
+    _INDEX_META = [("SP500", sp500, "S&P 500"), ("NASDAQ100", ndx, "NASDAQ 100"), ("DJIA", djia, "Dow Jones")]
+    if equities_val is not None and equities_date:
+        for code, obs, label in _INDEX_META:
+            if not obs:
+                continue
+            idx_now = obs[0]["value"]
+            idx_ref = _index_at(obs, equities_date)
+            if not idx_ref:
+                continue
+            growth = idx_now / idx_ref
+            equities_live_by_index[code] = {
+                "label": label,
+                "value": round(equities_val * growth, 1),
+                "growth_pct": round((growth - 1) * 100, 2),
+                "index_now": round(idx_now, 2),
+                "index_ref": round(idx_ref, 2),
+                "index_date": obs[0]["date"],
+            }
+    equities_live = {"default": "SP500", "by_index": equities_live_by_index} if equities_live_by_index else None
+
+    # --- Extrapolación "en vivo" del PIB (m71): YoY nominal prorrateado por días ---
+    gdp_live = None
+    if gdp:
+        gdp_yoy = _q_yoy(gdp)
+        try:
+            days = (datetime.now(timezone.utc) - datetime.strptime(gdp[0]["date"][:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)).days
+        except (ValueError, TypeError):
+            days = None
+        if gdp_yoy is not None and days is not None and days >= 0:
+            gdp_vivo = gdp[0]["value"] * (1 + (gdp_yoy / 100.0) * (days / 365.0))
+            gdp_live = {
+                "value": round(gdp_vivo, 1),
+                "yoy_pct": gdp_yoy,
+                "days_elapsed": days,
+                "as_of": datetime.now(timezone.utc).date().isoformat(),
+            }
+
     # 1) Renta variable de EEUU (numerador del clásico indicador Buffett)
     indicators.append({
         "key": "equities",
         "label": "Renta variable (EEUU)",
-        "value": round(equities[0]["value"] / 1000.0, 1) if equities else None,  # millones → miles de M$
+        "value": equities_val,  # millones → miles de M$
         "unit": "miles de M$",
-        "as_of": equities[0]["date"] if equities else None,
+        "as_of": equities_date,
         "frequency": "Trimestral",
         "description": ("Valor de mercado de la renta variable corporativa no financiera de EEUU (capitalización "
                         "bursátil agregada). Es el numerador del clásico 'indicador Buffett' (renta variable ÷ PIB). "
                         "Cuanto mayor frente al PIB, más cara está la bolsa."),
         "interpretation": "↑ bolsa más valorada",
         "extra": {"yoy_pct": _q_yoy(equities)},
+        "live": equities_live,
         "source": "FRED · NCBEILQ027S",
     })
 
@@ -273,6 +327,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
                         "del 'indicador Buffett'; sirve para relativizar cómo de grande es la bolsa frente a la economía."),
         "interpretation": "↑ economía mayor",
         "extra": {"yoy_pct": _q_yoy(gdp)},
+        "live": gdp_live,
         "source": "FRED · GDP",
     })
 

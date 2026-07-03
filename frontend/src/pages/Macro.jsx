@@ -34,13 +34,19 @@ const oilAverage = (history, years) => {
     return slice.reduce((s, x) => s + x.value, 0) / slice.length;
 };
 
+// Live (extrapolated) values: equities via the chosen market index, GDP via prorated YoY.
+// Fall back to the official value when the live estimate is unavailable.
+const liveEquities = (ind, idx) => ind?.live?.by_index?.[idx]?.value ?? ind?.value;
+const liveGdp = (ind) => ind?.live?.value ?? ind?.value;
+
 // Coefficient formula (user-defined):
 // C = (m71/(m70-m72)) * (1-(m73+m74)/100) * (m75/100) * (1-((m76-m77)*(m78/10000)))
 // m70 Renta variable · m71 PIB · m72 M3 proxy · m73 Tipo FED · m74 Inflación
 // m75 Productividad · m76 Precio petróleo · m77 Media petróleo (dial) · m78 Mix petróleo+gas
-const computeCoefficient = (byKey, oilYears) => {
+const computeCoefficient = (byKey, oilYears, selectedIndex) => {
     const g = (k) => byKey[k]?.value;
-    const m70 = g("equities"), m71 = g("gdp"), m72 = g("m3_proxy"), m73 = g("fed_rate"),
+    const m70 = liveEquities(byKey["equities"], selectedIndex), m71 = liveGdp(byKey["gdp"]),
+        m72 = g("m3_proxy"), m73 = g("fed_rate"),
         m74 = g("inflation"), m75 = g("productivity"), m76 = g("oil_avg"), m78 = g("energy_mix");
     const m77 = oilAverage(byKey["oil_avg"]?.history, oilYears);
     const vals = { m70, m71, m72, m73, m74, m75, m76, m77, m78 };
@@ -131,6 +137,74 @@ const MacroCard = ({ ind }) => {
                 ) : (
                     <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
                 )}
+            </div>
+        </div>
+    );
+};
+
+const LiveIndicatorCard = ({ ind, selectedIndex, onIndexChange }) => {
+    const Icon = ICONS[ind.key] || Globe2;
+    const isEquities = ind.key === "equities";
+    const live = ind.live;
+    const byIndex = live?.by_index || {};
+    const liveVal = isEquities ? (byIndex[selectedIndex]?.value ?? null) : (live?.value ?? null);
+    const est = isEquities ? byIndex[selectedIndex] : live;
+    const hasLive = liveVal != null;
+
+    const tip = isEquities
+        ? `${ind.description}\n\nEstimación EN VIVO: se toma el último valor oficial (${fmtDate(ind.as_of)}) y se ajusta por la variación del índice ${est?.label || selectedIndex} desde esa fecha (${est ? signedPct(est.growth_pct) : "—"}). Índice: ${est ? `${nf.format(est.index_ref)} → ${nf.format(est.index_now)}` : "—"}.\n\nFuente: ${ind.source} · ${ind.frequency}`
+        : `${ind.description}\n\nEstimación EN VIVO: al último PIB oficial (${fmtDate(ind.as_of)}) se le aplica el crecimiento interanual nominal (${est ? signedPct(est.yoy_pct) : "—"}) prorrateado por ${est?.days_elapsed ?? "—"} días transcurridos.\n\nFuente: ${ind.source} · ${ind.frequency}`;
+
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Icon size={13} className="text-[#052049]" /> {ind.label}
+                </div>
+                <HoverTip text={tip}>
+                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                        <Info size={14} />
+                    </button>
+                </HoverTip>
+            </div>
+
+            <div className="flex items-baseline gap-1.5">
+                <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid={`macro-value-${ind.key}`}>
+                    {fmtVal(hasLive ? liveVal : ind.value)}
+                </span>
+                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}{hasLive ? " · est." : ""}</span>
+            </div>
+            {hasLive && (
+                <div className="text-[11px] text-[#7A7A7A] mt-1 tabular-nums" data-testid={`macro-official-${ind.key}`}>
+                    Oficial: {fmtVal(ind.value)} {ind.unit} ({fmtDate(ind.as_of)})
+                    {isEquities && est?.growth_pct != null && <span className="text-[#9A9A9A]"> · {est.label} {signedPct(est.growth_pct)}</span>}
+                    {!isEquities && est?.yoy_pct != null && <span className="text-[#9A9A9A]"> · interanual {signedPct(est.yoy_pct)}</span>}
+                </div>
+            )}
+
+            {isEquities && Object.keys(byIndex).length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Índice ref.</span>
+                    <select
+                        value={selectedIndex}
+                        onChange={(e) => onIndexChange(e.target.value)}
+                        className="text-[11px] border border-black/20 bg-white px-1.5 py-0.5 text-[#052049] focus:outline-none focus:border-[#052049]"
+                        data-testid="equities-index-select"
+                    >
+                        {Object.entries(byIndex).map(([code, v]) => (
+                            <option key={code} value={code}>{v.label}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
+
+            <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
+                <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
+                <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>
+                    {hasLive ? "Estimado: hoy" : `Dato: ${fmtDate(ind.as_of)}`}
+                </span>
             </div>
         </div>
     );
@@ -276,8 +350,8 @@ const CoefficientGauge = ({ c }) => {
     );
 };
 
-const CoefficientCard = ({ byKey, oilYears }) => {
-    const res = computeCoefficient(byKey, oilYears);
+const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
+    const res = computeCoefficient(byKey, oilYears, selectedIndex);
     if (!res) {
         return (
             <div className="border border-black/20 bg-white p-5 mb-4" data-testid="coef-card">
@@ -293,7 +367,7 @@ const CoefficientCard = ({ byKey, oilYears }) => {
     const advice = expensive ? "Sesgo defensivo / efectivo" : cheap ? "Sesgo crecimiento / agresivo" : "Equilibrado";
 
     const factorRows = [
-        ["m70", "Renta variable", vals.m70], ["m71", "PIB", vals.m71], ["m72", "M3 proxy", vals.m72],
+        ["m70", "Renta variable (est.)", vals.m70], ["m71", "PIB (est.)", vals.m71], ["m72", "M3 proxy", vals.m72],
         ["m73", "Tipo FED", vals.m73], ["m74", "Inflación", vals.m74], ["m75", "Productividad", vals.m75],
         ["m76", "Precio petróleo", vals.m76], ["m77", `Media petróleo (${oilYears}a)`, vals.m77],
         ["m78", "Mix petróleo+gas", vals.m78],
@@ -348,6 +422,7 @@ export default function Macro() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [oilYears, setOilYears] = useState(4);  // shared oil dial value → feeds m77 of the coefficient
+    const [selectedIndex, setSelectedIndex] = useState("SP500");  // market index for live equities
 
     const load = useCallback(async (refresh = false) => {
         if (refresh) setRefreshing(true); else setLoading(true);
@@ -395,14 +470,17 @@ export default function Macro() {
                     <CoefficientCard
                         byKey={Object.fromEntries(data.indicators.map((i) => [i.key, i]))}
                         oilYears={oilYears}
+                        selectedIndex={selectedIndex}
                     />
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="macro-grid">
                         {data.indicators.map((ind) => (
-                            ind.key === "oil_avg"
-                                ? <OilAverageCard key={ind.key} ind={ind} years={oilYears} onYearsChange={setOilYears} />
-                                : ind.key === "energy_mix"
-                                    ? <EnergyMixCard key={ind.key} ind={ind} />
-                                    : <MacroCard key={ind.key} ind={ind} />
+                            (ind.key === "equities" || ind.key === "gdp")
+                                ? <LiveIndicatorCard key={ind.key} ind={ind} selectedIndex={selectedIndex} onIndexChange={setSelectedIndex} />
+                                : ind.key === "oil_avg"
+                                    ? <OilAverageCard key={ind.key} ind={ind} years={oilYears} onYearsChange={setOilYears} />
+                                    : ind.key === "energy_mix"
+                                        ? <EnergyMixCard key={ind.key} ind={ind} />
+                                        : <MacroCard key={ind.key} ind={ind} />
                         ))}
                     </div>
                     <p className="text-[11px] text-[#9A9A9A] mt-4" data-testid="macro-updated">
