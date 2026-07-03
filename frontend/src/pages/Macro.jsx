@@ -362,6 +362,8 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
     }
     const { C, terms, vals } = res;
     const cheap = C > 1, expensive = C < 1;
+    const pctToOne = (C - 1) * 100;
+    const absPct = `${nf.format(Math.abs(pctToOne))}%`;
     const zoneColor = expensive ? "#B32A22" : cheap ? "#1F7A3D" : "#6A6A6A";
     const verdict = expensive ? "Mercado CARO" : cheap ? "Mercado BARATO" : "Neutral";
     const advice = expensive ? "Sesgo defensivo / efectivo" : cheap ? "Sesgo crecimiento / agresivo" : "Equilibrado";
@@ -397,11 +399,17 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
                 <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                         <div className={`border p-2.5 ${expensive ? "border-[#B32A22] bg-[#FBE9E7]" : "border-black/15 opacity-60"}`} data-testid="coef-defensive">
-                            <div className="text-[11px] uppercase tracking-wide font-semibold text-[#B32A22] mb-1">Caro → Defensivas</div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[11px] uppercase tracking-wide font-semibold text-[#B32A22]">Caro → Defensivas</span>
+                                {expensive && <span className="text-[13px] font-serif font-semibold tabular-nums text-[#B32A22]" data-testid="coef-defensive-pct">{absPct}</span>}
+                            </div>
                             <div className="text-[13px] text-[#4A4A4A] tabular-nums">{DEFENSIVE.join(" · ")}</div>
                         </div>
                         <div className={`border p-2.5 ${cheap ? "border-[#1F7A3D] bg-[#E9F5EC]" : "border-black/15 opacity-60"}`} data-testid="coef-growth">
-                            <div className="text-[11px] uppercase tracking-wide font-semibold text-[#1F7A3D] mb-1">Barato → Crecimiento</div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[11px] uppercase tracking-wide font-semibold text-[#1F7A3D]">Barato → Crecimiento</span>
+                                {cheap && <span className="text-[13px] font-serif font-semibold tabular-nums text-[#1F7A3D]" data-testid="coef-growth-pct">{absPct}</span>}
+                            </div>
                             <div className="text-[13px] text-[#4A4A4A] tabular-nums">{GROWTH.join(" · ")}</div>
                         </div>
                     </div>
