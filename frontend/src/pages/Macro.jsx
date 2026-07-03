@@ -385,7 +385,12 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
                 <div className="flex flex-col items-center">
                     <CoefficientGauge c={C} />
-                    <div className="font-serif tabular-nums text-5xl leading-none mt-1" style={{ color: zoneColor }} data-testid="coef-value">{nf.format(C)}</div>
+                    <div className="flex items-baseline gap-1.5 mt-1">
+                        <span className="font-serif tabular-nums text-5xl leading-none" style={{ color: zoneColor }} data-testid="coef-value">{nf.format(C)}</span>
+                        <span className="text-sm font-semibold tabular-nums" style={{ color: zoneColor }} data-testid="coef-pct-to-one" title="Diferencia hasta 1 (neutro). En 1 = 0%.">
+                            {`${C - 1 > 0 ? "+" : ""}${nf.format((C - 1) * 100)}%`}
+                        </span>
+                    </div>
                     <div className="mt-1 text-sm font-semibold" style={{ color: zoneColor }} data-testid="coef-verdict">{verdict} · {advice}</div>
                 </div>
 
