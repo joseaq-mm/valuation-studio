@@ -157,3 +157,9 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - El botón "Tendencias" se convierte en **desplegable**: al activarse muestra un `<select>` (`data-testid="tendencias-metric"`: por CAGR / por TAM / media) embebido en el mismo grupo de botones.
 - La **leyenda inferior** (`explore-caption`) se adapta al modo elegido. El color verde→rojo (alto→bajo) sigue aplicando sobre la métrica activa.
 - Normalización min-max por lista para el modo media (si todos iguales → 50). Cambio 100% frontend. Compila sin errores; captura visual no tomada por preview en "resting" (plataforma).
+
+## 2026-07-04 — Macro: gráfico de evolución 10 años (4 variables, doble eje Y)
+- Backend (`macro.py`): nuevo `_build_trend()` que devuelve `trend.points` = serie TRIMESTRAL de los últimos ~10 años (40 puntos) con `equities` (renta variable, miles de M$), `gdp` (PIB), `diff` (RV − PIB) y `productivity` (índice). Se subió el límite de obs de NCBEILQ027S/GDP/OPHNFB a 44. Alineado por fecha de trimestre; se actualiza al refrescar cuando FRED publica nuevos datos oficiales.
+- Frontend (`Macro.jsx`): `TrendChart` (recharts ComposedChart) con **doble eje Y** — izquierdo para RV/PIB/resta (miles de M$), derecho para productividad (índice). `TrendCard` colocada en el **hueco inferior derecho** del grid; botón **Ampliar** (`trend-expand-btn`) abre `TrendModal` a pantalla grande (max-w-5xl, height 460).
+- Los valores de RV y PIB del histórico son OFICIALES trimestrales; el **último punto es Estimado** (usa equities live del índice seleccionado + PIB live), marcado con un aro hueco y etiqueta "Est." en el eje X, con nota explicativa y en el tooltip ("· estimado"). Reacciona al desplegable de índice.
+- Verificado backend por curl (40 puntos: 2016-04 → 2026-01). Frontend compila sin errores. Captura visual no tomada: preview del navegador en estado "resting" (plataforma).

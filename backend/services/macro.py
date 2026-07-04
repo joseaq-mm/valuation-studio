@@ -226,11 +226,11 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
         equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia = await asyncio.gather(
-            _observations(client, "NCBEILQ027S", 8),
-            _observations(client, "GDP", 8),
+            _observations(client, "NCBEILQ027S", 44),
+            _observations(client, "GDP", 44),
             _observations(client, "FEDFUNDS", 16),
             _observations(client, "CPIAUCSL", 16),
-            _observations(client, "OPHNFB", 8),
+            _observations(client, "OPHNFB", 44),
             _observations(client, "M2SL", 16),
             _observations(client, "LTDACBW027SBOG", 56),
             _observations(client, "COMPOUT", 56),
@@ -490,8 +490,27 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
 
     return {
         "indicators": indicators,
+        "trend": _build_trend(equities, gdp, prod),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _build_trend(equities: list, gdp: list, prod: list) -> dict:
+    """Quarterly time series (last ~10 years) for the evolution chart: renta variable
+    (miles de M$), PIB (miles de M$), su resta (RV − PIB) y productividad (índice).
+    Only official/quarterly values; the frontend appends the estimated last point."""
+    eq_map = {o["date"]: round(o["value"] / 1000.0, 1) for o in equities}
+    gdp_map = {o["date"]: round(o["value"], 1) for o in gdp}
+    prod_map = {o["date"]: round(o["value"], 1) for o in prod}
+    dates = sorted(set(eq_map) & set(gdp_map))
+    points = []
+    for d in dates:
+        e, g = eq_map[d], gdp_map[d]
+        points.append({
+            "date": d, "equities": e, "gdp": g,
+            "diff": round(e - g, 1), "productivity": prod_map.get(d),
+        })
+    return {"points": points[-40:]}
 
 
 async def get_macro_indicators(db, refresh: bool = False) -> dict:

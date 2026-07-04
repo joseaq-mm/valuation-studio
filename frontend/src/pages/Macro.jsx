@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle } from "lucide-react";
+import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, LineChart as LineChartIcon } from "lucide-react";
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer } from "recharts";
 import { macroIndicators } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
@@ -430,12 +431,119 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
     );
 };
 
+const qLabel = (iso) => {
+    if (iso === "est") return "Est.";
+    const [y, m] = iso.split("-");
+    const q = { "01": "1T", "04": "2T", "07": "3T", "10": "4T" }[m] || "";
+    return `${q}${y.slice(2)}`;
+};
+
+const TREND_SERIES = [
+    { key: "equities", label: "Renta variable", color: "#052049", axis: "left" },
+    { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
+    { key: "diff", label: "RV − PIB", color: "#B8860B", axis: "left" },
+    { key: "productivity", label: "Productividad", color: "#B32A22", axis: "right" },
+];
+
+const mkDot = (color) => (props) => {
+    const { cx, cy, payload, index } = props;
+    if (cx == null || cy == null || !payload?.est) return <g key={index} />;
+    return <circle key={index} cx={cx} cy={cy} r={4.5} fill="#fff" stroke={color} strokeWidth={2} />;
+};
+
+const TrendTip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const est = payload[0]?.payload?.est;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="trend-tooltip">
+            <div className="font-semibold mb-1">{qLabel(label)}{est ? " · estimado" : ""}</div>
+            {payload.map((p) => (
+                <div key={p.dataKey} className="flex justify-between gap-3 tabular-nums">
+                    <span style={{ color: p.color }}>{p.name}</span>
+                    <span>{p.value == null ? "—" : nf.format(p.value)}<span className="text-[#9CA3AF]"> {p.dataKey === "productivity" ? "índ." : "mM$"}</span></span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const TrendChart = ({ data, height, small }) => (
+    <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={data} margin={{ top: 8, right: 6, left: small ? -14 : 4, bottom: 0 }}>
+            <CartesianGrid stroke="#00000010" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} interval={small ? 6 : 3} axisLine={{ stroke: "#00000022" }} tickLine={false} />
+            <YAxis yAxisId="left" tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} width={small ? 32 : 48} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "#B32A22" }} width={small ? 26 : 40} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
+            <RTooltip content={<TrendTip />} />
+            {!small && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            {TREND_SERIES.map((s) => (
+                <Line key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={mkDot(s.color)} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+            ))}
+        </ComposedChart>
+    </ResponsiveContainer>
+);
+
+// Official quarterly points + an estimated last point (live equities via selected index + live GDP).
+const buildTrendData = (points, byKey, selectedIndex) => {
+    const base = (points || []).map((p) => ({ ...p }));
+    const eLive = byKey?.equities?.live?.by_index?.[selectedIndex]?.value;
+    const gLive = byKey?.gdp?.live?.value;
+    if (eLive != null && gLive != null && base.length) {
+        const lastProd = [...base].reverse().find((p) => p.productivity != null)?.productivity ?? null;
+        base.push({ date: "est", equities: eLive, gdp: gLive, diff: +(eLive - gLive).toFixed(1), productivity: lastProd, est: true });
+    }
+    return base;
+};
+
+const TrendCard = ({ points, byKey, selectedIndex, onExpand }) => {
+    const data = React.useMemo(() => buildTrendData(points, byKey, selectedIndex), [points, byKey, selectedIndex]);
+    if (!data.length) return null;
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid="macro-card-trend">
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <LineChartIcon size={13} className="text-[#052049]" /> Evolución · 10 años
+                </div>
+                <button onClick={onExpand} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="trend-expand-btn" aria-label="Ampliar gráfico" title="Ampliar">
+                    <Maximize2 size={14} />
+                </button>
+            </div>
+            <TrendChart data={data} height={150} small />
+            <div className="text-[10px] text-[#9A9A9A] mt-1.5 leading-snug">
+                Trimestral. El último punto (<span className="text-[#052049] font-semibold">Est.</span>) usa valores estimados. Eje dcho.: productividad.
+            </div>
+        </div>
+    );
+};
+
+const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
+    const data = React.useMemo(() => buildTrendData(points, byKey, selectedIndex), [points, byKey, selectedIndex]);
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="trend-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3">
+                    <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2">
+                        <LineChartIcon size={22} className="text-[#052049]" /> Evolución macro · 10 años (trimestral)
+                    </h2>
+                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="trend-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                </div>
+                <TrendChart data={data} height={460} />
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                    Renta variable, PIB y su resta (RV − PIB) en el <strong>eje izquierdo</strong> (miles de M$); Productividad en el <strong>eje derecho</strong> (índice 2017=100).
+                    Valores oficiales trimestrales; el último punto marcado como <strong>Est.</strong> usa los valores estimados en vivo (Renta variable con el índice {selectedIndex}, PIB con crecimiento interanual prorrateado).
+                </p>
+            </div>
+        </div>
+    );
+};
+
 export default function Macro() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [oilYears, setOilYears] = useState(4);  // shared oil dial value → feeds m77 of the coefficient
     const [selectedIndex, setSelectedIndex] = useState("SP500");  // market index for live equities
+    const [trendOpen, setTrendOpen] = useState(false);
 
     const load = useCallback(async (refresh = false) => {
         if (refresh) setRefreshing(true); else setLoading(true);
@@ -495,7 +603,23 @@ export default function Macro() {
                                         ? <EnergyMixCard key={ind.key} ind={ind} />
                                         : <MacroCard key={ind.key} ind={ind} />
                         ))}
+                        {data.trend?.points?.length > 0 && (
+                            <TrendCard
+                                points={data.trend.points}
+                                byKey={Object.fromEntries(data.indicators.map((i) => [i.key, i]))}
+                                selectedIndex={selectedIndex}
+                                onExpand={() => setTrendOpen(true)}
+                            />
+                        )}
                     </div>
+                    {trendOpen && (
+                        <TrendModal
+                            points={data.trend.points}
+                            byKey={Object.fromEntries(data.indicators.map((i) => [i.key, i]))}
+                            selectedIndex={selectedIndex}
+                            onClose={() => setTrendOpen(false)}
+                        />
+                    )}
                     <p className="text-[11px] text-[#9A9A9A] mt-4" data-testid="macro-updated">
                         Datos cacheados y refrescados periódicamente desde FRED.
                         {data.updated_at && ` Última sincronización: ${new Date(data.updated_at).toLocaleString("es-ES")}.`}
