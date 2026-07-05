@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, LineChart as LineChartIcon } from "lucide-react";
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer } from "recharts";
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine } from "recharts";
 import { macroIndicators } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
@@ -351,7 +351,56 @@ const CoefficientGauge = ({ c }) => {
     );
 };
 
-const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
+const dLabel = (iso) => {
+    if (!iso) return "";
+    try { return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }); }
+    catch { return iso; }
+};
+
+const CoefHistTip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="coef-hist-tooltip">
+            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="tabular-nums">Coef.: {nf.format(p.c)} · {p.c > 1 ? "barato" : p.c < 1 ? "caro" : "neutro"}</div>
+        </div>
+    );
+};
+
+const CoefHistoryChart = ({ history, height, small }) => {
+    if (!history?.length) return null;
+    return (
+        <ResponsiveContainer width="100%" height={height}>
+            <LineChart data={history} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+                <CartesianGrid stroke="#00000010" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
+                <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
+                <RTooltip content={<CoefHistTip />} />
+                <Line type="monotone" dataKey="c" stroke="#052049" strokeWidth={2} dot={false} isAnimationActive={false} />
+            </LineChart>
+        </ResponsiveContainer>
+    );
+};
+
+const CoefHistoryModal = ({ history, onClose }) => (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="coef-history-modal">
+        <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+                <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2"><LineChartIcon size={22} /> Histórico del coeficiente</h2>
+                <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="coef-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
+            </div>
+            <CoefHistoryChart history={history} height={420} />
+            <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). Por encima de <strong>1</strong> = mercado barato; por debajo = caro. El histórico crece cada día al refrescar los datos macro.
+            </p>
+        </div>
+    </div>
+);
+
+const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
+    const [histOpen, setHistOpen] = useState(false);
     const res = computeCoefficient(byKey, oilYears, selectedIndex);
     if (!res) {
         return (
@@ -395,6 +444,17 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
                         </span>
                     </div>
                     <div className="mt-1 text-sm font-semibold" style={{ color: zoneColor }} data-testid="coef-verdict">{verdict} · {advice}</div>
+                    {coefHistory?.length > 1 && (
+                        <div className="w-full mt-3 border-t border-black/10 pt-2" data-testid="coef-history-mini">
+                            <div className="flex items-center justify-between mb-0.5">
+                                <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Histórico · {coefHistory.length}d</span>
+                                <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-history-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                                    <Maximize2 size={13} />
+                                </button>
+                            </div>
+                            <CoefHistoryChart history={coefHistory} height={84} small />
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-3">
@@ -427,6 +487,7 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex }) => {
                     </div>
                 </div>
             </div>
+            {histOpen && <CoefHistoryModal history={coefHistory} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
@@ -592,6 +653,7 @@ export default function Macro() {
                         byKey={Object.fromEntries(data.indicators.map((i) => [i.key, i]))}
                         oilYears={oilYears}
                         selectedIndex={selectedIndex}
+                        coefHistory={data.coef_history}
                     />
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="macro-grid">
                         {data.indicators.map((ind) => (

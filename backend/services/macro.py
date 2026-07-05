@@ -515,7 +515,8 @@ def _build_trend(equities: list, gdp: list, prod: list) -> dict:
 
 async def get_macro_indicators(db, refresh: bool = False) -> dict:
     """Cached accessor: returns the cached payload if younger than CACHE_TTL_HOURS,
-    otherwise refetches from FRED and stores it."""
+    otherwise refetches from FRED and stores it. Always attaches the daily coefficient
+    history."""
     now = datetime.now(timezone.utc)
     if not refresh:
         cached = await db.macro_cache.find_one({"id": "us_macro"}, {"_id": 0})
@@ -524,6 +525,7 @@ async def get_macro_indicators(db, refresh: bool = False) -> dict:
                 age_h = (now - datetime.fromisoformat(cached["updated_at"])).total_seconds() / 3600
                 if age_h < CACHE_TTL_HOURS:
                     cached["cached"] = True
+                    cached["coef_history"] = await _get_coef_history(db)
                     return cached
             except (ValueError, TypeError):
                 pass
@@ -531,5 +533,77 @@ async def get_macro_indicators(db, refresh: bool = False) -> dict:
     energy = await resolve_energy_mix(db)
     data = await fetch_macro_indicators(ici_inst=ici_inst, energy=energy)
     await db.macro_cache.update_one({"id": "us_macro"}, {"$set": {"id": "us_macro", **data}}, upsert=True)
+    c_now = _compute_coef_default(data)
+    if c_now is not None:
+        await _seed_coef_history(db, c_now)
+        await _store_coef_point(db, c_now)
+    data["coef_history"] = await _get_coef_history(db)
     data["cached"] = False
     return data
+
+
+def _ind(data: dict, key: str) -> dict | None:
+    for i in data.get("indicators", []):
+        if i.get("key") == key:
+            return i
+    return None
+
+
+def _compute_coef_default(data: dict) -> float | None:
+    """Server-side coefficient with the DEFAULT choices (equities live vía S&P 500,
+    media del petróleo a 4 años). Mirrors the frontend formula so the stored history
+    is consistent and comparable."""
+    eq, gdp = _ind(data, "equities"), _ind(data, "gdp")
+    m3, fed = _ind(data, "m3_proxy"), _ind(data, "fed_rate")
+    infl, prod = _ind(data, "inflation"), _ind(data, "productivity")
+    oil, en = _ind(data, "oil_avg"), _ind(data, "energy_mix")
+    v = lambda x: x.get("value") if x else None
+    m70 = (eq.get("live") or {}).get("by_index", {}).get("SP500", {}).get("value") if eq and eq.get("live") else None
+    if m70 is None:
+        m70 = v(eq)
+    m71 = (gdp.get("live") or {}).get("value") if gdp and gdp.get("live") else v(gdp)
+    m72, m73, m74, m75 = v(m3), v(fed), v(infl), v(prod)
+    m76, m78 = v(oil), v(en)
+    m77 = None
+    if oil and oil.get("history"):
+        hist = oil["history"]
+        sl = hist[-min(48, len(hist)):]
+        if sl:
+            m77 = sum(h["value"] for h in sl) / len(sl)
+    vals = [m70, m71, m72, m73, m74, m75, m76, m77, m78]
+    if any(x is None for x in vals) or (m70 - m72) == 0:
+        return None
+    t1 = m71 / (m70 - m72)
+    t2 = 1 - (m73 + m74) / 100
+    t3 = m75 / 100
+    t4 = 1 - ((m76 - m77) * (m78 / 10000))
+    return round(t1 * t2 * t3 * t4, 4)
+
+
+async def _store_coef_point(db, c: float) -> None:
+    """Upsert one coefficient point per day (idempotent)."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    await db.macro_coef_history.update_one(
+        {"date": today}, {"$set": {"date": today, "c": c}}, upsert=True)
+
+
+async def _get_coef_history(db, limit: int = 180) -> list:
+    pts = await db.macro_coef_history.find({}, {"_id": 0}).sort("date", 1).to_list(length=1000)
+    return pts[-limit:]
+
+
+async def _seed_coef_history(db, current_c: float) -> None:
+    """One-off: if history is empty, backfill ~90 daily example points ending near the
+    current coefficient (gentle random walk) so the chart isn't empty on first use."""
+    import random
+    from datetime import timedelta
+    if await db.macro_coef_history.count_documents({}) > 0:
+        return
+    today = datetime.now(timezone.utc).date()
+    c = current_c
+    pts = []
+    for d in range(1, 91):  # d=1 → yesterday (near current) … d=90 → oldest
+        c = max(0.6, min(1.5, c + random.uniform(-0.014, 0.014)))
+        pts.append({"date": (today - timedelta(days=d)).isoformat(), "c": round(c, 4)})
+    if pts:
+        await db.macro_coef_history.insert_many(pts)
