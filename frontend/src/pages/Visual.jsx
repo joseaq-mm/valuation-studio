@@ -426,6 +426,11 @@ export default function Visual() {
                             </th>
                             <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" />
                             <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
+                            <th className="p-2 text-center w-10">
+                                <HoverTip text={"Alerta de seguimiento. Configura umbrales de Score, TAM Score y Coef KPI: si la empresa los alcanza, recibirás un email ese día. Las empresas con campanita también avisan al cruzar de barato↔caro. Todo se consolida en un único email diario."} maxWidth={320}>
+                                    <span className="cursor-help inline-flex"><Bell size={13} /></span>
+                                </HoverTip>
+                            </th>
                             <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha reportado un trimestre posterior (conviene reanalizar)." />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
@@ -434,11 +439,6 @@ export default function Visual() {
                             <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.compra} />
                             <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.venta} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>total</span></span>} k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined} />
-                            <th className="p-2 text-center w-10">
-                                <HoverTip text={"Alerta de seguimiento. Configura umbrales de Score, TAM Score y Coef KPI: si la empresa los alcanza, recibirás un email ese día. Las empresas con campanita también avisan al cruzar de barato↔caro. Todo se consolida en un único email diario."} maxWidth={320}>
-                                    <span className="cursor-help inline-flex"><Bell size={13} /></span>
-                                </HoverTip>
-                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -453,6 +453,7 @@ export default function Visual() {
                                     <td className="p-2"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
                                     <td className="p-2 font-semibold"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
+                                    <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
                                     <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} mostRecentQuarter={r.most_recent_quarter} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
@@ -465,7 +466,6 @@ export default function Visual() {
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
-                                    <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
                                 </tr>
                             );
                         })}
@@ -505,7 +505,7 @@ const AlertBell = ({ ticker, alert, onSaved }) => {
 
     const openPanel = () => {
         const r = btnRef.current?.getBoundingClientRect();
-        if (r) setPos({ top: r.bottom + 4, left: Math.min(r.left - 220, window.innerWidth - 280) });
+        if (r) setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 280)) });
         setOpen((o) => !o);
     };
     const setMetric = (k, patch) => setForm((f) => ({ ...f, [k]: { ...f[k], ...patch } }));
