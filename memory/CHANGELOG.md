@@ -169,3 +169,9 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - Frontend (`Macro.jsx`): `CoefHistoryChart` (recharts LineChart con `ReferenceLine` en y=1 = neutro). Mini-sparkline dentro del recuadro "Coeficiente de mercado" bajo la aguja/veredicto (`coef-history-mini`, height 84) + botón **Ampliar** (`coef-history-expand-btn`) que abre `CoefHistoryModal` (height 420). Tooltip muestra fecha + coef + caro/barato/neutro.
 - Confirmado por el usuario: guardar 1x/día, valores por defecto, ubicación dentro del recuadro, y sembrar puntos de ejemplo.
 - Verificado backend por curl: `coef_history` con 91 puntos (90 seed + hoy). Frontend compila sin errores. Captura visual no tomada: preview del navegador en "resting" (plataforma).
+
+## 2026-07-06 — Visual: los filtros marcan/desmarcan filas de la tabla automáticamente
+- `Visual.jsx`: los filtros (Score, TAM, Ratio Compra, Ratio Venta) ahora **sincronizan las casillas de la tabla**: al aplicar/ajustar un filtro se marca (pasa) o desmarca (no pasa) cada empresa automáticamente, en sincronía con el mapa.
+- Nuevo helper `passesFilters(r, f)` (reutilizado por el mapa y por el marcado) + `useEffect([filters, rows])` que hace `setSelected` = tickers que pasan los filtros. El marcado manual (toggleOne/toggleAll) sigue funcionando entre cambios de filtro.
+- Texto de filtros actualizado: "Filtros · marcan/desmarcan empresas en la tabla y las muestran u ocultan en el mapa".
+- Cambio 100% frontend. Compila sin errores; captura visual no tomada por preview en "resting".

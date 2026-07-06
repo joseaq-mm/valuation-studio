@@ -213,6 +213,21 @@ export default function Visual() {
         return () => window.removeEventListener("vs:thresholds-changed", onChange);
     }, []);
 
+    // A row passes the numeric filters (drives both map visibility and table marking).
+    const passesFilters = useCallback((r, f) => (
+        (r.avg_overall_score || 0) >= f.score &&
+        (r.sum_tam_score || 0) >= f.tam &&
+        (r.ratio_compra_pct ?? -10000) >= f.rc &&
+        (r.ratio_venta_pct ?? -10000) >= f.rv
+    ), []);
+
+    // Keep the table checkboxes in sync with the filters: selecting/adjusting a filter
+    // automatically marks (passes) or unmarks (fails) each row.
+    useEffect(() => {
+        if (!rows.length) return;
+        setSelected(new Set(rows.filter((r) => passesFilters(r, filters)).map((r) => r.ticker)));
+    }, [filters, rows, passesFilters]);
+
     // Sorting (table) — always over ALL rows. String columns (ticker/name) sort
     // alphabetically; the rest numerically.
     const STRING_KEYS = useMemo(() => new Set(["ticker", "name"]), []);
@@ -257,16 +272,12 @@ export default function Visual() {
         });
     };
 
-    // Map data: selected + passing filters
+    // Map data: selected rows that also pass the filters (need both axes to plot).
     const mapRows = useMemo(() => rows.filter((r) => {
         if (!selected.has(r.ticker)) return false;
         if (r.avg_overall_score == null || r.ratio_compra_pct == null) return false; // need both axes
-        if ((r.avg_overall_score || 0) < filters.score) return false;
-        if ((r.sum_tam_score || 0) < filters.tam) return false;
-        if ((r.ratio_compra_pct || -10000) < filters.rc) return false;
-        if ((r.ratio_venta_pct || -10000) < filters.rv) return false;
-        return true;
-    }), [rows, selected, filters]);
+        return passesFilters(r, filters);
+    }), [rows, selected, filters, passesFilters]);
 
     const resetFilters = () => setFilters({ score: 0, tam: 0, rc: -10000, rv: -10000 });
 
@@ -368,7 +379,7 @@ export default function Visual() {
             {/* Filters */}
             <div className="border border-black/20 p-4 mb-4 bg-[#FAF6EE]" data-testid="visual-filters">
                 <div className="flex items-center justify-between mb-3">
-                    <div className="overline text-[#4A4A4A]">Filtros · ocultan empresas del mapa (la tabla muestra siempre todo)</div>
+                    <div className="overline text-[#4A4A4A]">Filtros · marcan/desmarcan empresas en la tabla y las muestran u ocultan en el mapa</div>
                     <button onClick={resetFilters} className="text-xs font-mono text-[#4A4A4A] hover:text-black flex items-center gap-1" data-testid="visual-reset-filters">
                         <RotateCcw size={12} /> Reset
                     </button>
