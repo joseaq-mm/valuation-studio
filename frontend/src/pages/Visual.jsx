@@ -168,8 +168,11 @@ export default function Visual() {
     const [filters, setFilters] = useState({
         score: 0,
         tam: 0,
+        kpi: -10000,
         rc: -10000,
         rv: -10000,
+        cqual: 0,
+        ctotal: 0,
     });
 
     // Load on mount (and whenever user changes). All rows start SELECTED so the
@@ -217,8 +220,11 @@ export default function Visual() {
     const passesFilters = useCallback((r, f) => (
         (r.avg_overall_score || 0) >= f.score &&
         (r.sum_tam_score || 0) >= f.tam &&
+        (typeof r.kpi_coef === "number" ? r.kpi_coef : -10000) >= f.kpi &&
         (r.ratio_compra_pct ?? -10000) >= f.rc &&
-        (r.ratio_venta_pct ?? -10000) >= f.rv
+        (r.ratio_venta_pct ?? -10000) >= f.rv &&
+        ((r.combined_qual ?? 0) * 100) >= f.cqual &&
+        ((r.combined ?? 0) * 100) >= f.ctotal
     ), []);
 
     // Keep the table checkboxes in sync with the filters: selecting/adjusting a filter
@@ -279,7 +285,7 @@ export default function Visual() {
         return passesFilters(r, filters);
     }), [rows, selected, filters, passesFilters]);
 
-    const resetFilters = () => setFilters({ score: 0, tam: 0, rc: -10000, rv: -10000 });
+    const resetFilters = () => setFilters({ score: 0, tam: 0, kpi: -10000, rc: -10000, rv: -10000, cqual: 0, ctotal: 0 });
 
     // Dynamic quadrant divider: use median of MAP rows so dots end up balanced
     // across the 4 quadrants regardless of dataset spread. Falls back to median
@@ -387,8 +393,11 @@ export default function Visual() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <FilterField label="Score min" value={filters.score} step={1} onChange={(v) => setFilters({ ...filters, score: v })} testid="filter-score" />
                     <FilterField label="TAM Score min" value={filters.tam} step={0.5} onChange={(v) => setFilters({ ...filters, tam: v })} testid="filter-tam" />
+                    <FilterField label="Coef KPI ≥" value={filters.kpi} step={0.1} onChange={(v) => setFilters({ ...filters, kpi: v })} testid="filter-kpi" />
                     <FilterField label="Ratio Compra ≥ %" value={filters.rc} step={5} onChange={(v) => setFilters({ ...filters, rc: v })} testid="filter-rc" suffix="%" />
                     <FilterField label="Ratio Venta ≥ %" value={filters.rv} step={5} onChange={(v) => setFilters({ ...filters, rv: v })} testid="filter-rv" suffix="%" />
+                    <FilterField label="Combinado cual. ≥ %" value={filters.cqual} step={5} onChange={(v) => setFilters({ ...filters, cqual: v })} testid="filter-cqual" suffix="%" />
+                    <FilterField label="Combinado total ≥ %" value={filters.ctotal} step={5} onChange={(v) => setFilters({ ...filters, ctotal: v })} testid="filter-ctotal" suffix="%" />
                 </div>
             </div>
 
