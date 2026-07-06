@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, LineChart as LineChartIcon } from "lucide-react";
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine } from "recharts";
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
 import { macroIndicators } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
@@ -374,6 +374,8 @@ const CoefHistoryChart = ({ history, height, small }) => {
         <ResponsiveContainer width="100%" height={height}>
             <LineChart data={history} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
                 <CartesianGrid stroke="#00000010" vertical={false} />
+                <ReferenceArea y1={1} y2={100} fill="#1F7A3D" fillOpacity={0.07} />
+                <ReferenceArea y1={0} y2={1} fill="#B32A22" fillOpacity={0.07} />
                 <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
                 <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
@@ -393,7 +395,7 @@ const CoefHistoryModal = ({ history, onClose }) => (
             </div>
             <CoefHistoryChart history={history} height={420} />
             <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
-                Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). Por encima de <strong>1</strong> = mercado barato; por debajo = caro. El histórico crece cada día al refrescar los datos macro.
+                Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro. El histórico crece cada día al refrescar los datos macro.
             </p>
         </div>
     </div>

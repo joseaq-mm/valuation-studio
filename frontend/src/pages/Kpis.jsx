@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap } from "lucide-react";
+import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
@@ -23,6 +23,28 @@ const coefLabel = (c) => {
     return "Neutral";
 };
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }); } catch { return ""; } };
+
+const srcDomain = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } };
+
+// Trend indicator: compares the latest coefficient with the previous (re)analysis.
+const CoefTrend = ({ history }) => {
+    if (!history || history.length < 2) return null;
+    const last = history[history.length - 1].coef;
+    const prev = history[history.length - 2].coef;
+    const delta = last - prev;
+    const up = delta > 0.005, down = delta < -0.005;
+    const color = up ? "#1D7044" : down ? "#B32A22" : "#7A7A7A";
+    const Icon = up ? TrendingUp : down ? TrendingDown : Minus;
+    const tip = "Evolución del coeficiente entre reanálisis (más reciente abajo):\n\n" +
+        history.slice(-8).map((h) => `${h.date}: ${Number(h.coef).toFixed(2)}`).join("\n");
+    return (
+        <HoverTip text={tip}>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold tabular-nums cursor-help" style={{ color }} data-testid="kpi-coef-trend">
+                <Icon size={14} /> {delta > 0 ? "+" : ""}{delta.toFixed(2)} vs análisis previo
+            </span>
+        </HoverTip>
+    );
+};
 
 const CoefBadge = ({ c, signal, size = "lg" }) => (
     <div className="inline-flex items-center gap-2" data-testid="coef-badge">
@@ -262,7 +284,10 @@ export default function Kpis() {
                     <div className="border border-black bg-white p-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
                         <div>
                             <div className="overline text-[#4A4A4A] mb-1">Coeficiente global · {selCompany?.name}</div>
-                            <CoefBadge c={snap.coef_global} signal={snap.signal_global} />
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <CoefBadge c={snap.coef_global} signal={snap.signal_global} />
+                                <CoefTrend history={snap.coef_history} />
+                            </div>
                             <div className="text-xs text-[#7A7A7A] mt-1">
                                 {snap.period ? `Periodo: ${snap.period} · ` : ""}{snap.generated_at ? `Analizado ${fmtDate(snap.generated_at)}` : ""}{snap.edited_at ? " · editado" : ""}
                             </div>
@@ -402,8 +427,12 @@ export default function Kpis() {
                                             <td className="p-2 text-xs text-[#4A4A4A]">{k.driver}</td>
                                             <td className="p-2">
                                                 {k.source_url
-                                                    ? <a href={k.source_url} target="_blank" rel="noreferrer" className="text-[#052049] inline-flex items-center gap-0.5 text-xs hover:underline" title={k.source_quote}><ExternalLink size={12} /> ver</a>
-                                                    : <span className="text-[#9A9A9A] text-xs">—</span>}
+                                                    ? <HoverTip text={`${k.source_quote || "Sin cita textual disponible"}${srcDomain(k.source_url) ? `\n\nFuente: ${srcDomain(k.source_url)}` : ""}`} maxWidth={340}>
+                                                        <a href={k.source_url} target="_blank" rel="noreferrer" className="text-[#052049] inline-flex items-center gap-0.5 text-xs hover:underline cursor-help" data-testid={`kpi-source-${i}`}><ExternalLink size={12} /> ver</a>
+                                                    </HoverTip>
+                                                    : (k.source_quote
+                                                        ? <HoverTip text={k.source_quote} maxWidth={340}><span className="text-[#7A7A7A] text-xs cursor-help border-b border-dotted border-[#7A7A7A]" data-testid={`kpi-source-${i}`}>cita</span></HoverTip>
+                                                        : <span className="text-[#9A9A9A] text-xs">—</span>)}
                                             </td>
                                         </tr>
                                     ))}

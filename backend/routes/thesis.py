@@ -1831,6 +1831,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
             snap["no_source_doc"] = not files  # E: no official/source document available → UI shows a notice
+            # Trend history of the global coefficient across (re)analyses (one point per day).
+            history = [h for h in (prev.get("coef_history") or []) if h.get("date") != snap["generated_at"][:10]]
+            if snap.get("coef_global") is not None:
+                history.append({"date": snap["generated_at"][:10], "coef": snap["coef_global"]})
+            snap["coef_history"] = history[-20:]
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": snap}})
             await db.thesis_jobs.update_one(
@@ -1924,6 +1929,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         recomputed["ticker"] = snap.get("ticker")
         recomputed["generated_at"] = snap.get("generated_at")
         recomputed["edited_at"] = datetime.now(timezone.utc).isoformat()
+        recomputed["coef_history"] = snap.get("coef_history") or []
         await db.theses.update_one(
             {"id": company_id, "user_id": user["user_id"]}, {"$set": {"kpi_snapshot": recomputed}})
         return {"kpi_snapshot": recomputed}
@@ -1989,6 +1995,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             recomputed["generated_at"] = snap.get("generated_at") or datetime.now(timezone.utc).isoformat()
             recomputed["searched_at"] = datetime.now(timezone.utc).isoformat()
             recomputed["last_query"] = query
+            recomputed["coef_history"] = snap.get("coef_history") or []
 
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": recomputed}})

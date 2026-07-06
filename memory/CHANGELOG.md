@@ -175,3 +175,11 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - Nuevo helper `passesFilters(r, f)` (reutilizado por el mapa y por el marcado) + `useEffect([filters, rows])` que hace `setSelected` = tickers que pasan los filtros. El marcado manual (toggleOne/toggleAll) sigue funcionando entre cambios de filtro.
 - Texto de filtros actualizado: "Filtros · marcan/desmarcan empresas en la tabla y las muestran u ocultan en el mapa".
 - Cambio 100% frontend. Compila sin errores; captura visual no tomada por preview en "resting".
+
+## 2026-07-06 (b) — Batch: email verificado + 4 mejoras
+- **[P1 VERIFICADO] Entrega real de emails (Resend)**: `/admin/run-screener` → emails_sent:1 (ID 550a6247…) y `/admin/run-radar` → emails_sent:1 (ID 95abff59…), ambos entregados a joseaq.2m@gmail.com. SENDER=onboarding@resend.dev (sandbox: entrega al email propietario de la cuenta Resend; para enviar a OTROS destinatarios haría falta verificar un dominio propio en Resend).
+- **Sombreado caro/barato** en el histórico del coeficiente macro (`Macro.jsx` CoefHistoryChart): `ReferenceArea` verde (y>1, barato) y roja (y<1, caro) al 7% de opacidad, en mini y modal. Nota del modal actualizada.
+- **Borde dorado en Convergencia** (`ThesisExplore.jsx`): las empresas con `count>=2` (aparecen en 2+ tendencias, cualquier categoría: líder/competidor/disruptor) llevan borde dorado `#D4AF37` + leyenda explicativa (`convergence-gold-legend`).
+- **Tooltip de fuente en KPIs** (`Kpis.jsx` tabla): la columna Fuente usa `HoverTip` mostrando la cita textual (`source_quote`) + dominio de origen; también muestra "cita" si hay quote sin URL. `data-testid="kpi-source-{i}"`.
+- **Indicador de tendencia del coeficiente KPI**: backend guarda `coef_history` (1 punto/día por reanálisis, últimos 20) en `kpi_snapshot` y lo preserva en editar/buscar (`routes/thesis.py`). Frontend `CoefTrend` junto al CoefBadge: flecha ↑/↓/– + delta vs análisis previo, con tooltip del histórico (`kpi-coef-trend`).
+- Backend hot-reload OK (endpoints 200), frontend compila sin errores. Captura visual no tomada (preview en "resting").

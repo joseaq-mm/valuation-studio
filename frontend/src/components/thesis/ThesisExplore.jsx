@@ -279,10 +279,18 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                         </label>
                     )}
                 </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-[#4A4A4A]">
-                    <span>alto</span>
-                    <span className="inline-block w-24 h-2.5 rounded-sm" style={{ background: "linear-gradient(90deg, rgb(30,125,69), rgb(184,134,11), rgb(179,42,34))" }} />
-                    <span>bajo</span>
+                <div className="flex items-center gap-3 text-[10px] text-[#4A4A4A]">
+                    {view === "convergence" && (
+                        <span className="flex items-center gap-1" data-testid="convergence-gold-legend">
+                            <span className="inline-block w-3 h-3 border-2 border-[#D4AF37] bg-transparent" />
+                            Borde dorado = aparece en 2+ tendencias (líder, competidor o disruptor)
+                        </span>
+                    )}
+                    <span className="flex items-center gap-1.5">
+                        <span>alto</span>
+                        <span className="inline-block w-24 h-2.5 rounded-sm" style={{ background: "linear-gradient(90deg, rgb(30,125,69), rgb(184,134,11), rgb(179,42,34))" }} />
+                        <span>bajo</span>
+                    </span>
                 </div>
             </div>
 
@@ -311,7 +319,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                             onMouseEnter={(e) => setTip({ item: it, x: e.clientX, y: e.clientY })}
                             onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY }))}
                             onMouseLeave={() => setTip(null)}
-                            className="absolute text-left overflow-hidden border border-[#FDF1E6] hover:brightness-110 hover:z-10 transition-all cursor-pointer"
+                            className={`absolute text-left overflow-hidden hover:brightness-110 hover:z-10 transition-all cursor-pointer ${it.type === "convergence" && it.count >= 2 ? "border-2 border-[#D4AF37]" : "border border-[#FDF1E6]"}`}
                             style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
                             data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
                         >
