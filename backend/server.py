@@ -33,7 +33,8 @@ auth_router, _auth_required, _auth_optional = make_auth_router(db)
 api_router.include_router(auth_router)
 
 from routes.thesis import make_router as make_thesis_router
-api_router.include_router(make_thesis_router(db, _auth_required, _auth_optional))
+_thesis_router = make_thesis_router(db, _auth_required, _auth_optional)
+api_router.include_router(_thesis_router)
 
 from routes.help import make_router as make_help_router
 api_router.include_router(make_help_router())
@@ -175,6 +176,12 @@ async def admin_run_screener():
 async def admin_run_radar():
     """Manual trigger for the weekly trend radar — useful for QA."""
     return {"ok": True, **(await run_radar(db))}
+
+
+@api_router.post("/admin/run-alerts")
+async def admin_run_alerts():
+    """Manual trigger for the daily per-company watch alerts — useful for QA."""
+    return {"ok": True, **(await _thesis_router.run_company_alerts())}
 
 
 @api_router.post("/admin/preview-radar/{user_id}")
@@ -759,6 +766,14 @@ async def _scheduled_radar_run():
         logger.error(f"scheduled radar crashed: {e}")
 
 
+async def _scheduled_alerts_run():
+    """Daily per-company watch alerts (Visual bell), 06:05 UTC."""
+    try:
+        await _thesis_router.run_company_alerts()
+    except Exception as e:
+        logger.error(f"scheduled company-alerts crashed: {e}")
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
@@ -780,11 +795,12 @@ async def _startup_scheduler():
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
+        _scheduler.add_job(_scheduled_alerts_run, CronTrigger(hour=6, minute=5))
         # Hourly tick: dispatches the radar to users whose configured (weekday, hour_utc)
         # match the current UTC moment. Discovery is cached and reused inside run_radar.
         _scheduler.add_job(_scheduled_radar_run, CronTrigger(minute=0))
         _scheduler.start()
-        logger.info("Schedulers started (screener 06:00 UTC daily, radar hourly per-user schedule).")
+        logger.info("Schedulers started (screener 06:00 UTC daily, alerts 06:05 UTC daily, radar hourly per-user schedule).")
 
 
 @app.on_event("shutdown")

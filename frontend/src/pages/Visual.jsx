@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown } from "lucide-react";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisVisualData } from "@/lib/api";
+import { thesisVisualData, alertsGet, alertSave, alertDelete } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { signalFor } from "@/lib/thresholds";
+import { toast } from "sonner";
 
 // ---------- Helpers ----------
 const clamp01 = (v) => (v == null ? 0 : Math.max(0, Math.min(1, v)));
@@ -163,6 +164,20 @@ export default function Visual() {
     const [sortDir, setSortDir] = useState("desc");
     const [kpiMean, setKpiMean] = useState(null);
     const [noKpiCount, setNoKpiCount] = useState(0);
+    const [alerts, setAlerts] = useState({});  // ticker -> alert config
+
+    useEffect(() => {
+        if (!user) { setAlerts({}); return; }
+        alertsGet().then((d) => setAlerts(d.alerts || {})).catch(() => { });
+    }, [user]);
+
+    const onAlertSaved = useCallback((ticker, alert) => {
+        setAlerts((prev) => {
+            const next = { ...prev };
+            if (alert) next[ticker] = alert; else delete next[ticker];
+            return next;
+        });
+    }, []);
 
     // Filters (only affect map visibility, not the table)
     const [filters, setFilters] = useState({
@@ -419,11 +434,16 @@ export default function Visual() {
                             <SortableTh label="Compra %" k="ratio_compra_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.compra} />
                             <SortableTh label="Venta %" k="ratio_venta_pct" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.venta} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Combinado</span><span>total</span></span>} k="combined" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.combined} />
+                            <th className="p-2 text-center w-10">
+                                <HoverTip text={"Alerta de seguimiento. Configura umbrales de Score, TAM Score y Coef KPI: si la empresa los alcanza, recibirás un email ese día. Las empresas con campanita también avisan al cruzar de barato↔caro. Todo se consolida en un único email diario."} maxWidth={320}>
+                                    <span className="cursor-help inline-flex"><Bell size={13} /></span>
+                                </HoverTip>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 && !loading && (
-                            <tr><td colSpan={11} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
+                            <tr><td colSpan={12} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
                         )}
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
@@ -445,6 +465,7 @@ export default function Visual() {
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
                                     <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
+                                    <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
                                 </tr>
                             );
                         })}
@@ -468,6 +489,88 @@ export default function Visual() {
 }
 
 // ---------- Small subcomponents ----------
+const AlertBell = ({ ticker, alert, onSaved }) => {
+    const initFrom = (a) => ({
+        score: { enabled: a?.score?.enabled || false, dir: a?.score?.dir || "gte", value: a?.score?.value ?? "" },
+        tam: { enabled: a?.tam?.enabled || false, dir: a?.tam?.dir || "gte", value: a?.tam?.value ?? "" },
+        kpi: { enabled: a?.kpi?.enabled || false, dir: a?.kpi?.dir || "gte", value: a?.kpi?.value ?? "" },
+    });
+    const active = !!alert;
+    const btnRef = useRef(null);
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const [form, setForm] = useState(initFrom(alert));
+    const [saving, setSaving] = useState(false);
+    useEffect(() => { setForm(initFrom(alert)); }, [alert]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+    const openPanel = () => {
+        const r = btnRef.current?.getBoundingClientRect();
+        if (r) setPos({ top: r.bottom + 4, left: Math.min(r.left - 220, window.innerWidth - 280) });
+        setOpen((o) => !o);
+    };
+    const setMetric = (k, patch) => setForm((f) => ({ ...f, [k]: { ...f[k], ...patch } }));
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            const payload = {};
+            for (const k of ["score", "tam", "kpi"]) {
+                const m = form[k];
+                payload[k] = { enabled: !!m.enabled, dir: m.dir, value: m.value === "" ? null : parseFloat(m.value) };
+            }
+            const res = await alertSave(ticker, payload);
+            onSaved(ticker, res.alert || null);
+            toast.success(res.removed ? `Alerta de ${ticker} eliminada` : `Alerta de ${ticker} guardada`);
+            setOpen(false);
+        } catch { toast.error("No se pudo guardar la alerta"); }
+        finally { setSaving(false); }
+    };
+    const remove = async () => {
+        setSaving(true);
+        try { await alertDelete(ticker); onSaved(ticker, null); toast.success(`Alerta de ${ticker} eliminada`); setOpen(false); }
+        catch { toast.error("No se pudo eliminar"); }
+        finally { setSaving(false); }
+    };
+
+    return (
+        <>
+            <button ref={btnRef} onClick={openPanel} className={active ? "text-[#B8860B]" : "text-[#B0B0B0] hover:text-[#052049]"} title={active ? "Alerta configurada — clic para editar" : "Configurar alerta de seguimiento"} data-testid={`alert-bell-${ticker}`}>
+                {active ? <BellRing size={15} /> : <Bell size={15} />}
+            </button>
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                    <div className="fixed z-50 w-64 bg-white border-2 border-[#052049] shadow-xl p-3 text-left font-sans" style={{ top: pos.top, left: pos.left }} data-testid={`alert-panel-${ticker}`}>
+                        <div className="text-xs font-semibold text-[#052049] mb-2">Alerta · {ticker}</div>
+                        {[["score", "Score"], ["tam", "TAM Score"], ["kpi", "Coef KPI"]].map(([k, label]) => (
+                            <div key={k} className="mb-2 border-b border-black/5 pb-2">
+                                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input type="checkbox" checked={form[k].enabled} onChange={(e) => setMetric(k, { enabled: e.target.checked })} data-testid={`alert-${k}-enabled-${ticker}`} />
+                                    <span className="font-medium">{label}</span>
+                                </label>
+                                {form[k].enabled && (
+                                    <div className="flex items-center gap-1 mt-1.5 pl-5">
+                                        <select value={form[k].dir} onChange={(e) => setMetric(k, { dir: e.target.value })} className="border border-black/30 text-xs px-1 py-0.5" data-testid={`alert-${k}-dir-${ticker}`}>
+                                            <option value="gte">≥</option>
+                                            <option value="lte">≤</option>
+                                        </select>
+                                        <input type="number" step="0.1" value={form[k].value} onChange={(e) => setMetric(k, { value: e.target.value })} placeholder="valor" className="border border-black/30 text-xs px-1.5 py-0.5 w-full font-mono" data-testid={`alert-${k}-value-${ticker}`} />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        <div className="text-[10px] text-[#7A7A7A] mb-2">Además te avisaré si cruza de barato↔caro. Todo en un único email diario.</div>
+                        <div className="flex gap-2">
+                            <button onClick={save} disabled={saving} className="flex-1 bg-[#052049] text-white text-xs py-1.5 font-semibold disabled:opacity-50" data-testid={`alert-save-${ticker}`}>Guardar</button>
+                            {active && <button onClick={remove} disabled={saving} className="px-2 border border-[#B32A22] text-[#B32A22] text-xs py-1.5" data-testid={`alert-remove-${ticker}`}>Quitar</button>}
+                        </div>
+                    </div>
+                </>
+            )}
+        </>
+    );
+};
+
 const FilterField = ({ label, value, step, onChange, testid, suffix }) => (
     <label className="block">
         <div className="text-[11px] text-[#4A4A4A] font-mono mb-1">{label}</div>

@@ -177,6 +177,11 @@ export const thesisRefreshRun = ({ thesis_id = null, ticker = null } = {}) =>
 export const thesisVisualData = () =>
     api.get(`/thesis/visual`).then(r => r.data);
 
+// Per-company watch alerts (Visual bell)
+export const alertsGet = () => api.get(`/thesis/alerts`).then(r => r.data);
+export const alertSave = (ticker, config) => api.put(`/thesis/alerts/${encodeURIComponent(ticker)}`, config).then(r => r.data);
+export const alertDelete = (ticker) => api.delete(`/thesis/alerts/${encodeURIComponent(ticker)}`).then(r => r.data);
+
 // In-app help assistant chat (Gemini Flash, keeps per-session memory backend-side)
 export const helpChat = (session_id, message) =>
     api.post(`/help/chat`, { session_id, message }, { timeout: 60000 }).then(r => r.data);

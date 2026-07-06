@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, Query, Header, Cookie
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from services.thesis import (
@@ -1627,6 +1627,173 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             })
 
         return {"rows": rows}
+
+    # ---------------------- Per-company watch alerts (Visual bell) ----------------------
+    class AlertMetric(BaseModel):
+        enabled: bool = False
+        dir: str = "gte"  # "gte" (≥) or "lte" (≤)
+        value: Optional[float] = None
+
+    class AlertConfigReq(BaseModel):
+        score: AlertMetric = Field(default_factory=AlertMetric)
+        tam: AlertMetric = Field(default_factory=AlertMetric)
+        kpi: AlertMetric = Field(default_factory=AlertMetric)
+
+    def _alert_has_any(cfg: dict) -> bool:
+        return any((cfg.get(k) or {}).get("enabled") for k in ("score", "tam", "kpi"))
+
+    @router.get("/alerts")
+    async def list_alerts(user: Dict[str, Any] = Depends(auth_required)):
+        """All watch-alert configs for the current user, keyed by ticker (for the bells)."""
+        docs = await db.company_alerts.find(
+            {"user_id": user["user_id"]}, {"_id": 0, "user_id": 0}).to_list(length=1000)
+        return {"alerts": {d["ticker"]: d for d in docs}}
+
+    @router.put("/alerts/{ticker}")
+    async def save_alert(ticker: str, req: AlertConfigReq, user: Dict[str, Any] = Depends(auth_required)):
+        """Create/update a company's alert. If no metric is enabled → remove the bell."""
+        tk = (ticker or "").upper().strip()
+        if not tk:
+            raise HTTPException(status_code=400, detail="Ticker inválido")
+        cfg = {"score": req.score.dict(), "tam": req.tam.dict(), "kpi": req.kpi.dict()}
+        if not _alert_has_any(cfg):
+            await db.company_alerts.delete_one({"user_id": user["user_id"], "ticker": tk})
+            return {"ticker": tk, "removed": True}
+        doc = {"user_id": user["user_id"], "ticker": tk, **cfg,
+               "updated_at": datetime.now(timezone.utc).isoformat()}
+        await db.company_alerts.update_one(
+            {"user_id": user["user_id"], "ticker": tk},
+            {"$set": doc, "$setOnInsert": {"state": {}}}, upsert=True)
+        saved = await db.company_alerts.find_one(
+            {"user_id": user["user_id"], "ticker": tk}, {"_id": 0, "user_id": 0})
+        return {"ticker": tk, "alert": saved}
+
+    @router.delete("/alerts/{ticker}")
+    async def delete_alert(ticker: str, user: Dict[str, Any] = Depends(auth_required)):
+        await db.company_alerts.delete_one(
+            {"user_id": user["user_id"], "ticker": (ticker or "").upper().strip()})
+        return {"ok": True}
+
+    _ALERT_CHEAP, _ALERT_FAIR = 20.0, 0.0
+
+    def _ratio_signal(pct):
+        if pct is None:
+            return "—"
+        if pct >= _ALERT_CHEAP:
+            return "BARATA"
+        if pct >= _ALERT_FAIR:
+            return "JUSTA"
+        return "CARA"
+
+    def _metric_met(cfg, current):
+        """True/False if an enabled metric condition is met now; None if not applicable."""
+        if not cfg or not cfg.get("enabled") or current is None or cfg.get("value") is None:
+            return None
+        return current >= cfg["value"] if cfg.get("dir") == "gte" else current <= cfg["value"]
+
+    def _alerts_email_html(user_name, qual_events, ratio_events):
+        def q_rows():
+            out = []
+            for e in qual_events:
+                out.append(f"""<tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:monospace;font-weight:600;">{e['ticker']}</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:sans-serif;">{e['label']}</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;text-align:right;font-family:monospace;">{e['value']}</td></tr>""")
+            return "".join(out)
+        def r_rows():
+            out = []
+            for e in ratio_events:
+                color = "#1D7044" if e["now"] == "BARATA" else "#B32A22"
+                out.append(f"""<tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:monospace;font-weight:600;">{e['ticker']}</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:sans-serif;">{e['kind']}: <span style="color:#4A4A4A;">{e['prev']}</span> → <span style="color:{color};font-weight:600;">{e['now']}</span></td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #00000010;text-align:right;font-family:monospace;color:{color};">{e['pct']:+.1f}%</td></tr>""")
+            return "".join(out)
+        greeting = f"Hola {user_name.split()[0]}," if user_name else "Hola,"
+        n = len(qual_events) + len(ratio_events)
+        qual_block = f"""<tr><td style="padding:12px 16px 4px;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:#4A4A4A;">Cualitativo · umbrales alcanzados</td></tr>
+            <tr><td><table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #000;border-bottom:1px solid #000;">{q_rows()}</table></td></tr>""" if qual_events else ""
+        ratio_block = f"""<tr><td style="padding:16px 16px 4px;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:#4A4A4A;">Valoración · cruces barato/caro</td></tr>
+            <tr><td><table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #000;border-bottom:1px solid #000;">{r_rows()}</table></td></tr>""" if ratio_events else ""
+        return f"""<table width="100%" cellspacing="0" cellpadding="0" style="font-family:sans-serif;color:#111;max-width:560px;margin:0 auto;">
+            <tr><td style="padding:24px 16px 8px;">
+                <div style="font-family:'Cormorant Garamond',serif;font-size:28px;">Valuation Studio</div>
+                <div style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#4A4A4A;">Alertas de seguimiento</div>
+            </td></tr>
+            <tr><td style="padding:8px 16px 4px;"><p style="margin:0;font-size:14px;">{greeting} hoy {n} de tus empresas vigiladas han cambiado de situación:</p></td></tr>
+            {qual_block}{ratio_block}
+            <tr><td style="padding:16px;font-size:11px;color:#4A4A4A;line-height:1.5;">Aviso: notificación automática basada en tus datos y umbrales. No es asesoramiento de inversión. Configura o quita alertas desde la campanita de cada empresa en Visual.</td></tr>
+        </table>"""
+
+    async def run_company_alerts() -> Dict[str, Any]:
+        """Daily scan: for every user with company alerts, evaluate qualitative thresholds
+        (score/TAM/Coef KPI) and ratio barato↔caro crossings, firing ONLY on transition
+        (anti-spam). Sends ONE consolidated email per user."""
+        from screener import _send_email_resend
+        summary = {"users_scanned": 0, "emails_sent": 0, "events": 0}
+        user_ids = await db.company_alerts.distinct("user_id")
+        for uid in user_ids:
+            alerts = await db.company_alerts.find({"user_id": uid}, {"_id": 0}).to_list(length=1000)
+            if not alerts:
+                continue
+            user = await db.users.find_one({"user_id": uid}, {"_id": 0})
+            if not user or not user.get("email"):
+                continue
+            summary["users_scanned"] += 1
+            try:
+                data = await visual_data(user)  # reuse the exact Visual metrics
+            except Exception as e:
+                logger.warning(f"alerts: visual_data failed for {uid}: {e}")
+                continue
+            rows_by_tk = {(r.get("ticker") or "").upper(): r for r in data.get("rows", [])}
+            qual_events, ratio_events = [], []
+            for a in alerts:
+                tk = a["ticker"]
+                row = rows_by_tk.get(tk)
+                if not row:
+                    continue
+                prev = a.get("state") or {}
+                new_state = dict(prev)
+                # Qualitative thresholds
+                for key, label_txt, cur in (
+                    ("score", "Score", row.get("avg_overall_score")),
+                    ("tam", "TAM Score", row.get("sum_tam_score")),
+                    ("kpi", "Coef KPI", row.get("kpi_coef")),
+                ):
+                    met = _metric_met(a.get(key), cur)
+                    if met is None:
+                        new_state.pop(key, None)
+                        continue
+                    if met and not prev.get(key):
+                        cfg = a[key]
+                        sym = "≥" if cfg.get("dir") == "gte" else "≤"
+                        qual_events.append({"ticker": tk,
+                            "label": f"{label_txt} {sym} {cfg['value']}",
+                            "value": (round(cur, 2) if isinstance(cur, (int, float)) else cur)})
+                    new_state[key] = bool(met)
+                # Ratio barato/caro crossings (automatic for any bell)
+                buy_now = _ratio_signal(row.get("ratio_compra_pct"))
+                sell_now = _ratio_signal(row.get("ratio_venta_pct"))
+                if buy_now == "BARATA" and prev.get("buy") not in (None, "BARATA") :
+                    ratio_events.append({"ticker": tk, "kind": "Ratio Compra", "prev": prev.get("buy"),
+                                         "now": "BARATA", "pct": row.get("ratio_compra_pct") or 0.0})
+                if sell_now == "CARA" and prev.get("sell") not in (None, "CARA"):
+                    ratio_events.append({"ticker": tk, "kind": "Ratio Venta", "prev": prev.get("sell"),
+                                         "now": "CARA", "pct": row.get("ratio_venta_pct") or 0.0})
+                new_state["buy"], new_state["sell"] = buy_now, sell_now
+                await db.company_alerts.update_one(
+                    {"user_id": uid, "ticker": tk}, {"$set": {"state": new_state}})
+            if qual_events or ratio_events:
+                summary["events"] += len(qual_events) + len(ratio_events)
+                n = len(qual_events) + len(ratio_events)
+                subject = f"Valuation Studio · {n} alerta{'s' if n != 1 else ''} de seguimiento"
+                html = _alerts_email_html(user.get("name") or "", qual_events, ratio_events)
+                if await _send_email_resend(user["email"], subject, html):
+                    summary["emails_sent"] += 1
+        logger.info(f"Company alerts run summary: {summary}")
+        return summary
+
+    router.run_company_alerts = run_company_alerts
 
     # ---------------------- KPI validation module ----------------------
     async def _auto_fetch_for_kpis(company_id: str, user_id: str, company: str, ticker: str):
