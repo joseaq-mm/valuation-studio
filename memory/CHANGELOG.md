@@ -191,3 +191,6 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - `server.py`: endpoint `POST /admin/run-alerts` + scheduler diario a las **06:05 UTC** (tras el screener 06:00). Router capturado en `_thesis_router`.
 - Frontend (`Visual.jsx` + `lib/api.js`): nueva columna con **campanita** por fila (`alert-bell-{ticker}`), tooltip explicativo en la cabecera, panel desplegable (posición fixed anti-clip) con checkbox/dirección/valor por métrica + Guardar/Quitar (toasts). Campana dorada `BellRing` si hay alerta activa. Carga inicial vía `alertsGet`.
 - Verificado: CRUD OK (PUT/GET/DELETE por curl), `run-alerts` ejecuta sin error (users_scanned:1), envío Resend probado previamente (emails reales entregados). Frontend compila. ⚠️ NO verificado visualmente ni con datos reales (la cuenta de prueba no tiene tesis de empresa; el preview está en "resting"). El usuario real (joseaq) sí tiene datos → funcionará en la ejecución diaria.
+
+## 2026-07-06 (d) — Backlog: eliminadas 2 features
+- ELIMINADAS del backlog (decisión del usuario, no rentables): "Soporte de vídeo como fuente de KPIs (Fase 2)" y "Recolector dedicado de Investor Relations (Option B)". El fetcher actual cubre la mayoría de casos; se mejorará puntualmente si falla con alguna empresa.
