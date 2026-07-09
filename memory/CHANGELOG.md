@@ -194,3 +194,8 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 
 ## 2026-07-06 (d) — Backlog: eliminadas 2 features
 - ELIMINADAS del backlog (decisión del usuario, no rentables): "Soporte de vídeo como fuente de KPIs (Fase 2)" y "Recolector dedicado de Investor Relations (Option B)". El fetcher actual cubre la mayoría de casos; se mejorará puntualmente si falla con alguna empresa.
+
+## 2026-07-06 (e) — Responsive Fase 1: navegación global (móvil/tablet)
+- `Layout.jsx`: la barra de navegación se convierte en **menú hamburguesa** por debajo de `md` (móvil y tablet-portrait). Row 1 (logo+búsqueda+auth) usa `flex-wrap`: logo compacto (oculta subtítulo en <sm), botón hamburguesa a la derecha, búsqueda a ancho completo en móvil. Row 2 (nav+toggles) solo en `md+`. Menú móvil (drawer) con enlaces apilados + toggles (Help/Thresholds/Idioma/Tema/Divisa) + AuthButton; se cierra al navegar. Paddings `px-4 sm:px-6`, main `py-6 sm:py-8`.
+- Verificado que las tablas (Visual/KPIs/Compare) ya tienen `overflow-x-auto` (scroll horizontal en móvil) y los grids de Macro son responsive (`grid-cols-1 sm:2 lg:3`; tarjeta coeficiente `grid-cols-1 md:grid-cols-2`). Compila sin errores. Pendiente verificación visual (preview en "resting").
+- Próxima fase responsive: pulir Home/Company/Macro (alturas de gráficos, hero) y comodidad táctil página por página.

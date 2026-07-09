@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { searchTickers } from "@/lib/api";
-import { Search } from "lucide-react";
+import { Search, Menu, X } from "lucide-react";
 import ThresholdsDialog from "./ThresholdsDialog";
 import ThemeToggle from "./ThemeToggle";
 import AuthButton from "./AuthButton";
 import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
-import HoverTip from "./HoverTip";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -18,8 +17,11 @@ export default function Layout({ children }) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState([]);
     const [showResults, setShowResults] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
     const timer = useRef(null);
     const boxRef = useRef(null);
+
+    useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
     useEffect(() => {
         if (!query.trim()) { setResults([]); return; }
@@ -59,34 +61,60 @@ export default function Layout({ children }) {
             : "text-black hover:bg-black hover:text-[#FDF1E6]"
     } transition-colors`;
 
+    const navClassMobile = (path) => `block text-sm uppercase tracking-[0.12em] font-semibold px-3 py-2.5 ${
+        location.pathname === path || location.pathname.startsWith(path + "/")
+            ? "bg-black text-[#FDF1E6]"
+            : "text-black hover:bg-black/5"
+    } transition-colors`;
+
+    const links = [
+        { to: "/", label: t("nav.home"), testid: "home" },
+        { to: "/portfolio", label: t("nav.portfolio"), testid: "portfolio" },
+        { to: "/watchlist", label: t("nav.watchlist"), testid: "watchlist" },
+        { to: "/compare", label: t("nav.compare"), testid: "compare" },
+        { to: "/thesis", label: t("nav.thesis"), testid: "thesis" },
+        { to: "/visual", label: "Visual", testid: "visual" },
+        { to: "/kpis", label: "KPIs", testid: "kpis" },
+        { to: "/macro", label: "Macro", testid: "macro" },
+    ];
+
     return (
         <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-base)" }}>
             <header className="border-b border-black sticky top-0 z-40" style={{ background: "var(--bg-base)" }}>
-                <div className="max-w-[1400px] mx-auto px-6">
-                    {/* Row 1: Logo · Search · Auth */}
-                    <div className="py-3 flex items-center gap-6 border-b border-black/10">
-                        <Link to="/" className="flex items-center gap-3 shrink-0" data-testid="nav-home">
-                            <div className="w-8 h-8 border border-black flex items-center justify-center bg-white">
+                <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+                    {/* Row 1: Logo · Search · Auth (wraps on mobile) */}
+                    <div className="py-3 flex items-center gap-3 sm:gap-6 border-b border-black/10 flex-wrap">
+                        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 order-1" data-testid="nav-home">
+                            <div className="w-8 h-8 border border-black flex items-center justify-center bg-white shrink-0">
                                 <div className="w-3 h-3 bg-[#052049]" />
                             </div>
                             <div className="leading-none">
-                                <div className="font-serif text-2xl font-medium">Valuation Studio</div>
-                                <div className="overline text-[#4A4A4A]">Equity Research</div>
+                                <div className="font-serif text-xl sm:text-2xl font-medium">Valuation Studio</div>
+                                <div className="overline text-[#4A4A4A] hidden sm:block">Equity Research</div>
                             </div>
                         </Link>
 
-                        <div ref={boxRef} className="flex-1 relative">
+                        <button
+                            className="md:hidden order-2 ml-auto border border-black bg-white p-2"
+                            onClick={() => setMenuOpen((o) => !o)}
+                            aria-label="Menú"
+                            data-testid="nav-mobile-toggle"
+                        >
+                            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+                        </button>
+
+                        <div ref={boxRef} className="order-3 sm:order-2 w-full sm:w-auto sm:flex-1 relative">
                             <form onSubmit={handleSubmit} className="flex items-center border border-black bg-white" data-testid="search-form">
-                                <Search size={16} className="ml-3 text-[#4A4A4A]" />
+                                <Search size={16} className="ml-3 text-[#4A4A4A] shrink-0" />
                                 <input
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder={t("nav.search_placeholder")}
-                                    className="flex-1 px-3 py-2 outline-none font-mono text-sm bg-transparent"
+                                    className="flex-1 min-w-0 px-3 py-2 outline-none font-mono text-sm bg-transparent"
                                     data-testid="search-input"
                                     onFocus={() => results.length && setShowResults(true)}
                                 />
-                                <button type="submit" className="btn-primary !py-2 !px-3" data-testid="search-submit">{t("nav.search_button")}</button>
+                                <button type="submit" className="btn-primary !py-2 !px-3 shrink-0" data-testid="search-submit">{t("nav.search_button")}</button>
                             </form>
                             {showResults && results.length > 0 && (
                                 <div className="absolute left-0 right-0 top-full bg-white border border-black border-t-0 max-h-80 overflow-auto z-50" data-testid="search-results">
@@ -108,26 +136,17 @@ export default function Layout({ children }) {
                             )}
                         </div>
 
-                        <div className="shrink-0">
+                        <div className="shrink-0 order-4 hidden md:block">
                             <AuthButton />
                         </div>
                     </div>
 
-                    {/* Row 2: Nav links · Utility toggles */}
-                    <div className="py-2 flex items-center justify-between gap-4 flex-wrap">
+                    {/* Row 2 (desktop): Nav links · Utility toggles */}
+                    <div className="py-2 hidden md:flex items-center justify-between gap-4 flex-wrap">
                         <nav className="flex items-center gap-1 flex-wrap">
-                            <Link to="/" className={navClass("/")} data-testid="nav-link-home">{t("nav.home")}</Link>
-                            <HoverTip text={t("nav.portfolio_tip")}>
-                                <Link to="/portfolio" className={navClass("/portfolio")} data-testid="nav-link-portfolio">{t("nav.portfolio")}</Link>
-                            </HoverTip>
-                            <HoverTip text={t("nav.watchlist_tip")}>
-                                <Link to="/watchlist" className={navClass("/watchlist")} data-testid="nav-link-watchlist">{t("nav.watchlist")}</Link>
-                            </HoverTip>
-                            <Link to="/compare" className={navClass("/compare")} data-testid="nav-link-compare">{t("nav.compare")}</Link>
-                            <Link to="/thesis" className={navClass("/thesis")} data-testid="nav-link-thesis">{t("nav.thesis")}</Link>
-                            <Link to="/visual" className={navClass("/visual")} data-testid="nav-link-visual">Visual</Link>
-                            <Link to="/kpis" className={navClass("/kpis")} data-testid="nav-link-kpis">KPIs</Link>
-                            <Link to="/macro" className={navClass("/macro")} data-testid="nav-link-macro">Macro</Link>
+                            {links.map((l) => (
+                                <Link key={l.to} to={l.to} className={navClass(l.to)} data-testid={`nav-link-${l.testid}`}>{l.label}</Link>
+                            ))}
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">
                             <HelpChat />
@@ -137,12 +156,33 @@ export default function Layout({ children }) {
                             <CurrencySelector />
                         </div>
                     </div>
+
+                    {/* Mobile menu (drawer) */}
+                    {menuOpen && (
+                        <div className="md:hidden py-2 border-t border-black/10" data-testid="nav-mobile-menu">
+                            <nav className="flex flex-col">
+                                {links.map((l) => (
+                                    <Link key={l.to} to={l.to} className={navClassMobile(l.to)} data-testid={`nav-mlink-${l.testid}`}>{l.label}</Link>
+                                ))}
+                            </nav>
+                            <div className="flex items-center gap-1 flex-wrap mt-2 pt-2 border-t border-black/10">
+                                <HelpChat />
+                                <ThresholdsDialog />
+                                <LanguageToggle />
+                                <ThemeToggle />
+                                <CurrencySelector />
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-black/10">
+                                <AuthButton />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </header>
 
-            <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-8">{children}</main>
+            <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">{children}</main>
 
-            <footer className="border-t border-black/30 py-4 px-6 text-xs text-[#4A4A4A]" data-testid="footer">
+            <footer className="border-t border-black/30 py-4 px-4 sm:px-6 text-xs text-[#4A4A4A]" data-testid="footer">
                 <div className="max-w-[1400px] mx-auto space-y-2">
                     <div className="border border-[#B32A22]/40 bg-white/60 px-3 py-2 text-[11px] leading-relaxed" data-testid="legal-disclaimer">
                         <span className="font-mono font-semibold text-[#B32A22] mr-1">{t("footer.legal_tag")}</span>
