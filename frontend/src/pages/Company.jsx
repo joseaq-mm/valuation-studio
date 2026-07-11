@@ -525,7 +525,8 @@ export default function Company() {
     // Convert a value from native currency to display currency; null-safe.
     const convertCur = (v) => (v == null || isNaN(v)) ? v : fxConvert(v, nativeCur);
 
-    const fyLabel = `FY${new Date().getFullYear() + 1} con base TTM`;
+    const nowY = new Date().getFullYear();
+    const fyLabel = `objetivo ≈FY${nowY + 1} · base TTM (2 años fiscales desde el último anual)`;
 
     // Determine if user has edited the 2y projection vs the auto value (small epsilon to avoid float jitter)
     const isEdited = (a, b) => {
@@ -1092,9 +1093,9 @@ export default function Company() {
                     {[
                         // [label, key, isPercent, magnitudeUnit, helperText, calcExplanation]
                         ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel,
-                            "Ingresos estimados al cierre del año fiscal +2. Se proyectan a partir de los ingresos actuales aplicando el CAGR de ingresos a 4 años: Ingresos × (1 + CAGR)². Es editable; si lo cambias, se recalcula POC/POV."],
+                            `Ingresos estimados a 2 años fiscales desde el último anual reportado. Con base TTM eso equivale ≈ al cierre de FY${nowY + 1}. Se proyectan aplicando el CAGR de ingresos: Ingresos × (1 + CAGR)². Es editable; si lo cambias, se recalcula POC/POV.`],
                         ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel,
-                            "Free Cash Flow estimado a 2 años (cierre FY +2). Método principal BOTTOM-UP: FCF = Flujo Operativo − CapEx, usando estimaciones de analistas (NI × ratio OCF/NI histórica) e intensidad de CapEx. Si no es viable, FALLBACK por regresión lineal del FCF histórico. Con los botones BU / TTM / ANUAL de al lado eliges la base. Es el input que más mueve la valoración."],
+                            `Free Cash Flow estimado a 2 años fiscales desde el último anual (con base TTM, ≈ FY${nowY + 1}). Método principal BOTTOM-UP: FCF = Flujo Operativo − CapEx, con estimaciones de analistas (NI × ratio OCF/NI histórica) e intensidad de CapEx. Si no es viable, FALLBACK por regresión lineal del FCF histórico. Con los botones BU / TTM / ANUAL de al lado eliges la base. Es el input que más mueve la valoración.`],
                         ["Acciones en circulación", "shares_outstanding", false, true, "",
                             "Número de acciones en circulación (Yahoo). Se usa para convertir magnitudes totales (ingresos, FCF, deuda) en cifras por acción y así obtener el precio objetivo."],
                         ["Margen bruto", "gross_margin", true, false, "",
@@ -1106,9 +1107,9 @@ export default function Company() {
                         ["Capitalización", "market_cap", false, true, "",
                             "Valor de mercado del capital = Precio de la acción × acciones en circulación (Yahoo)."],
                         ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, fyLabel,
-                            "Crecimiento compuesto anual de los ingresos en ~4 años: (Ingresos_final / Ingresos_inicial)^(1/años) − 1. Es el motor de la proyección de ingresos. Si es anormalmente alto, se capa y se avisa en ámbar."],
+                            `Crecimiento compuesto anual (CAGR) a 4 años de los ingresos. NO es solo histórico: va desde los ingresos anuales de FY${nowY - 3} (3 años atrás) hasta la proyección (Ingresos proyectados 2y), elevado a 1/4: (Ingresos proyectados 2y / Ingresos FY${nowY - 3})^(1/4) − 1. Combina histórico reciente + futuro proyectado. Se capa a −30%/+50% ante valores extremos (se avisa en ámbar).`],
                         ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fyLabel,
-                            "Crecimiento compuesto anual del Free Cash Flow en ~4 años: (FCF_final / FCF_inicial)^(1/años) − 1. Alimenta la proyección de FCF por el método de regresión. Se capa ante valores extremos."],
+                            `Crecimiento compuesto anual (CAGR) a 4 años del Free Cash Flow. Va desde el FCF anual de FY${nowY - 3} (3 años atrás) hasta la proyección (FCF proyectado 2y), elevado a 1/4: (FCF proyectado 2y / FCF FY${nowY - 3})^(1/4) − 1. Combina histórico + proyección. Si algún FCF histórico es ≤0, se usa el fallback (último FCF → proyección 2y, a 1/2). Se capa a −30%/+50%.`],
                         ["Precio acción", "current_price", false, false, cur,
                             "Último precio de mercado de la acción (Yahoo). Es el precio que se compara con el POC y el POV para obtener los Ratios de Compra y de Venta."],
                     ].map(([label, key, isPercent, isMagnitude, hint, calc]) => {
