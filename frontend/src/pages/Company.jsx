@@ -1090,18 +1090,28 @@ export default function Company() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {[
-                        // [label, key, isPercent, magnitudeUnit, helperText]
-                        ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel],
-                        ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel],
-                        ["Acciones en circulación", "shares_outstanding", false, true, ""],
-                        ["Margen bruto", "gross_margin", true, false, ""],
-                        ["Margen operativo", "operating_margin", true, false, ""],
-                        ["Deuda neta", "net_debt", false, true, ""],
-                        ["Capitalización", "market_cap", false, true, ""],
-                        ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, fyLabel],
-                        ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fyLabel],
-                        ["Precio acción", "current_price", false, false, cur],
-                    ].map(([label, key, isPercent, isMagnitude, hint]) => {
+                        // [label, key, isPercent, magnitudeUnit, helperText, calcExplanation]
+                        ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel,
+                            "Ingresos estimados al cierre del año fiscal +2. Se proyectan a partir de los ingresos actuales aplicando el CAGR de ingresos a 4 años: Ingresos × (1 + CAGR)². Es editable; si lo cambias, se recalcula POC/POV."],
+                        ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel,
+                            "Free Cash Flow estimado a 2 años (cierre FY +2). Método principal BOTTOM-UP: FCF = Flujo Operativo − CapEx, usando estimaciones de analistas (NI × ratio OCF/NI histórica) e intensidad de CapEx. Si no es viable, FALLBACK por regresión lineal del FCF histórico. Con los botones BU / TTM / ANUAL de al lado eliges la base. Es el input que más mueve la valoración."],
+                        ["Acciones en circulación", "shares_outstanding", false, true, "",
+                            "Número de acciones en circulación (Yahoo). Se usa para convertir magnitudes totales (ingresos, FCF, deuda) en cifras por acción y así obtener el precio objetivo."],
+                        ["Margen bruto", "gross_margin", true, false, "",
+                            "(Ingresos − Coste de ventas) / Ingresos, de los últimos 12 meses (TTM, Yahoo). Mide cuánto queda tras el coste directo de producir."],
+                        ["Margen operativo", "operating_margin", true, false, "",
+                            "Beneficio operativo (EBIT) / Ingresos, TTM (Yahoo). Se usa para ajustar el POV respecto al POC: cuanto mayor el margen operativo, más recorrido admite el precio."],
+                        ["Deuda neta", "net_debt", false, true, "",
+                            "Deuda total − (caja + inversiones a corto). Positiva = deuda neta (resta valor); negativa = caja neta (suma valor). Fuente: balance de Yahoo."],
+                        ["Capitalización", "market_cap", false, true, "",
+                            "Valor de mercado del capital = Precio de la acción × acciones en circulación (Yahoo)."],
+                        ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, fyLabel,
+                            "Crecimiento compuesto anual de los ingresos en ~4 años: (Ingresos_final / Ingresos_inicial)^(1/años) − 1. Es el motor de la proyección de ingresos. Si es anormalmente alto, se capa y se avisa en ámbar."],
+                        ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fyLabel,
+                            "Crecimiento compuesto anual del Free Cash Flow en ~4 años: (FCF_final / FCF_inicial)^(1/años) − 1. Alimenta la proyección de FCF por el método de regresión. Se capa ante valores extremos."],
+                        ["Precio acción", "current_price", false, false, cur,
+                            "Último precio de mercado de la acción (Yahoo). Es el precio que se compara con el POC y el POV para obtener los Ratios de Compra y de Venta."],
+                    ].map(([label, key, isPercent, isMagnitude, hint, calc]) => {
                         const status = fieldStatus(key);
                         const statusColor = status === "session" ? "#D97706" : status === "saved" ? "#1D7044" : "var(--text-primary)";
                         const statusLabel = status === "session" ? "Editado, sin guardar" : status === "saved" ? "Guardado por ti" : "Auto (Yahoo)";
@@ -1222,7 +1232,12 @@ export default function Company() {
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
-                                    <label className="overline text-[#4A4A4A] flex items-center">{label}{methodBadge}</label>
+                                    <label className="overline text-[#4A4A4A] flex items-center">
+                                        <HoverTip text={calc} maxWidth={340}>
+                                            <span className="cursor-help border-b border-dotted border-[#9A9A9A]" data-testid={`input-label-${key}`}>{label}</span>
+                                        </HoverTip>
+                                        {methodBadge}
+                                    </label>
                                     <span className="text-xs font-mono" style={{ color: statusColor }} title={statusLabel} data-testid={`input-status-${key}`}>{statusDot}</span>
                                 </div>
                                 <LocaleNumberInput
