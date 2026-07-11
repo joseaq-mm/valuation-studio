@@ -69,9 +69,9 @@ export default function HelpChat() {
             </button>
 
             {open && createPortal(
-                <div className="fixed inset-0 z-[9998] flex items-end sm:items-stretch sm:justify-end" data-testid="help-chat-dialog">
+                <div className="fixed inset-0 z-[9998] flex items-end justify-center sm:justify-end" data-testid="help-chat-dialog">
                     <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-                    <div className="relative bg-[#FDF1E6] border border-black w-full sm:w-[420px] sm:m-4 h-[80vh] sm:h-auto sm:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl">
+                    <div className="relative bg-[#FDF1E6] border border-black w-full sm:w-[420px] sm:mr-4 mb-[76px] sm:mb-[76px] h-[70vh] sm:h-auto sm:max-h-[calc(100vh-7rem)] flex flex-col shadow-2xl">
                         {/* Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-black bg-white">
                             <div className="flex items-center gap-2">
