@@ -12,7 +12,7 @@ import { useFx } from "@/lib/fx";
 import { useAuth } from "@/lib/auth";
 import HoverTip from "@/components/HoverTip";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
-import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2 } from "lucide-react";
+import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2, ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
@@ -691,6 +691,16 @@ export default function Company() {
         else if (_pTtmF != null && _within(curF, _pTtmF)) fcfMethodLabel = "TTM";
         else if (pAnnF != null && _within(curF, pAnnF)) fcfMethodLabel = "Anual";
     }
+    // Clicking the chart "Método" badge toggles the horizon (TTM ⇄ Anual) and writes it
+    // back into the ficha inputs, so the whole card (chart, footnote, ratios) recalculates.
+    const revTtmVal = data.auto_projections.revenue_2y_ttm;
+    const revAnnVal = data.auto_projections.revenue_2y_annual;
+    const revCanToggle = revTtmVal != null && revAnnVal != null;
+    const onToggleRev = () => updateInput("revenue_2y", revMethodLabel === "TTM" ? revAnnVal : revTtmVal);
+    const fcfTtmVal = _pTtmF;
+    const fcfAnnVal = _canSwapF ? _cbF.latest_annual * Math.pow(1 + _gF, 2) : null;
+    const fcfCanToggle = fcfTtmVal != null && fcfAnnVal != null;
+    const onToggleFcf = () => updateInput("fcf_2y", fcfMethodLabel === "TTM" ? fcfAnnVal : fcfTtmVal);
     const revChartQ = qHist ? buildQuarterlyChart(qHist.revenue_ttm, data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, revHorizon) : null;
     const fcfChartQ = qHist ? buildQuarterlyChart(qHist.fcf_ttm, data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, fcfHorizon) : null;
     const ratioHistQ = qHist ? (qHist.ratio_ttm || []).map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) })) : null;
@@ -1433,8 +1443,8 @@ export default function Company() {
                 </div>
 
                 <div className="space-y-6">
-                    <ChartBlock title="Ingresos históricos" data={revChart} qData={revChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} method={revMethodLabel} />
-                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} qData={fcfChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} method={fcfMethodLabel} />
+                    <ChartBlock title="Ingresos históricos" data={revChart} qData={revChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} method={revMethodLabel} onMethodToggle={revCanToggle ? onToggleRev : null} />
+                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} qData={fcfChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} method={fcfMethodLabel} onMethodToggle={fcfCanToggle ? onToggleFcf : null} />
                     <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) }))} qSeries={ratioHistQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} currency={cur} />
                 </div>
             </div>
@@ -1652,7 +1662,7 @@ function CompactTooltip({ active, payload, label }) {
     );
 }
 
-function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false, method = null }) {
+function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false, method = null, onMethodToggle = null }) {
     const [mode, setMode] = useState("annual");
     const [expanded, setExpanded] = useState(false);
     const isTTM = mode === "ttm";
@@ -1671,9 +1681,20 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
         </HoverTip>
     );
     const methodEl = method ? (
-        <span className="overline text-[9px] px-1.5 py-0.5 border border-[#052049] text-[#052049] bg-white whitespace-nowrap" data-testid={`${testid}-method`}>
-            Método: {method}
-        </span>
+        onMethodToggle ? (
+            <button
+                onClick={onMethodToggle}
+                title="Cambiar método de proyección (TTM ⇄ Anual)"
+                className="overline text-[9px] px-1.5 py-0.5 border border-[#052049] text-[#052049] bg-white hover:bg-[#052049] hover:text-white transition-colors whitespace-nowrap inline-flex items-center gap-1 cursor-pointer"
+                data-testid={`${testid}-method`}
+            >
+                Método: {method} <ArrowLeftRight size={10} />
+            </button>
+        ) : (
+            <span className="overline text-[9px] px-1.5 py-0.5 border border-[#052049] text-[#052049] bg-white whitespace-nowrap" data-testid={`${testid}-method`}>
+                Método: {method}
+            </span>
+        )
     ) : null;
     if (!chartData || chartData.length === 0) {
         return (
