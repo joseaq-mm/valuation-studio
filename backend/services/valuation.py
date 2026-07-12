@@ -373,6 +373,17 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # ----- Revenue 2y — TTM horizon variant (default when available) -----
+    # TTM anchor: current trailing-12m revenue (Yahoo totalRevenue) grown 2 full years →
+    # target ≈ TTM of the latest reported quarter + 2 years. The fiscal-year-anchored value
+    # computed above is kept as the optional "annual" horizon. Internal revenue_2y stays
+    # annual so the CAGR (unchanged) keeps its fiscal-year anchor.
+    revenue_2y_annual = revenue_2y
+    revenue_2y_ttm = None
+    total_revenue_ttm = _safe_float(info.get("totalRevenue"))
+    if total_revenue_ttm and total_revenue_ttm > 0 and rev_growth_fwd is not None:
+        revenue_2y_ttm = total_revenue_ttm * (1 + rev_growth_fwd) ** 2
+
     # ----- FCF 2y projection -----
     # Two methods, in order of preference:
     #
@@ -779,7 +790,10 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "fcf_ttm": fcf_ttm,
         "auto_projections": {
             "revenue_1y": revenue_1y,
-            "revenue_2y": revenue_2y,
+            "revenue_2y": revenue_2y_ttm if revenue_2y_ttm is not None else revenue_2y,
+            "revenue_2y_ttm": revenue_2y_ttm,
+            "revenue_2y_annual": revenue_2y_annual,
+            "revenue_horizon_default": "ttm" if revenue_2y_ttm is not None else "annual",
             "fcf_1y": fcf_1y,
             "fcf_2y": fcf_2y,
             "revenue_cagr_4y": revenue_cagr_4y,

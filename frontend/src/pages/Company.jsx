@@ -1100,10 +1100,10 @@ export default function Company() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {[
                         // [label, key, isPercent, magnitudeUnit, helperText, calcExplanation]
-                        ["Ingresos proyectados 2y", "revenue_2y", false, true, fyLabel,
-                            `Ingresos estimados al cierre de FY${projTargetYear}, es decir, el fin de año fiscal del último informe ANUAL + 2 años (el mismo punto '+2y' que ves en el gráfico de ingresos). Se derivan de la estimación de analistas a +1 año y se extrapola un año más; base TTM. Editable: si lo cambias, se recalcula POC/POV.`],
-                        ["FCF proyectado 2y", "fcf_2y", false, true, fyLabel,
-                            `Free Cash Flow estimado al cierre de FY${projTargetYear} (fin de año fiscal del último anual + 2 años; mismo '+2y' del gráfico de FCF). Método principal BOTTOM-UP: FCF = Flujo Operativo − CapEx, con estimaciones de analistas (NI × ratio OCF/NI histórica) e intensidad de CapEx. Si no es viable, FALLBACK por regresión del FCF histórico. Con los botones BU / TTM / ANUAL eliges la base. Es el input que más mueve la valoración.`],
+                        ["Ingresos proyectados 2y", "revenue_2y", false, true, "",
+                            `Ingresos estimados a 2 años. Elige el horizonte con los botones TTM/ANUAL:\n• TTM (por defecto): parte de los ingresos TTM actuales (últimos 12 meses, Yahoo) y proyecta 2 años completos → objetivo ≈ TTM del último trimestre reportado + 2 años. Fórmula: TTM × (1+g)².\n• ANUAL: ancla en el último año fiscal completo + 2 años (mismo punto '+2y' del gráfico anual), a partir de la estimación de analistas.\nEs editable; si lo cambias, se recalcula POC/POV.`],
+                        ["FCF proyectado 2y", "fcf_2y", false, true, "",
+                            `Free Cash Flow estimado a 2 años. Método principal BOTTOM-UP: FCF = Flujo Operativo − CapEx, con estimaciones de analistas (NI × ratio OCF/NI histórica) e intensidad de CapEx. Si no es viable, FALLBACK por regresión del FCF histórico. Con los botones BU / TTM / ANUAL eliges la base. Es el input que más mueve la valoración.`],
                         ["Acciones en circulación", "shares_outstanding", false, true, "",
                             "Número de acciones en circulación (Yahoo). Se usa para convertir magnitudes totales (ingresos, FCF, deuda) en cifras por acción y así obtener el precio objetivo."],
                         ["Margen bruto", "gross_margin", true, false, "",
