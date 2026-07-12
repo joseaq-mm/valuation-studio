@@ -95,7 +95,7 @@ async def get_company(ticker: str, refresh: bool = False):
             as_of = datetime.fromisoformat(cached["data"]["as_of"])
             # Schema guard: force a refresh for docs cached before the revenue TTM/ANUAL
             # horizon fields existed, so old caches auto-upgrade instead of hiding the toggle.
-            schema_ok = "revenue_2y_annual" in cached["data"].get("auto_projections", {})
+            schema_ok = "revenue_growth_breakdown" in cached["data"].get("auto_projections", {})
             if schema_ok and datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
                 data = cached["data"]
                 # Recompute ratios fresh from auto values (in case formula changes)

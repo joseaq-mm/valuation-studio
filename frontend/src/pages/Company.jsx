@@ -1172,7 +1172,7 @@ export default function Company() {
                             return (
                                 <span className="inline-flex items-center gap-1 ml-2">
                                     {method === "bottom-up" && buFcfPlus2y != null && (
-                                        <HoverTip text={buText}>
+                                        <HoverTip dense maxWidth={380} text={buText}>
                                             <button
                                                 type="button"
                                                 onClick={() => updateInput("fcf_2y", buFcfPlus2y)}
@@ -1188,7 +1188,7 @@ export default function Company() {
                                         </HoverTip>
                                     )}
                                     {buRejected && buRejected.fcf_2y != null && (
-                                        <HoverTip text={buRejectedText}>
+                                        <HoverTip dense maxWidth={380} text={buRejectedText}>
                                             <button
                                                 type="button"
                                                 onClick={() => updateInput("fcf_2y", buRejected.fcf_2y)}
@@ -1205,7 +1205,7 @@ export default function Company() {
                                     )}
                                     {canSwap && (
                                         <>
-                                            <HoverTip text={`Usar TTM Yahoo como base CAGR: ${fmtBn(cb.fcf_ttm)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}\n\n${cagrText}`}>
+                                            <HoverTip dense maxWidth={380} text={`HORIZONTE TTM · últimos 12 meses → +2 años\nFCF TTM × (1+g)² = ${fmtBn(cb.fcf_ttm)} × (1+${(g * 100).toFixed(1)}%)² = ${fmtBn(projFromTtm)}\n(base TTM: ${fmtBn(cb.fcf_ttm)}; objetivo ≈ TTM del último trimestre + 2 años)\n──────────\n${cagrText}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromTtm)}
@@ -1219,7 +1219,7 @@ export default function Company() {
                                                     aria-pressed={isUsingTtm}
                                                 >TTM</button>
                                             </HoverTip>
-                                            <HoverTip text={`Usar último FCF anual como base CAGR: ${fmtBn(cb.latest_annual)} × (1+${(g*100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}\n\n${cagrText}`}>
+                                            <HoverTip dense maxWidth={380} text={`HORIZONTE ANUAL · último año fiscal completo → +2 años\nFCF anual × (1+g)² = ${fmtBn(cb.latest_annual)} × (1+${(g * 100).toFixed(1)}%)² = ${fmtBn(projFromAnnual)}\n(base: último FCF anual = ${fmtBn(cb.latest_annual)}; objetivo FY completo + 2 años)\n──────────\n${cagrText}`}>
                                                 <button
                                                     type="button"
                                                     onClick={() => updateInput("fcf_2y", projFromAnnual)}
@@ -1252,10 +1252,21 @@ export default function Company() {
                             const within = (a, b) => a != null && b != null && Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1) < 0.001;
                             const isUsingTtm = within(currentVal, rTtm);
                             const isUsingAnnual = within(currentVal, rAnnual);
+                            // Method section (how the forward growth g is derived) — mirrors
+                            // the FCF tooltip so both toggles share the same structure.
+                            const gb = ap?.revenue_growth_breakdown || {};
+                            const gPct = gb.growth_fwd != null ? `${(gb.growth_fwd * 100).toFixed(1)}%` : "—";
+                            const revMethod =
+                                gb.source === "analyst_implied"
+                                    ? `CÓMO SE CALCULA g (crecimiento anual)\nMétodo: crecimiento implícito de analistas.\ng = (Ingresos analistas +1y / Ingresos último año) − 1\n= (${fmtBn(gb.revenue_plus1y)} / ${fmtBn(gb.latest_revenue)}) − 1 = ${gPct}${gb.capped ? "\n(capado a −30%/+50%)" : ""}`
+                                    : gb.source === "revenue_growth_yoy"
+                                        ? `CÓMO SE CALCULA g (crecimiento anual)\nMétodo: crecimiento interanual de ingresos (Yahoo).\ng = ${gPct}${gb.capped ? " (capado a −30%/+50%)" : ""}`
+                                        : `CÓMO SE CALCULA g (crecimiento anual)\nMétodo: CAGR histórico de ingresos (fallback, sin estimación de analistas).\ng = ${gPct}${gb.capped ? " (capado a −30%/+50%)" : ""}`;
+                            const DIV = "\n──────────\n";
                             return (
                                 <span className="inline-flex items-center gap-1 ml-2">
                                     {rTtm != null && (
-                                        <HoverTip text={`Horizonte TTM: parte de los ingresos TTM actuales (últimos 12 meses) y proyecta 2 años completos → objetivo ≈ TTM del último trimestre + 2 años.\n\nTTM × (1+g)² = ${fmtBn(rTtm)}`}>
+                                        <HoverTip dense maxWidth={360} text={`HORIZONTE TTM · últimos 12 meses → +2 años\nIngresos TTM × (1+g)² = ${fmtBn(rTtm)}\n(base TTM: ${fmtBn(gb.total_revenue_ttm)}; objetivo ≈ TTM del último trimestre + 2 años)${DIV}${revMethod}`}>
                                             <button
                                                 type="button"
                                                 onClick={() => updateInput("revenue_2y", rTtm)}
@@ -1267,7 +1278,7 @@ export default function Company() {
                                         </HoverTip>
                                     )}
                                     {rAnnual != null && (
-                                        <HoverTip text={`Horizonte ANUAL: ancla en el último año fiscal completo + 2 años (mismo punto '+2y' del gráfico anual), a partir de la estimación de analistas.\n\n= ${fmtBn(rAnnual)}`}>
+                                        <HoverTip dense maxWidth={360} text={`HORIZONTE ANUAL · último año fiscal completo → +2 años\n= ${fmtBn(rAnnual)}\n(ancla en el último año fiscal completo + 2 años, mismo punto '+2y' del gráfico anual, vía estimación de analistas)${DIV}${revMethod}`}>
                                             <button
                                                 type="button"
                                                 onClick={() => updateInput("revenue_2y", rAnnual)}

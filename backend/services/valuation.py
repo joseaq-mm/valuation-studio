@@ -342,6 +342,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     # Strategy: prefer analyst +1y → derive implied growth vs latest realized → extrapolate +1 more year.
     # Fallback to revenueGrowth or historical revenue CAGR.
     revenue_2y = None
+    rev_hist_growth = None
     implied_rev_growth = None
     if revenue_plus1y and latest_revenue and latest_revenue > 0:
         implied_rev_growth = revenue_plus1y / latest_revenue - 1
@@ -370,6 +371,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
                     projection_flags["revenue_projection_capped"] = True
                 if latest_revenue:
                     revenue_2y = latest_revenue * (1 + hist_cagr_capped) ** 2
+                    rev_hist_growth = hist_cagr_capped
         except Exception:
             pass
 
@@ -383,6 +385,24 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     total_revenue_ttm = _safe_float(info.get("totalRevenue"))
     if total_revenue_ttm and total_revenue_ttm > 0 and rev_growth_fwd is not None:
         revenue_2y_ttm = total_revenue_ttm * (1 + rev_growth_fwd) ** 2
+
+    # How the forward revenue growth `g` was derived — powers the "cómo se calcula g"
+    # section of the revenue-projection tooltips (mirrors the FCF cagr_breakdown).
+    if implied_rev_growth is not None:
+        _rev_src = "analyst_implied"
+    elif revenue_growth_yoy is not None:
+        _rev_src = "revenue_growth_yoy"
+    else:
+        _rev_src = "historical_cagr"
+    revenue_growth_breakdown = {
+        "growth_fwd": rev_growth_fwd if rev_growth_fwd is not None else rev_hist_growth,
+        "raw_growth": raw_g,
+        "source": _rev_src,
+        "capped": projection_flags["revenue_projection_capped"],
+        "revenue_plus1y": revenue_plus1y,
+        "latest_revenue": latest_revenue,
+        "total_revenue_ttm": total_revenue_ttm,
+    }
 
     # ----- FCF 2y projection -----
     # Two methods, in order of preference:
@@ -794,6 +814,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "revenue_2y_ttm": revenue_2y_ttm,
             "revenue_2y_annual": revenue_2y_annual,
             "revenue_horizon_default": "ttm" if revenue_2y_ttm is not None else "annual",
+            "revenue_growth_breakdown": revenue_growth_breakdown,
             "fcf_1y": fcf_1y,
             "fcf_2y": fcf_2y,
             "revenue_cagr_4y": revenue_cagr_4y,

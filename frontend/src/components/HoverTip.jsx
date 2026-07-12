@@ -5,7 +5,7 @@ import React, { useState, useRef, useLayoutEffect } from "react";
  * so it never gets cut off by overflow. Supports multi-line text (via
  * whiteSpace: pre-line) — newlines in the `text` prop are rendered.
  */
-export default function HoverTip({ text, children, maxWidth = 320 }) {
+export default function HoverTip({ text, children, maxWidth = 320, dense = false }) {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0 });
     const wrapRef = useRef(null);
@@ -53,7 +53,7 @@ export default function HoverTip({ text, children, maxWidth = 320 }) {
                     ref={tipRef}
                     role="tooltip"
                     style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 60, maxWidth, whiteSpace: "pre-line" }}
-                    className="bg-[#111111] text-white text-xs font-mono px-3 py-2 border border-black shadow-md leading-relaxed pointer-events-none"
+                    className={`bg-[#111111] text-white font-mono border border-black shadow-md pointer-events-none ${dense ? "text-[10.5px] leading-snug px-2.5 py-1.5" : "text-xs leading-relaxed px-3 py-2"}`}
                 >
                     {text}
                 </div>
