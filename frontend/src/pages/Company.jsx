@@ -1238,6 +1238,49 @@ export default function Company() {
                                 </span>
                             );
                         })() : null;
+                        // Revenue 2y horizon toggle: TTM (trailing-12m anchor) vs ANUAL
+                        // (last complete fiscal year anchor). Both come pre-computed from the
+                        // backend under auto_projections. Only rendered for the revenue_2y row.
+                        const isRevRow = key === "revenue_2y";
+                        const revBadge = isRevRow ? (() => {
+                            const ap = data?.auto_projections;
+                            const rTtm = ap?.revenue_2y_ttm;
+                            const rAnnual = ap?.revenue_2y_annual;
+                            if (rTtm == null && rAnnual == null) return null;
+                            const fmtBn = (n) => n == null ? "—" : (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${n.toFixed(0)}`);
+                            const currentVal = inputs?.revenue_2y;
+                            const within = (a, b) => a != null && b != null && Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1) < 0.001;
+                            const isUsingTtm = within(currentVal, rTtm);
+                            const isUsingAnnual = within(currentVal, rAnnual);
+                            return (
+                                <span className="inline-flex items-center gap-1 ml-2">
+                                    {rTtm != null && (
+                                        <HoverTip text={`Horizonte TTM: parte de los ingresos TTM actuales (últimos 12 meses) y proyecta 2 años completos → objetivo ≈ TTM del último trimestre + 2 años.\n\nTTM × (1+g)² = ${fmtBn(rTtm)}`}>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateInput("revenue_2y", rTtm)}
+                                                className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                style={{ background: isUsingTtm ? "#052049" : "transparent", color: isUsingTtm ? "white" : "#052049", borderColor: "#052049" }}
+                                                data-testid="revenue-base-ttm"
+                                                aria-pressed={isUsingTtm}
+                                            >TTM</button>
+                                        </HoverTip>
+                                    )}
+                                    {rAnnual != null && (
+                                        <HoverTip text={`Horizonte ANUAL: ancla en el último año fiscal completo + 2 años (mismo punto '+2y' del gráfico anual), a partir de la estimación de analistas.\n\n= ${fmtBn(rAnnual)}`}>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateInput("revenue_2y", rAnnual)}
+                                                className="overline px-1.5 py-0.5 border text-[9px] hover:opacity-70"
+                                                style={{ background: isUsingAnnual ? "#052049" : "transparent", color: isUsingAnnual ? "white" : "#052049", borderColor: "#052049" }}
+                                                data-testid="revenue-base-annual"
+                                                aria-pressed={isUsingAnnual}
+                                            >ANUAL</button>
+                                        </HoverTip>
+                                    )}
+                                </span>
+                            );
+                        })() : null;
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
@@ -1245,7 +1288,7 @@ export default function Company() {
                                         <HoverTip text={calc} maxWidth={340}>
                                             <span className="cursor-help border-b border-dotted border-[#9A9A9A]" data-testid={`input-label-${key}`}>{label}</span>
                                         </HoverTip>
-                                        {methodBadge}
+                                        {methodBadge}{revBadge}
                                     </label>
                                     <span className="text-xs font-mono" style={{ color: statusColor }} title={statusLabel} data-testid={`input-status-${key}`}>{statusDot}</span>
                                 </div>

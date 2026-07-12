@@ -203,3 +203,8 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 ## 2026-07-09 — Bug fix: chat de Ayuda tapado por el badge "Made with Emergent"
 - `HelpChat.jsx`: el panel se anclaba pegado al fondo (`sm:m-4`, `h-[80vh]`), donde el badge flotante de la plataforma tapaba el input y el botón enviar. Fix: panel elevado con `mb-[76px]` (móvil y sm+) + `h-[70vh]` móvil / `sm:max-h-[calc(100vh-7rem)]`, dejando hueco inferior. VERIFICADO por testing_agent (iteration_19): input a 33px por encima del badge, sin solape; abrir/escribir/enviar/cerrar OK (frontend 100%).
 - Genta docx: manual completo de la app en `/app/frontend/public/Valuation_Studio_Manual.docx` (descargable en la URL de la app).
+
+## 2026-07-12 — Toggle TTM/ANUAL en "Ingresos proyectados 2y" (COMPLETADO)
+- Backend (valuation.py) ya exponía revenue_2y_ttm / revenue_2y_annual + default TTM.
+- Frontend (Company.jsx): añadidos los botones reales TTM/ANUAL junto al campo revenue_2y (data-testid revenue-base-ttm / revenue-base-annual), misma estética que la barra BU/TTM/ANUAL del FCF.
+- Verificado live (MSFT): TTM 592,66B (default) -> ANUAL 524,60B, input marcado como editado y POC/POV recalculados.
