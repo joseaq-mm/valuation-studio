@@ -208,3 +208,4 @@ Usuario hará pruebas de cálculo y decidirá normalización (punto 1) y tratami
 - Backend (valuation.py) ya exponía revenue_2y_ttm / revenue_2y_annual + default TTM.
 - Frontend (Company.jsx): añadidos los botones reales TTM/ANUAL junto al campo revenue_2y (data-testid revenue-base-ttm / revenue-base-annual), misma estética que la barra BU/TTM/ANUAL del FCF.
 - Verificado live (MSFT): TTM 592,66B (default) -> ANUAL 524,60B, input marcado como editado y POC/POV recalculados.
+- Fix (2026-07-12): botones TTM/ANUAL de ingresos no salían en empresas ya cacheadas (p.ej. COIN). Causa: caché en db.fundamentals servía docs anteriores al cambio sin revenue_2y_ttm/annual. Añadido schema-guard en GET /api/company/{ticker} (server.py) que refresca la caché si faltan los campos nuevos. Verificado en COIN.
