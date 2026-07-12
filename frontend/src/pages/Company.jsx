@@ -1676,6 +1676,7 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
         <HoverTip text="Toca el título para alternar entre la vista anual y la trimestral TTM (suma de los últimos 12 meses en cada trimestre). La parte antigua de la serie trimestral es aproximada (interpolada desde los datos anuales) y se muestra en trazo punteado tenue.">
             <div className="overline text-[#4A4A4A] cursor-pointer select-none flex items-center gap-1.5" onClick={toggleMode} data-testid={`${testid}-title-toggle`}>
                 <span className="underline decoration-dotted underline-offset-2">{title}</span>
+                <span className="text-[9px] font-mono text-[#4A4A4A] normal-case">gráfico</span>
                 <span className="px-1 border border-black text-[9px] font-mono bg-[#FAF6EE]">{isTTM ? "TTM TRIM." : "ANUAL"}</span>
             </div>
         </HoverTip>
