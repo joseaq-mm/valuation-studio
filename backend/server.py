@@ -88,6 +88,16 @@ async def get_company(ticker: str, refresh: bool = False):
     if not ticker:
         raise HTTPException(status_code=400, detail="ticker required")
 
+    def _is_degraded(p: dict) -> bool:
+        # Detects a transient/incomplete Yahoo response: a real company always has a
+        # market cap; a healthy fetch also has balance-sheet net_debt AND TTM revenue.
+        # When those drop together it's almost certainly a bad fetch — never a real gap.
+        if not p:
+            return True
+        ap = p.get("auto_projections", {}) or {}
+        ttm_rev = (ap.get("revenue_growth_breakdown") or {}).get("total_revenue_ttm")
+        return p.get("market_cap") is not None and p.get("net_debt") is None and ttm_rev is None
+
     # Cache lookup
     cached = await db.fundamentals.find_one({"ticker": ticker}, {"_id": 0})
     if cached and not refresh:
@@ -96,7 +106,12 @@ async def get_company(ticker: str, refresh: bool = False):
             # Schema guard: force a refresh for docs cached before the revenue TTM/ANUAL
             # horizon fields existed, so old caches auto-upgrade instead of hiding the toggle.
             schema_ok = "ttm_target_quarter" in cached["data"].get("auto_projections", {})
-            if schema_ok and datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
+            # Never serve a stale degraded (transient bad fetch) payload: refetch to heal it.
+            # A recently-fetched degraded doc is served as-is (genuine data gap, e.g. an ETF)
+            # so we don't hammer Yahoo on every load.
+            degraded = _is_degraded(cached["data"])
+            recently_fetched = datetime.now(timezone.utc) - as_of < timedelta(hours=1)
+            if schema_ok and (not degraded or recently_fetched) and datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
                 data = cached["data"]
                 # Recompute ratios fresh from auto values (in case formula changes)
                 ratios = compute_custom_ratios({
@@ -118,6 +133,10 @@ async def get_company(ticker: str, refresh: bool = False):
 
     try:
         payload = await run_in_threadpool(fetch_fundamentals_sync, ticker)
+        # Retry once if the response came back degraded (transient Yahoo hiccup) so we
+        # don't cache/serve a payload with missing net_debt / TTM data.
+        if _is_degraded(payload):
+            payload = await run_in_threadpool(fetch_fundamentals_sync, ticker)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
