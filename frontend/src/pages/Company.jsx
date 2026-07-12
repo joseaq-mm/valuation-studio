@@ -12,7 +12,7 @@ import { useFx } from "@/lib/fx";
 import { useAuth } from "@/lib/auth";
 import HoverTip from "@/components/HoverTip";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
-import { Star, RefreshCw, AlertCircle, Save, X, Briefcase } from "lucide-react";
+import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
@@ -1654,6 +1654,7 @@ function CompactTooltip({ active, payload, label }) {
 
 function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false, method = null }) {
     const [mode, setMode] = useState("annual");
+    const [expanded, setExpanded] = useState(false);
     const isTTM = mode === "ttm";
     const toggleMode = () => {
         const next = isTTM ? "annual" : "ttm";
@@ -1685,32 +1686,32 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
     const projColor = userEdited ? "#052049" : "#B32A22";
     const projLabel = userEdited ? "Estimado por usuario" : "Proyección";
     const hasApprox = isTTM && chartData.some(p => p.kind === "approx");
-    const tickStyle = { fontSize: isTTM ? 9 : 11, fontFamily: "IBM Plex Mono" };
-    return (
-        <div className="border border-black bg-white p-4" data-testid={testid}>
-            <div className="flex items-start justify-between mb-1">
-                <div>
-                    <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
-                    <div className="font-serif text-xl">en miles de millones ({unit})</div>
-                </div>
-                <div className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px] font-mono mt-1" data-testid={`${testid}-legend`}>
-                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-[2px]" style={{ background: color }} />Real</span>
-                    {hasApprox && <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dotted" style={{ borderColor: color, opacity: 0.5 }} />Aprox.</span>}
-                    <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />{projLabel}</span>
-                </div>
-            </div>
-            <ResponsiveContainer width="100%" height={200}>
+
+    const renderChart = (height, big = false) => {
+        const dotR = big ? (isTTM ? 4 : 6) : (isTTM ? 3 : 4);
+        const tickFont = big ? (isTTM ? 13 : 15) : (isTTM ? 11 : 13);
+        const axisTick = { fill: "#111", fontSize: tickFont, fontFamily: "IBM Plex Mono" };
+        const yTick = { fill: "#111", fontSize: big ? 13 : 12, fontFamily: "IBM Plex Mono" };
+        // Draw the projection dot ONLY on projected points so it doesn't stack on top of
+        // the last real point (the shared "bridge" point that joins both series).
+        const ProjDot = (props) => {
+            const { cx, cy, payload } = props;
+            if (payload?.kind !== "proj" || cx == null || cy == null) return null;
+            return <circle cx={cx} cy={cy} r={dotR} fill={projColor} stroke="white" strokeWidth={big ? 1.5 : 1} />;
+        };
+        return (
+            <ResponsiveContainer width="100%" height={height}>
                 {type === "bar" ? (
                     <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="year" stroke="#111" style={tickStyle} minTickGap={isTTM ? 14 : 5} />
-                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
+                        <XAxis dataKey="year" stroke="#111" tick={axisTick} minTickGap={isTTM ? 14 : 5} />
+                        <YAxis stroke="#111" tick={yTick} tickFormatter={(v) => fmtCompact(v)} />
                         <Tooltip content={<CompactTooltip />} cursor={{ fill: "#11111110" }} />
                         <Bar dataKey="value" name="FCF">
                             {chartData.map((entry, i) => (
                                 <Cell key={i}
                                       fill={entry.kind === "proj" ? projColor : color}
-                                      fillOpacity={entry.kind === "proj" ? 0.45 : entry.kind === "approx" ? 0.3 : 1}
+                                      fillOpacity={entry.kind === "proj" ? 0.5 : entry.kind === "approx" ? 0.3 : 1}
                                       stroke={entry.kind === "proj" ? projColor : "none"}
                                       strokeDasharray={entry.kind === "proj" ? "3 3" : "0"} />
                             ))}
@@ -1719,15 +1720,60 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
                 ) : (
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                        <XAxis dataKey="year" stroke="#111" style={tickStyle} minTickGap={isTTM ? 14 : 5} />
-                        <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} tickFormatter={(v) => fmtCompact(v)} />
+                        <XAxis dataKey="year" stroke="#111" tick={axisTick} minTickGap={isTTM ? 14 : 5} />
+                        <YAxis stroke="#111" tick={yTick} tickFormatter={(v) => fmtCompact(v)} />
                         <Tooltip content={<CompactTooltip />} />
-                        {hasApprox && <Line type="monotone" dataKey="approx" stroke={color} strokeOpacity={0.45} strokeWidth={2} strokeDasharray="2 3" dot={{ r: 2, fill: color, fillOpacity: 0.45 }} name="Aprox." connectNulls={false} />}
-                        <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={2} dot={{ r: isTTM ? 3 : 4, fill: color }} name="Real" connectNulls={false} />
-                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={2} strokeDasharray="5 4" dot={{ r: isTTM ? 3 : 4, fill: projColor }} name={projLabel} connectNulls={false} />
+                        {hasApprox && <Line type="monotone" dataKey="approx" stroke={color} strokeOpacity={0.45} strokeWidth={2} strokeDasharray="2 3" dot={{ r: Math.max(2, dotR - 2), fill: color, fillOpacity: 0.45 }} name="Aprox." connectNulls={false} isAnimationActive={false} />}
+                        <Line type="monotone" dataKey="historical" stroke={color} strokeWidth={big ? 2.5 : 2} dot={{ r: dotR, fill: color, stroke: "white", strokeWidth: big ? 1.5 : 1 }} name="Real" connectNulls={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="projection" stroke={projColor} strokeWidth={big ? 2.5 : 2} strokeDasharray="5 4" dot={<ProjDot />} name={projLabel} connectNulls={false} isAnimationActive={false} />
                     </LineChart>
                 )}
             </ResponsiveContainer>
+        );
+    };
+
+    const legendEl = (
+        <div className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px] font-mono" data-testid={`${testid}-legend`}>
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-[2px]" style={{ background: color }} />Real</span>
+            {hasApprox && <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dotted" style={{ borderColor: color, opacity: 0.5 }} />Aprox.</span>}
+            <span className="flex items-center gap-1"><span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: projColor }} />{projLabel}</span>
+        </div>
+    );
+
+    return (
+        <div className="border border-black bg-white p-4" data-testid={testid}>
+            <div className="flex items-start justify-between mb-1">
+                <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
+                    <div className="font-serif text-xl">en miles de millones ({unit})</div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                    <button onClick={() => setExpanded(true)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Ampliar gráfico" data-testid={`${testid}-expand`}>
+                        <Maximize2 size={16} />
+                    </button>
+                    {legendEl}
+                </div>
+            </div>
+            {renderChart(200)}
+            {expanded && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid={`${testid}-modal`} onClick={() => setExpanded(false)}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
+                                <div className="font-serif text-2xl">en miles de millones ({unit})</div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                {legendEl}
+                                <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Cerrar" data-testid={`${testid}-modal-close`}>
+                                    <X size={22} />
+                                </button>
+                            </div>
+                        </div>
+                        {renderChart(480, true)}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -1760,6 +1806,7 @@ function RatioHistoryTooltip({ active, payload, label, currency }) {
 
 function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, currency }) {
     const [mode, setMode] = useState("annual");
+    const [expanded, setExpanded] = useState(false);
     const isTTM = mode === "ttm";
     const toggleMode = () => {
         const next = isTTM ? "annual" : "ttm";
@@ -1794,40 +1841,68 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
         price: s.price,
         kind: s.kind,
     }));
-    // In TTM mode, approx points (TTM interpolated from annual data) get a small faint dot;
-    // real published quarters get the full-size dot.
-    const mkDot = (color) => (props) => {
-        const { cx, cy, payload, index } = props;
-        if (cx == null || cy == null) return <g key={`d-${index}`} />;
-        const approx = payload?.kind === "approx";
-        return <circle key={`d-${index}`} cx={cx} cy={cy} r={approx ? 2 : 4} fill={color} fillOpacity={approx ? 0.45 : 1} />;
+    const renderChart = (height, big = false) => {
+        const dotBig = big ? 5 : 4;
+        const tickFont = big ? (isTTM ? 12 : 14) : (isTTM ? 10 : 12);
+        const axisTick = { fill: "#111", fontSize: tickFont, fontFamily: "IBM Plex Mono" };
+        // In TTM mode, approx points (TTM interpolated from annual data) get a small faint dot;
+        // real published quarters get the full-size dot. White border keeps them well defined.
+        const mkDot = (color) => (props) => {
+            const { cx, cy, payload, index } = props;
+            if (cx == null || cy == null) return <g key={`d-${index}`} />;
+            const approx = payload?.kind === "approx";
+            return <circle key={`d-${index}`} cx={cx} cy={cy} r={approx ? 2 : dotBig} fill={color} fillOpacity={approx ? 0.45 : 1} stroke="white" strokeWidth={approx ? 0 : 1} />;
+        };
+        return (
+            <ResponsiveContainer width="100%" height={height}>
+                <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
+                    <XAxis dataKey="year" stroke="#111" tick={axisTick} minTickGap={isTTM ? 14 : 5} />
+                    <YAxis stroke="#111" tick={{ fill: "#111", fontSize: big ? 13 : 12, fontFamily: "IBM Plex Mono" }}
+                           tickFormatter={(v) => fmtNum(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
+                    <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
+                    <Legend wrapperStyle={{ fontSize: big ? 12 : 10, fontFamily: "IBM Plex Mono" }} />
+                    <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={isTTM ? mkDot("#B32A22") : { r: dotBig, fill: "#B32A22", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
+                    <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={isTTM ? mkDot("#1D7044") : { r: dotBig, fill: "#1D7044", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
+                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : dotBig - 1, fill: "#052049" }} isAnimationActive={false} />
+                </ComposedChart>
+            </ResponsiveContainer>
+        );
     };
+    const descEl = (
+        <div className="text-[10px] font-mono text-[#4A4A4A] mt-1 max-w-md leading-relaxed">
+            {isTTM
+                ? <>POC/POV recalculados por trimestre con TTM (últimos 12 meses). Punto grande = trimestre con datos publicados reales; punto pequeño tenue = TTM aproximado interpolado desde los datos anuales. El precio de cierre trimestral es real en toda la serie.</>
+                : <>Compara precio de cierre contra <span style={{ color: "#B32A22" }} className="font-semibold">POC</span> (precio objetivo de compra) y <span style={{ color: "#1D7044" }} className="font-semibold">POV</span> (precio objetivo de venta). Si el precio cae por debajo del POC: zona barata histórica. Si los POC/POV caen con el precio: deterioro fundamental real. Si los POC/POV suben mientras el precio cae: posible oportunidad.</>}
+        </div>
+    );
     return (
         <div className="border border-black bg-white p-4" data-testid="ratio-history-chart">
             <div className="flex items-start justify-between mb-1">
                 <div>
                     {titleEl}
                     <div className="font-serif text-xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
-                    <div className="text-[10px] font-mono text-[#4A4A4A] mt-1 max-w-md leading-relaxed">
-                        {isTTM
-                            ? <>POC/POV recalculados por trimestre con TTM (últimos 12 meses). Punto grande = trimestre con datos publicados reales; punto pequeño tenue = TTM aproximado interpolado desde los datos anuales. El precio de cierre trimestral es real en toda la serie.</>
-                            : <>Compara precio de cierre contra <span style={{ color: "#B32A22" }} className="font-semibold">POC</span> (precio objetivo de compra) y <span style={{ color: "#1D7044" }} className="font-semibold">POV</span> (precio objetivo de venta). Si el precio cae por debajo del POC: zona barata histórica. Si los POC/POV caen con el precio: deterioro fundamental real. Si los POC/POV suben mientras el precio cae: posible oportunidad.</>}
+                    {descEl}
+                </div>
+                <button onClick={() => setExpanded(true)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Ampliar gráfico" data-testid="ratio-history-expand">
+                    <Maximize2 size={16} />
+                </button>
+            </div>
+            {renderChart(240)}
+            {expanded && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid="ratio-history-modal" onClick={() => setExpanded(false)}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                {titleEl}
+                                <div className="font-serif text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
+                            </div>
+                            <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
+                        </div>
+                        {renderChart(500, true)}
                     </div>
                 </div>
-            </div>
-            <ResponsiveContainer width="100%" height={240}>
-                <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                    <XAxis dataKey="year" stroke="#111" style={{ fontSize: isTTM ? 9 : 11, fontFamily: "IBM Plex Mono" }} minTickGap={isTTM ? 14 : 5} />
-                    <YAxis stroke="#111" style={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
-                           tickFormatter={(v) => fmtNum(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
-                    <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
-                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                    <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={isTTM ? mkDot("#B32A22") : { r: 4, fill: "#B32A22" }} connectNulls />
-                    <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={isTTM ? mkDot("#1D7044") : { r: 4, fill: "#1D7044" }} connectNulls />
-                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : 3, fill: "#052049" }} />
-                </ComposedChart>
-            </ResponsiveContainer>
+            )}
         </div>
     );
 }
