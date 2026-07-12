@@ -612,7 +612,7 @@ export default function Company() {
         const q = parseInt(label.slice(5), 10);
         return q === 4 ? `${y + 1}Q1` : `${y}Q${q + 1}`;
     };
-    const buildQuarterlyChart = (ttmSeries, annualHistory, proj1Auto, proj2Auto, userProj2, userEdited) => {
+    const buildQuarterlyChart = (ttmSeries, annualHistory, proj1Auto, proj2Auto, userProj2, userEdited, horizonMode = "annual") => {
         if (!ttmSeries || ttmSeries.length === 0) return [];
         const out = ttmSeries.map(p => ({
             year: p.label,
@@ -640,9 +640,13 @@ export default function Company() {
         const p2 = proj2 != null ? proj2 / 1e9 : null;
         if (proj1 == null || isNaN(proj1)) return out;
 
-        // Projection targets sit at fiscal-year-end +1y / +2y (same anchors as the annual chart).
-        const t1 = new Date(annLastDate); t1.setFullYear(t1.getFullYear() + 1);
-        const t2 = new Date(annLastDate); t2.setFullYear(t2.getFullYear() + 2);
+        // Projection-target anchor depends on the active horizon so the +2y point lands
+        // where the footnote says it does:
+        //  · TTM   → last reported TTM quarter + 1y/+2y  (e.g. Q1 2026 → +2y = 2028Q1)
+        //  · ANUAL → fiscal-year-end + 1y/+2y            (e.g. FY2025 → +2y = 2027Q4)
+        const anchorDate = horizonMode === "ttm" ? lastDate : annLastDate;
+        const t1 = new Date(anchorDate); t1.setFullYear(t1.getFullYear() + 1);
+        const t2 = new Date(anchorDate); t2.setFullYear(t2.getFullYear() + 2);
         const nQ1 = Math.max(1, Math.round((t1 - lastDate) / QUARTER_MS));
         const nQ2 = Math.max(nQ1 + 1, Math.round((t2 - lastDate) / QUARTER_MS));
         const geomStep = (a, b, k, n) => (a > 0 && b > 0) ? a * Math.pow(b / a, k / n) : a + (b - a) * (k / n);
@@ -662,8 +666,16 @@ export default function Company() {
         }
         return out;
     };
-    const revChartQ = qHist ? buildQuarterlyChart(qHist.revenue_ttm, data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited) : null;
-    const fcfChartQ = qHist ? buildQuarterlyChart(qHist.fcf_ttm, data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited) : null;
+    // Active horizon per metric → drives where the quarterly chart lands its +2y point.
+    const _within = (a, b) => a != null && b != null && Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1) < 0.001;
+    const revHorizon = (data.auto_projections.revenue_2y_ttm != null && _within(inputs?.revenue_2y, data.auto_projections.revenue_2y_ttm)) ? "ttm" : "annual";
+    const _cbF = data.auto_projections.cagr_breakdown;
+    const _gF = (_cbF && _cbF.growth_pct != null) ? _cbF.growth_pct : 0;
+    const _canSwapF = _cbF && _cbF.growth_pct != null && _cbF.fcf_ttm && _cbF.latest_annual && _cbF.latest_annual > 0;
+    const _pTtmF = _canSwapF ? _cbF.fcf_ttm * Math.pow(1 + _gF, 2) : null;
+    const fcfHorizon = (_pTtmF != null && _within(inputs?.fcf_2y, _pTtmF)) ? "ttm" : "annual";
+    const revChartQ = qHist ? buildQuarterlyChart(qHist.revenue_ttm, data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, revHorizon) : null;
+    const fcfChartQ = qHist ? buildQuarterlyChart(qHist.fcf_ttm, data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, fcfHorizon) : null;
     const ratioHistQ = qHist ? (qHist.ratio_ttm || []).map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) })) : null;
 
     // Detect anomalies in POC/POV and explain them based on the actual inputs.
