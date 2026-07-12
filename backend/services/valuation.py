@@ -404,6 +404,20 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "total_revenue_ttm": total_revenue_ttm,
     }
 
+    # Latest reported quarter (Yahoo `mostRecentQuarter`) → calendar-quarter labels for the
+    # projection-horizon footnotes. TTM target = latest reported quarter + 2 years.
+    ttm_asof_quarter = None
+    ttm_target_quarter = None
+    _mrq = info.get("mostRecentQuarter")
+    if _mrq:
+        try:
+            _d = datetime.fromtimestamp(_mrq, tz=timezone.utc)
+            _q = (_d.month - 1) // 3 + 1
+            ttm_asof_quarter = f"{_d.year}Q{_q}"
+            ttm_target_quarter = f"{_d.year + 2}Q{_q}"
+        except Exception:
+            pass
+
     # ----- FCF 2y projection -----
     # Two methods, in order of preference:
     #
@@ -815,6 +829,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
             "revenue_2y_annual": revenue_2y_annual,
             "revenue_horizon_default": "ttm" if revenue_2y_ttm is not None else "annual",
             "revenue_growth_breakdown": revenue_growth_breakdown,
+            "ttm_asof_quarter": ttm_asof_quarter,
+            "ttm_target_quarter": ttm_target_quarter,
             "fcf_1y": fcf_1y,
             "fcf_2y": fcf_2y,
             "revenue_cagr_4y": revenue_cagr_4y,

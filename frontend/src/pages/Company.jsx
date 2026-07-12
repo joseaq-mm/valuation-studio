@@ -534,7 +534,19 @@ export default function Company() {
         return nowY - 1;
     })();
     const projTargetYear = lastAnnualYear + 2;
-    const fyLabel = `objetivo FY${projTargetYear} · base TTM (fin de año fiscal del último anual +2)`;
+    const _ap = data?.auto_projections || {};
+    const ttmTargetQ = _ap.ttm_target_quarter;   // e.g. "2028Q1"
+    // CAGR 4y footnotes: base & target are ALWAYS full fiscal year for revenue; for FCF the
+    // fallback path (historical FCF has ≤0 years) anchors on the latest FCF (may be TTM), 2y span.
+    const _flags = _ap.flags || {};
+    const _fcfBaseSrc = _ap.cagr_breakdown?.base_source;
+    const _fcfCagrTtmBase = _flags.fcf_cagr_fallback && _fcfBaseSrc === "ttm_yahoo";
+    const revCagrNote = `de FY${nowY - 3} a FY${projTargetYear}`;
+    const fcfCagrNote = _fcfCagrTtmBase ? `Base TTM → FY${projTargetYear} (2 años)` : `de FY${nowY - 3} a FY${projTargetYear}`;
+    const revCagrTip = `Crecimiento compuesto anual (CAGR) a 4 años de los ingresos: (proyección FY${projTargetYear} / Ingresos FY${nowY - 3})^(1/4) − 1.\nBase y objetivo son SIEMPRE año fiscal COMPLETO (no TTM), aunque cambies el horizonte del input "Ingresos proyectados 2y". Se capa a −30%/+50% ante valores extremos (aviso en ámbar).`;
+    const fcfCagrTip = _fcfCagrTtmBase
+        ? `CAGR del Free Cash Flow — MÉTODO FALLBACK (span 2 años).\nBase: FCF de los ÚLTIMOS 12 MESES (TTM, Yahoo), porque el histórico de FCF tiene años ≤0 y no permite el cálculo estándar a 4 años.\nObjetivo: proyección FY${projTargetYear} (FCF proyectado 2y).\n= (FCF proyectado 2y / FCF TTM)^(1/2) − 1. Se capa a −30%/+50%.`
+        : `Crecimiento compuesto anual (CAGR) a 4 años del Free Cash Flow: (proyección FY${projTargetYear} / FCF FY${nowY - 3})^(1/4) − 1.\nBase y objetivo son año fiscal COMPLETO (no TTM). Si algún FCF histórico es ≤0, se usa el fallback (FCF más reciente → proyección 2y, a 1/2). Se capa a −30%/+50%.`;
 
     // Determine if user has edited the 2y projection vs the auto value (small epsilon to avoid float jitter)
     const isEdited = (a, b) => {
@@ -1114,10 +1126,8 @@ export default function Company() {
                             "Deuda total − (caja + inversiones a corto). Positiva = deuda neta (resta valor); negativa = caja neta (suma valor). Fuente: balance de Yahoo."],
                         ["Capitalización", "market_cap", false, true, "",
                             "Valor de mercado del capital = Precio de la acción × acciones en circulación (Yahoo)."],
-                        ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, fyLabel,
-                            `Crecimiento compuesto anual (CAGR) a 4 años de los ingresos. NO es solo histórico: va desde los ingresos anuales de FY${nowY - 3} (3 años atrás) hasta la proyección FY${projTargetYear} (Ingresos proyectados 2y), elevado a 1/4: (proyección FY${projTargetYear} / Ingresos FY${nowY - 3})^(1/4) − 1. Combina histórico reciente + futuro proyectado. Se capa a −30%/+50% ante valores extremos (se avisa en ámbar).`],
-                        ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fyLabel,
-                            `Crecimiento compuesto anual (CAGR) a 4 años del Free Cash Flow. Va desde el FCF anual de FY${nowY - 3} (3 años atrás) hasta la proyección FY${projTargetYear} (FCF proyectado 2y), elevado a 1/4: (proyección FY${projTargetYear} / FCF FY${nowY - 3})^(1/4) − 1. Combina histórico + proyección. Si algún FCF histórico es ≤0, se usa el fallback (último FCF → proyección 2y, a 1/2). Se capa a −30%/+50%.`],
+                        ["CAGR ingresos 4y", "revenue_cagr_4y", true, false, revCagrNote, revCagrTip],
+                        ["CAGR FCF 4y", "fcf_cagr_4y", true, false, fcfCagrNote, fcfCagrTip],
                         ["Precio acción", "current_price", false, false, cur,
                             "Último precio de mercado de la acción (Yahoo). Es el precio que se compara con el POC y el POV para obtener los Ratios de Compra y de Venta."],
                     ].map(([label, key, isPercent, isMagnitude, hint, calc]) => {
@@ -1292,6 +1302,27 @@ export default function Company() {
                                 </span>
                             );
                         })() : null;
+                        // Projection-horizon footnote for the 2y rows — reflects the active base
+                        // (TTM → "objetivo ≈ TTM {quarter}"; annual/BU → "objetivo FY{year}").
+                        let horizonNote = hint;
+                        if (key === "revenue_2y" || key === "fcf_2y") {
+                            const ap2 = data?.auto_projections || {};
+                            const withinN = (a, b) => a != null && b != null && Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1) < 0.001;
+                            const tq = ap2.ttm_target_quarter;
+                            const ttmLbl = tq ? `objetivo ≈ TTM ${tq}` : "objetivo ≈ TTM (último trim. + 2 años)";
+                            if (key === "revenue_2y") {
+                                const cv = inputs?.revenue_2y;
+                                if (ap2.revenue_2y_ttm != null && withinN(cv, ap2.revenue_2y_ttm)) horizonNote = ttmLbl;
+                                else if (ap2.revenue_2y_annual != null && withinN(cv, ap2.revenue_2y_annual)) horizonNote = `objetivo FY${projTargetYear}`;
+                                else horizonNote = "";
+                            } else {
+                                const cbb = ap2.cagr_breakdown;
+                                const gg = (cbb && cbb.growth_pct != null) ? cbb.growth_pct : 0;
+                                const canSwap2 = cbb && cbb.growth_pct != null && cbb.fcf_ttm && cbb.latest_annual && cbb.latest_annual > 0;
+                                const pTtm = canSwap2 ? cbb.fcf_ttm * Math.pow(1 + gg, 2) : null;
+                                horizonNote = (pTtm != null && withinN(inputs?.fcf_2y, pTtm)) ? ttmLbl : `objetivo FY${projTargetYear}`;
+                            }
+                        }
                         return (
                             <div key={key} className="p-4 grid-cell">
                                 <div className="flex items-center justify-between mb-1">
@@ -1312,7 +1343,7 @@ export default function Company() {
                                     onChange={(num) => updateInput(key, num)}
                                     data-testid={`input-${key}`}
                                 />
-                                <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono min-h-[14px]">{hint}</div>
+                                <div className="text-[10px] text-[#4A4A4A] mt-1 font-mono min-h-[14px]">{horizonNote}</div>
                             </div>
                         );
                     })}
