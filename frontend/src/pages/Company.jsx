@@ -674,6 +674,23 @@ export default function Company() {
     const _canSwapF = _cbF && _cbF.growth_pct != null && _cbF.fcf_ttm && _cbF.latest_annual && _cbF.latest_annual > 0;
     const _pTtmF = _canSwapF ? _cbF.fcf_ttm * Math.pow(1 + _gF, 2) : null;
     const fcfHorizon = (_pTtmF != null && _within(inputs?.fcf_2y, _pTtmF)) ? "ttm" : "annual";
+    // Human-readable active method for the chart header badges (auto-updates with the
+    // TTM/ANUAL/BU toggles in "Inputs y proyecciones").
+    const revMethodLabel = (data.auto_projections.revenue_2y_ttm != null && _within(inputs?.revenue_2y, data.auto_projections.revenue_2y_ttm))
+        ? "TTM"
+        : (data.auto_projections.revenue_2y_annual != null && _within(inputs?.revenue_2y, data.auto_projections.revenue_2y_annual)) ? "Anual" : "Manual";
+    let fcfMethodLabel = "Manual";
+    {
+        const curF = inputs?.fcf_2y;
+        const mth = data.auto_projections.projection_method;
+        const buV = (mth === "bottom-up" && data.auto_projections.bottom_up_breakdown) ? data.auto_projections.fcf_2y : null;
+        const buRejV = data.auto_projections.bottom_up_rejected_alternative?.fcf_2y;
+        const pAnnF = _canSwapF ? _cbF.latest_annual * Math.pow(1 + _gF, 2) : null;
+        if (buV != null && _within(curF, buV)) fcfMethodLabel = "BU";
+        else if (buRejV != null && _within(curF, buRejV)) fcfMethodLabel = "BU+";
+        else if (_pTtmF != null && _within(curF, _pTtmF)) fcfMethodLabel = "TTM";
+        else if (pAnnF != null && _within(curF, pAnnF)) fcfMethodLabel = "Anual";
+    }
     const revChartQ = qHist ? buildQuarterlyChart(qHist.revenue_ttm, data.revenue_history, data.auto_projections.revenue_1y, data.auto_projections.revenue_2y, inputs?.revenue_2y, revEdited, revHorizon) : null;
     const fcfChartQ = qHist ? buildQuarterlyChart(qHist.fcf_ttm, data.fcf_history, data.auto_projections.fcf_1y, data.auto_projections.fcf_2y, inputs?.fcf_2y, fcfEdited, fcfHorizon) : null;
     const ratioHistQ = qHist ? (qHist.ratio_ttm || []).map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) })) : null;
@@ -1416,8 +1433,8 @@ export default function Company() {
                 </div>
 
                 <div className="space-y-6">
-                    <ChartBlock title="Ingresos históricos" data={revChart} qData={revChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} />
-                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} qData={fcfChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} />
+                    <ChartBlock title="Ingresos históricos" data={revChart} qData={revChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#052049" testid="revenue-chart" userEdited={revEdited} method={revMethodLabel} />
+                    <ChartBlock title="Free Cash Flow histórico" data={fcfChart} qData={fcfChartQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} unit="B" color="#1D7044" type="bar" testid="fcf-chart" userEdited={fcfEdited} method={fcfMethodLabel} />
                     <RatioHistoryChart series={ratioHistory.map(s => ({ ...s, price: convertCur(s.price), poc: convertCur(s.poc), pov: convertCur(s.pov) }))} qSeries={ratioHistQ} qLoading={qHistLoading} onRequestQuarterly={requestQuarterly} currency={cur} />
                 </div>
             </div>
@@ -1635,7 +1652,7 @@ function CompactTooltip({ active, payload, label }) {
     );
 }
 
-function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false }) {
+function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false, method = null }) {
     const [mode, setMode] = useState("annual");
     const isTTM = mode === "ttm";
     const toggleMode = () => {
@@ -1652,10 +1669,15 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
             </div>
         </HoverTip>
     );
+    const methodEl = method ? (
+        <span className="overline text-[9px] px-1.5 py-0.5 border border-[#052049] text-[#052049] bg-white whitespace-nowrap" data-testid={`${testid}-method`}>
+            Método: {method}
+        </span>
+    ) : null;
     if (!chartData || chartData.length === 0) {
         return (
             <div className="border border-black bg-white p-4" data-testid={testid}>
-                {titleEl}
+                <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
                 <div className="text-sm text-[#4A4A4A] mt-2">{isTTM ? (qLoading ? "Cargando datos trimestrales…" : "Sin datos trimestrales disponibles") : "Sin datos disponibles"}</div>
             </div>
         );
@@ -1668,7 +1690,7 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
         <div className="border border-black bg-white p-4" data-testid={testid}>
             <div className="flex items-start justify-between mb-1">
                 <div>
-                    {titleEl}
+                    <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
                     <div className="font-serif text-xl">en miles de millones ({unit})</div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px] font-mono mt-1" data-testid={`${testid}-legend`}>
