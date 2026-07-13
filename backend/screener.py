@@ -48,6 +48,7 @@ def _crossed_into_sell_zone(prev: str, now: str) -> bool:
 
 
 def _build_email_html(user_name: str, events: List[Dict[str, Any]]) -> str:
+    app_url = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
     rows = []
     for e in events:
         is_buy = e["direction"] == "into_buy"
@@ -55,10 +56,27 @@ def _build_email_html(user_name: str, events: List[Dict[str, Any]]) -> str:
         arrow = "→"
         kind_label = "Ratio Compra · cruza a BARATA" if is_buy else "Ratio Venta · cruza a CARA"
         ratio_pct = e["now_ratio_compra"] if is_buy else e["now_ratio_venta"]
+        ticker = e["ticker"]
+        name = e.get("name") or ""
+        company_url = f"{app_url}/company/{ticker}" if app_url else ""
+        # Full company name (original language) + ticker, linking to its ficha.
+        name_line = (
+            f'<div style="font-family:sans-serif;font-size:12px;color:#111;font-weight:400;margin-top:2px;">{name}</div>'
+            if name else ""
+        )
+        if company_url:
+            company_cell = (
+                f'<a href="{company_url}" style="color:#052049;text-decoration:none;">'
+                f'<span style="font-family:monospace;font-weight:600;text-decoration:underline;">{ticker}</span>'
+                f'{name_line}'
+                f'</a>'
+            )
+        else:
+            company_cell = f'<span style="font-family:monospace;font-weight:600;">{ticker}</span>{name_line}'
         rows.append(f"""
             <tr>
-                <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:monospace;font-weight:600;vertical-align:top;">
-                    {e['ticker']}
+                <td style="padding:8px 12px;border-bottom:1px solid #00000010;vertical-align:top;">
+                    {company_cell}
                     <div style="font-family:sans-serif;font-size:10px;color:#4A4A4A;font-weight:400;margin-top:2px;">{kind_label}</div>
                 </td>
                 <td style="padding:8px 12px;border-bottom:1px solid #00000010;font-family:sans-serif;">
@@ -85,7 +103,7 @@ def _build_email_html(user_name: str, events: List[Dict[str, Any]]) -> str:
                 <table width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #000;border-bottom:1px solid #000;">{rows_html}</table>
             </td></tr>
             <tr><td style="padding:16px;font-size:11px;color:#4A4A4A;line-height:1.5;">
-                Aviso: Esta notificación se basa en datos automáticos de Yahoo Finance y tu fórmula propia.
+                Aviso: Esta notificación se basa en datos automáticos de Yahoo Finance y una fórmula propia.
                 No es recomendación ni asesoramiento de inversión. Para silenciar las notificaciones, entra a la app y desactívalas en tu perfil.
             </td></tr>
         </table>
@@ -221,6 +239,7 @@ async def run_screener(db, get_company_data, compute_custom_ratios) -> Dict[str,
             if direction and event_signal[0] != "—":
                 events.append({
                     "ticker": ticker,
+                    "name": data.get("name"),
                     "prev_signal": event_signal[0],
                     "now_signal": event_signal[1],
                     "now_ratio_compra": now_rc or 0.0,
