@@ -24,15 +24,16 @@ function EarningsBadge({ date, estimated, testid }) {
     const label = `${estimated ? "≈" : ""}${d.getUTCDate()} ${MONTHS_ES[d.getUTCMonth()]}${sameYear ? "" : " '" + String(d.getUTCFullYear()).slice(2)}`;
     const imminent = days >= 0 && days <= 7;
     const past = days < 0;
-    const color = imminent ? "#B32A22" : past ? "#9A9A9A" : "#111111";
+    const color = past ? "#B32A22" : "#111111";
+    const weight = (past || imminent) ? 700 : 400;
     const tip = past
-        ? `Fecha estimada de resultados ya pasada (${label}); Yahoo aún no ha publicado la próxima.`
+        ? `Fecha estimada de resultados ya pasada (${label}); es probable que ya haya novedades — Yahoo aún no ha publicado la próxima.`
         : imminent
             ? `¡Resultados ${days === 0 ? "hoy" : "en " + days + " día" + (days === 1 ? "" : "s")}! (${label})${estimated ? " · fecha estimada" : ""}`
             : `Próximos resultados${estimated ? " (estimado)" : ""}: faltan ${days} días (${label}).`;
     return (
         <HoverTip text={tip}>
-            <span className="font-mono tabular-nums cursor-help whitespace-nowrap" style={{ color, fontWeight: imminent ? 700 : 400 }} data-testid={testid}>
+            <span className="font-mono tabular-nums cursor-help whitespace-nowrap" style={{ color, fontWeight: weight }} data-testid={testid}>
                 {label}
             </span>
         </HoverTip>
