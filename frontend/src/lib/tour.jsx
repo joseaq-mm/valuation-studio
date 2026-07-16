@@ -64,11 +64,35 @@ const STEPS = [
         },
     },
     {
+        path: "/visual", target: '[data-testid="visual-page"]',
+        title: { es: "Visual · mapa de oportunidades", en: "Visual · opportunity map" },
+        body: {
+            es: "Cruza en una pantalla lo cuantitativo y lo cualitativo de todas tus empresas: un gráfico tipo cuadrante (calidad vs. precio) y una tabla ordenable con Score, TAM Score, Coef KPI y ratios. La campana por empresa te avisa por email cuando cruza tus umbrales.",
+            en: "Crosses the quantitative and qualitative of all your companies on one screen: a quadrant-style chart (quality vs. price) and a sortable table with Score, TAM Score, KPI Coef and ratios. The per-company bell emails you when it crosses your thresholds.",
+        },
+    },
+    {
+        path: "/kpis", target: '[data-testid="kpis-page"]',
+        title: { es: "KPIs · validación operativa", en: "KPIs · operating validation" },
+        body: {
+            es: "Comprueba si lo que promete la tesis se cumple en los números reales. La app extrae los KPIs de los informes/PDF y calcula el Coeficiente KPI, con fuentes trazables y flecha de tendencia respecto al análisis anterior.",
+            en: "Checks whether the thesis promise shows up in the real numbers. The app extracts KPIs from reports/PDFs and computes the KPI Coefficient, with traceable sources and a trend arrow vs the previous analysis.",
+        },
+    },
+    {
+        path: "/macro", target: '[data-testid="macro-page"]',
+        title: { es: "Macro · ¿mercado caro o barato?", en: "Macro · is the market cheap?" },
+        body: {
+            es: "Un coeficiente de mercado en tiempo real te dice si conviene ser agresivo (mercado barato → crecimiento) o defensivo (mercado caro → efectivo). Así modulas cuánto peso das a cada tipo de empresa.",
+            en: "A real-time market coefficient tells you whether to be aggressive (cheap market → growth) or defensive (expensive market → cash), so you weight each type of company accordingly.",
+        },
+    },
+    {
         path: "/", target: '[data-testid="home-help-buttons"]',
         title: { es: "¿Necesitas más ayuda?", en: "Need more help?" },
         body: {
-            es: "Tienes las Instrucciones completas (con descarga en PDF) y el botón de Ayuda en la cabecera para preguntarle cualquier duda al asistente. ¡Listo para empezar!",
-            en: "You have the full Instructions (with PDF download) and the Help button in the header to ask the assistant anything. You're ready to start!",
+            es: "Tienes las Instrucciones completas (con descarga en PDF y Word) y el botón de Ayuda en la cabecera para preguntarle cualquier duda al asistente. ¡Listo para empezar!",
+            en: "You have the full Instructions (with PDF and Word download) and the Help button in the header to ask the assistant anything. You're ready to start!",
         },
     },
 ];
