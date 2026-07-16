@@ -10,6 +10,35 @@ import { signalFor } from "@/lib/thresholds";
 import { toast } from "sonner";
 
 // ---------- Helpers ----------
+const MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+// Next-earnings date badge. Red/bold when the report is due in ≤7 days; muted when the
+// estimated date has already passed; "≈" prefix marks a tentative (estimated) date.
+function EarningsBadge({ date, estimated, testid }) {
+    if (!date) return <span className="text-[#9A9A9A]" data-testid={testid}>—</span>;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return <span className="text-[#9A9A9A]" data-testid={testid}>—</span>;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+    const sameYear = d.getUTCFullYear() === new Date().getFullYear();
+    const label = `${estimated ? "≈" : ""}${d.getUTCDate()} ${MONTHS_ES[d.getUTCMonth()]}${sameYear ? "" : " '" + String(d.getUTCFullYear()).slice(2)}`;
+    const imminent = days >= 0 && days <= 7;
+    const past = days < 0;
+    const color = imminent ? "#B32A22" : past ? "#9A9A9A" : "#111111";
+    const tip = past
+        ? `Fecha estimada de resultados ya pasada (${label}); Yahoo aún no ha publicado la próxima.`
+        : imminent
+            ? `¡Resultados ${days === 0 ? "hoy" : "en " + days + " día" + (days === 1 ? "" : "s")}! (${label})${estimated ? " · fecha estimada" : ""}`
+            : `Próximos resultados${estimated ? " (estimado)" : ""}: faltan ${days} días (${label}).`;
+    return (
+        <HoverTip text={tip}>
+            <span className="font-mono tabular-nums cursor-help whitespace-nowrap" style={{ color, fontWeight: imminent ? 700 : 400 }} data-testid={testid}>
+                {label}
+            </span>
+        </HoverTip>
+    );
+}
+
 const clamp01 = (v) => (v == null ? 0 : Math.max(0, Math.min(1, v)));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -252,7 +281,7 @@ export default function Visual() {
     // Sorting (table) — always over ALL rows. String columns (ticker/name) sort
     // alphabetically; the rest numerically.
     const STRING_KEYS = useMemo(() => new Set(["ticker", "name"]), []);
-    const DATE_KEYS = useMemo(() => new Set(["thesis_updated_at"]), []);
+    const DATE_KEYS = useMemo(() => new Set(["thesis_updated_at", "next_earnings_date"]), []);
     const sortedRows = useMemo(() => {
         const arr = [...rows];
         const isStr = STRING_KEYS.has(sortKey);
@@ -432,6 +461,7 @@ export default function Visual() {
                                 </HoverTip>
                             </th>
                             <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha reportado un trimestre posterior (conviene reanalizar)." />
+                            <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Próx.</span><span>result.</span></span>} k="next_earnings_date" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Fecha estimada de los próximos resultados (Yahoo Finance). En rojo si faltan 7 días o menos. El símbolo ≈ indica que la fecha es tentativa." />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Coef</span><span>KPI</span></span>} k="kpi_coef" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.kpi} />
@@ -443,7 +473,7 @@ export default function Visual() {
                     </thead>
                     <tbody>
                         {sortedRows.length === 0 && !loading && (
-                            <tr><td colSpan={12} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
+                            <tr><td colSpan={13} className="p-6 text-center text-[#4A4A4A] font-sans">No hay empresas miembros de tesis trend. Genera tesis primero.</td></tr>
                         )}
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
@@ -455,6 +485,7 @@ export default function Visual() {
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
                                     <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
                                     <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} mostRecentQuarter={r.most_recent_quarter} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
+                                    <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
                                     <td className="p-2 text-right" data-testid={`visual-kpi-${r.ticker}`}>

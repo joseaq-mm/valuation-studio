@@ -798,6 +798,19 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         except Exception:
             most_recent_quarter = None
 
+    # Next scheduled earnings date (Unix ts → ISO date). May be an estimate; the
+    # start/end range flags whether Yahoo considers it tentative.
+    _ets = info.get("earningsTimestamp")
+    next_earnings_date = None
+    next_earnings_estimated = False
+    if _ets:
+        try:
+            next_earnings_date = datetime.fromtimestamp(int(_ets), tz=timezone.utc).date().isoformat()
+            _s, _e = info.get("earningsTimestampStart"), info.get("earningsTimestampEnd")
+            next_earnings_estimated = bool(_s and _e and _s != _e)
+        except Exception:
+            next_earnings_date = None
+
     payload = {
         "ticker": ticker.upper(),
         "name": info.get("longName") or info.get("shortName") or ticker.upper(),
@@ -809,6 +822,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "website": info.get("website"),
         "long_business_summary": (info.get("longBusinessSummary") or "")[:600],
         "most_recent_quarter": most_recent_quarter,
+        "next_earnings_date": next_earnings_date,
+        "next_earnings_estimated": next_earnings_estimated,
         "current_price": current_price,
         "shares_outstanding": shares,
         "market_cap": market_cap,

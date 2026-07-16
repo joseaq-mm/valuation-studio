@@ -1364,6 +1364,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 tickers.add(tk)
         rev_map: Dict[str, float] = {}
         mrq_map: Dict[str, Optional[str]] = {}  # ticker → most_recent_quarter (ISO date)
+        earn_map: Dict[str, Dict[str, Any]] = {}  # ticker → {date, estimated} next earnings
         if tickers:
             cached = await db.fundamentals.find(
                 {"ticker": {"$in": list(tickers)}}, {"_id": 0, "ticker": 1, "data": 1}
@@ -1371,6 +1372,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             for cd in cached:
                 data = cd.get("data") or {}
                 mrq_map[cd.get("ticker")] = data.get("most_recent_quarter")
+                earn_map[cd.get("ticker")] = {
+                    "date": data.get("next_earnings_date"),
+                    "estimated": data.get("next_earnings_estimated", False),
+                }
                 rev2y = (data.get("auto_projections") or {}).get("revenue_2y")
                 if rev2y is None:
                     continue
@@ -1451,6 +1456,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trends": a["trends"], "trend_count": len(a["trends"]),
                 "updated_at": ticker_to_updated.get(tk),
                 "most_recent_quarter": mrq_map.get(tk),
+                "next_earnings_date": (earn_map.get(tk) or {}).get("date"),
+                "next_earnings_estimated": (earn_map.get(tk) or {}).get("estimated", False),
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 
@@ -1624,6 +1631,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trend_count": c.get("trend_count") or 0,
                 "thesis_updated_at": c.get("updated_at"),
                 "most_recent_quarter": c.get("most_recent_quarter"),
+                "next_earnings_date": c.get("next_earnings_date"),
+                "next_earnings_estimated": c.get("next_earnings_estimated", False),
             })
 
         return {"rows": rows}

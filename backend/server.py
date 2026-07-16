@@ -105,7 +105,8 @@ async def get_company(ticker: str, refresh: bool = False):
             as_of = datetime.fromisoformat(cached["data"]["as_of"])
             # Schema guard: force a refresh for docs cached before the revenue TTM/ANUAL
             # horizon fields existed, so old caches auto-upgrade instead of hiding the toggle.
-            schema_ok = "ttm_target_quarter" in cached["data"].get("auto_projections", {})
+            schema_ok = ("ttm_target_quarter" in cached["data"].get("auto_projections", {})
+                         and "next_earnings_date" in cached["data"])
             # Never serve a stale degraded (transient bad fetch) payload: refetch to heal it.
             # A recently-fetched degraded doc is served as-is (genuine data gap, e.g. an ETF)
             # so we don't hammer Yahoo on every load.
