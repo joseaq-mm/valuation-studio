@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 18 jul 2026 — Visual: filtro "Nivel" (Nivel 1 / Nivel 2 / Ambas)
+- Nuevo control segmentado **"Nivel"** en la sección de Filtros de `/visual`: Ambas (por defecto) · Nivel 1 (solo Cartera) · Nivel 2 (solo Seguimiento).
+- Membresía leída de localStorage (`getPortfolio` = Nivel 1, `getWatchlistTickers` = Nivel 2), sincronizada con la nube por `WatchlistCloudSync`; se actualiza en vivo vía eventos `vs:portfolio-changed` / `vs:watchlist-changed`.
+- Integrado en `passesFilters` (afecta tabla + mapa) y en Reset. `Visual.jsx`. data-testids: `filter-level`, `filter-level-both|n1|n2`.
+- Verificado en vivo: "Ambas" 38/38; "Nivel 2" filtra a 1 (RMBS, la única de seguimiento presente en la tabla).
+
+
 ## 18 jul 2026 — Tabla Visual: nueva columna "Ant. result." + ahorro de espacio
 - Añadida columna **"Ant. result."** (`last_earnings_date`, últimos resultados publicados) entre "Tesis" y "Próx. result." → `LastEarningsBadge` (gris, no coloreado, ordenable).
 - Renombrada columna **"Actualiz." → "Tesis"** (tooltip sin cambios).

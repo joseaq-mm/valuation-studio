@@ -4,6 +4,8 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData, alertsGet, alertSave, alertDelete } from "@/lib/api";
+import { getPortfolio } from "@/lib/portfolio";
+import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { signalFor } from "@/lib/thresholds";
@@ -233,7 +235,26 @@ export default function Visual() {
         rv: -10000,
         cqual: 0,
         ctotal: 0,
+        level: "both",  // "both" | "n1" (Cartera) | "n2" (Seguimiento)
     });
+
+    // Ticker membership of Nivel 1 (Cartera) and Nivel 2 (Seguimiento), read from
+    // local storage (kept in sync with the cloud by WatchlistCloudSync).
+    const [n1Set, setN1Set] = useState(() => new Set());
+    const [n2Set, setN2Set] = useState(() => new Set());
+    useEffect(() => {
+        const load = () => {
+            setN1Set(new Set(getPortfolio().map((p) => (p.ticker || "").toUpperCase())));
+            setN2Set(new Set(getWatchlistTickers().map((t) => (t || "").toUpperCase())));
+        };
+        load();
+        window.addEventListener("vs:portfolio-changed", load);
+        window.addEventListener("vs:watchlist-changed", load);
+        return () => {
+            window.removeEventListener("vs:portfolio-changed", load);
+            window.removeEventListener("vs:watchlist-changed", load);
+        };
+    }, []);
 
     // Load on mount (and whenever user changes). All rows start SELECTED so the
     // map shows everything immediately — user uncheck to narrow it down.
@@ -277,15 +298,21 @@ export default function Visual() {
     }, []);
 
     // A row passes the numeric filters (drives both map visibility and table marking).
-    const passesFilters = useCallback((r, f) => (
-        (r.avg_overall_score || 0) >= f.score &&
-        (r.sum_tam_score || 0) >= f.tam &&
-        (typeof r.kpi_coef === "number" ? r.kpi_coef : -10000) >= f.kpi &&
-        (r.ratio_compra_pct ?? -10000) >= f.rc &&
-        (r.ratio_venta_pct ?? -10000) >= f.rv &&
-        ((r.combined_qual ?? 0) * 100) >= f.cqual &&
-        ((r.combined ?? 0) * 100) >= f.ctotal
-    ), []);
+    const passesFilters = useCallback((r, f) => {
+        const lvl = f.level || "both";
+        const tk = (r.ticker || "").toUpperCase();
+        if (lvl === "n1" && !n1Set.has(tk)) return false;
+        if (lvl === "n2" && !n2Set.has(tk)) return false;
+        return (
+            (r.avg_overall_score || 0) >= f.score &&
+            (r.sum_tam_score || 0) >= f.tam &&
+            (typeof r.kpi_coef === "number" ? r.kpi_coef : -10000) >= f.kpi &&
+            (r.ratio_compra_pct ?? -10000) >= f.rc &&
+            (r.ratio_venta_pct ?? -10000) >= f.rv &&
+            ((r.combined_qual ?? 0) * 100) >= f.cqual &&
+            ((r.combined ?? 0) * 100) >= f.ctotal
+        );
+    }, [n1Set, n2Set]);
 
     // Keep the table checkboxes in sync with the filters: selecting/adjusting a filter
     // automatically marks (passes) or unmarks (fails) each row.
@@ -345,7 +372,7 @@ export default function Visual() {
         return passesFilters(r, filters);
     }), [rows, selected, filters, passesFilters]);
 
-    const resetFilters = () => setFilters({ score: 0, tam: 0, kpi: -10000, rc: -10000, rv: -10000, cqual: 0, ctotal: 0 });
+    const resetFilters = () => setFilters({ score: 0, tam: 0, kpi: -10000, rc: -10000, rv: -10000, cqual: 0, ctotal: 0, level: "both" });
 
     // Dynamic quadrant divider: use median of MAP rows so dots end up balanced
     // across the 4 quadrants regardless of dataset spread. Falls back to median
@@ -451,6 +478,26 @@ export default function Visual() {
                     </button>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col gap-1" data-testid="filter-level">
+                        <label className="overline text-[#4A4A4A]">Nivel</label>
+                        <div className="flex border border-black/30 divide-x divide-black/20 w-fit">
+                            {[
+                                { k: "both", label: "Ambas" },
+                                { k: "n1", label: "Nivel 1" },
+                                { k: "n2", label: "Nivel 2" },
+                            ].map((o) => (
+                                <button
+                                    key={o.k}
+                                    type="button"
+                                    onClick={() => setFilters({ ...filters, level: o.k })}
+                                    className={`text-xs font-mono px-3 py-1.5 transition-colors ${filters.level === o.k ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F1E9D9]"}`}
+                                    data-testid={`filter-level-${o.k}`}
+                                >
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <FilterField label="Score min" value={filters.score} step={1} onChange={(v) => setFilters({ ...filters, score: v })} testid="filter-score" />
                     <FilterField label="TAM Score min" value={filters.tam} step={0.5} onChange={(v) => setFilters({ ...filters, tam: v })} testid="filter-tam" />
                     <FilterField label="Coef KPI ≥" value={filters.kpi} step={0.1} onChange={(v) => setFilters({ ...filters, kpi: v })} testid="filter-kpi" />
