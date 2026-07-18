@@ -2,6 +2,16 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 18 jul 2026 — Visual: línea de tiempo (dial de evolución en el cuadrante)
+- **Backend** (`services/timeline.py`, `routes/thesis.py`, `server.py`):
+  - `GET /api/thesis/visual-timeline?months_back=120` → serie mensual por empresa de los 4 ejes + Coef KPI. Ejes de precio (Ratio Compra/Venta) reconstruidos hacia atrás proyectando el POC/POV implícito de hoy sobre el cierre de cada mes; Score/TAM/KPI **congelados** en el pasado reconstruido. Valores limitados (clamp -99..500) y ventana por defecto 10 años.
+  - `price_history_monthly`: caché compartida de cierres mensuales (yfinance bulk `yf.download`, refresco semanal). 0 coste IA.
+  - `visual_snapshots` + job nocturno `_scheduled_visual_snapshots_run` (06:10 UTC) → graba 1 punto/mes por (usuario, ticker) con los 4 ejes exactos + KPI; se superpone a la reconstrucción → el pasado se vuelve preciso con el tiempo (Opción C híbrida). Sembrado 1er snapshot hoy.
+- **Frontend** (`Visual.jsx`): botón "Línea de tiempo", slider bajo el eje X (izq=pasado, dcha=hoy), ▶/⏸, velocidad, **estela** (rastro del recorrido, `TrailLayer` vía `<Customized>`), etiqueta de mes, agujas KPI y ejes/medianas fijos para ver el movimiento. Respeta selección y filtro de Nivel.
+- Coste incremental por usuario ≈ 0 € IA (100% cuantitativo) + ~15 MB/año almacenamiento.
+- Verificado en vivo (usuario real, 38 empresas, jun'17 ↔ jul'26). data-testids: `visual-timeline-toggle|slider|play|trail|speed|controls|error`.
+
+
 ## 18 jul 2026 — Visual: filtro "Nivel" (Nivel 1 / Nivel 2 / Ambas)
 - Nuevo control segmentado **"Nivel"** en la sección de Filtros de `/visual`: Ambas (por defecto) · Nivel 1 (solo Cartera) · Nivel 2 (solo Seguimiento).
 - Membresía leída de localStorage (`getPortfolio` = Nivel 1, `getWatchlistTickers` = Nivel 2), sincronizada con la nube por `WatchlistCloudSync`; se actualiza en vivo vía eventos `vs:portfolio-changed` / `vs:watchlist-changed`.

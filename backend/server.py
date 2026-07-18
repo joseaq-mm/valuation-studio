@@ -797,6 +797,14 @@ async def _scheduled_alerts_run():
         logger.error(f"scheduled company-alerts crashed: {e}")
 
 
+async def _scheduled_visual_snapshots_run():
+    """Daily snapshot of each user's Visual coordinates (06:10 UTC) → time dial history."""
+    try:
+        await _thesis_router.run_visual_snapshots()
+    except Exception as e:
+        logger.error(f"scheduled visual-snapshots crashed: {e}")
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
@@ -819,6 +827,7 @@ async def _startup_scheduler():
         _scheduler = AsyncIOScheduler(timezone="UTC")
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
         _scheduler.add_job(_scheduled_alerts_run, CronTrigger(hour=6, minute=5))
+        _scheduler.add_job(_scheduled_visual_snapshots_run, CronTrigger(hour=6, minute=10))
         # Hourly tick: dispatches the radar to users whose configured (weekday, hour_utc)
         # match the current UTC moment. Discovery is cached and reused inside run_radar.
         _scheduler.add_job(_scheduled_radar_run, CronTrigger(minute=0))

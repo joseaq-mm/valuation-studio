@@ -177,6 +177,11 @@ export const thesisRefreshRun = ({ thesis_id = null, ticker = null } = {}) =>
 export const thesisVisualData = () =>
     api.get(`/thesis/visual`).then(r => r.data);
 
+// Visual time dial (evolution over time). Historical price reconstruction may
+// fetch prices on first call → allow a longer timeout.
+export const thesisVisualTimeline = () =>
+    api.get(`/thesis/visual-timeline`, { timeout: 120000 }).then(r => r.data);
+
 // Per-company watch alerts (Visual bell)
 export const alertsGet = () => api.get(`/thesis/alerts`).then(r => r.data);
 export const alertSave = (ticker, config) => api.put(`/thesis/alerts/${encodeURIComponent(ticker)}`, config).then(r => r.data);

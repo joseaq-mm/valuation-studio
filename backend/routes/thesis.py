@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response, Query, Header, Cookie
@@ -26,6 +26,8 @@ from services.thesis import (
     MODEL_PRESETS, get_model_preset, set_model_preset,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
+from services.timeline import get_monthly_closes_bulk
+from starlette.concurrency import run_in_threadpool
 from services.kpi import gather_kpi_sources, run_company_kpis, run_company_kpis_incremental, compute_kpi_coefficients, gather_kpi_search_sources, run_kpi_search, extract_document_text, extract_document_text_from_text, extract_pdf_text_local, gather_news_sources, gather_news_search_sources, run_company_news, prune_news, merge_prune_news
 from services.fetcher import fetch_full_sources
 from services.sec import fetch_latest_sec_report
@@ -1654,7 +1656,122 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         return {"rows": rows}
 
-    # ---------------------- Per-company watch alerts (Visual bell) ----------------------
+    # ---------------------- Visual time dial (evolution over time) ----------------------
+    def _clamp_ratio(v):
+        # Projecting today's POC/POV onto much older (split-adjusted, tiny) prices can
+        # yield absurd ratios; clamp to a readable band so the chart axis stays sane.
+        return max(-99.0, min(500.0, v))
+
+    async def _build_timeline(uid: str, months_back: int = 120) -> Dict[str, Any]:
+        """Per-company monthly series of the 4 Visual axes + KPI coef, for the time
+        dial. Price axes (Ratio Compra/Venta) are reconstructed backwards by projecting
+        today's implied POC/POV onto each month's close; qualitative axes (Score, TAM,
+        Coef KPI) are FROZEN at their current value in the reconstructed past. Recorded
+        nightly snapshots (visual_snapshots) overlay the exact 4-axis + KPI where present,
+        so the past becomes progressively accurate going forward."""
+        rows = (await visual_data({"user_id": uid})).get("rows", [])
+        usable = [r for r in rows if r.get("ticker") and r.get("current_price")
+                  and r.get("ratio_compra_pct") is not None and r.get("ratio_venta_pct") is not None
+                  and r.get("avg_overall_score") is not None]
+        tickers = [r["ticker"] for r in usable]
+        closes = await get_monthly_closes_bulk(db, tickers, run_in_threadpool=run_in_threadpool)
+
+        # Recorded snapshots: (ticker → {month → [s,t,rc,rv,k]})
+        snaps: Dict[str, Dict[str, list]] = {}
+        snap_docs = await db.visual_snapshots.find(
+            {"user_id": uid, "ticker": {"$in": tickers}}, {"_id": 0}
+        ).to_list(length=100000)
+        for s in snap_docs:
+            snaps.setdefault(s["ticker"], {})[s["month"]] = [
+                s.get("score"), s.get("tam"), s.get("rc"), s.get("rv"), s.get("kpi_coef"),
+            ]
+
+        now = datetime.now(timezone.utc)
+        cur_month = now.strftime("%Y-%m")
+        # Earliest reconstructed month = now - months_back (snapshots may still be older).
+        cutoff = (now.replace(day=1) - timedelta(days=months_back * 31)).strftime("%Y-%m")
+        all_months = set()
+        series = []
+        for r in usable:
+            tk = r["ticker"]
+            price = r["current_price"]
+            rc, rv = r["ratio_compra_pct"], r["ratio_venta_pct"]
+            score = round(r["avg_overall_score"], 1)
+            tam = round(r["sum_tam_score"], 2) if r.get("sum_tam_score") is not None else None
+            kcoef = r.get("kpi_coef") if isinstance(r.get("kpi_coef"), (int, float)) else None
+            if price <= 0:
+                continue
+            poc = price * (1 + rc / 100.0)
+            pov = price * (1 + rv / 100.0)
+            pts: Dict[str, list] = {}
+            for p in closes.get(tk, []):
+                if p["d"] < cutoff:
+                    continue
+                c = p["close"]
+                if c and c > 0:
+                    pts[p["d"]] = [score, tam,
+                                   _clamp_ratio(round((poc / c - 1) * 100, 1)),
+                                   _clamp_ratio(round((pov / c - 1) * 100, 1)),
+                                   kcoef]
+            # Overlay recorded nightly snapshots (exact 4-axis + KPI), always kept.
+            for m, arr in (snaps.get(tk) or {}).items():
+                pts[m] = arr
+            # Anchor the present month at the exact current values.
+            pts[cur_month] = [score, tam, round(rc, 1), round(rv, 1), kcoef]
+            if not pts:
+                continue
+            all_months.update(pts.keys())
+            series.append({"ticker": tk, "name": r.get("name"), "pts": pts})
+
+        months = sorted(all_months)
+        return {"months": months, "current_month": cur_month, "series": series}
+
+    @router.get("/visual-timeline")
+    async def visual_timeline(months_back: int = 120, user: Dict[str, Any] = Depends(auth_required)):
+        return await _build_timeline(user["user_id"], months_back=max(12, min(240, months_back)))
+
+    async def run_visual_snapshots() -> Dict[str, Any]:
+        """Nightly: record one snapshot per (user, ticker, current-month) of the exact
+        Visual coordinates so the time dial gains a precise qualitative history over time.
+        Upsert on (user, ticker, month) → one point per month, latest wins."""
+        summary = {"users": 0, "snapshots": 0}
+        uids = await db.theses.distinct("user_id")
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        iso = datetime.now(timezone.utc).isoformat()
+        for uid in uids:
+            if not uid:
+                continue
+            try:
+                rows = (await visual_data({"user_id": uid})).get("rows", [])
+            except Exception as e:
+                logger.warning(f"visual snapshot: visual_data failed for {uid}: {e}")
+                continue
+            wrote = False
+            for r in rows:
+                tk = r.get("ticker")
+                if not tk or r.get("avg_overall_score") is None or r.get("ratio_compra_pct") is None:
+                    continue
+                await db.visual_snapshots.update_one(
+                    {"user_id": uid, "ticker": tk, "month": month},
+                    {"$set": {
+                        "user_id": uid, "ticker": tk, "month": month,
+                        "score": round(r["avg_overall_score"], 1),
+                        "tam": round(r["sum_tam_score"], 2) if r.get("sum_tam_score") is not None else None,
+                        "rc": round(r["ratio_compra_pct"], 1),
+                        "rv": round(r["ratio_venta_pct"], 1) if r.get("ratio_venta_pct") is not None else None,
+                        "kpi_coef": r.get("kpi_coef") if isinstance(r.get("kpi_coef"), (int, float)) else None,
+                        "price": r.get("current_price"),
+                        "recorded_at": iso,
+                    }},
+                    upsert=True,
+                )
+                summary["snapshots"] += 1
+                wrote = True
+            if wrote:
+                summary["users"] += 1
+        logger.info(f"visual snapshots recorded: {summary}")
+        return summary
+
     class AlertMetric(BaseModel):
         enabled: bool = False
         dir: str = "gte"  # "gte" (≥) or "lte" (≤)
@@ -1820,6 +1937,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return summary
 
     router.run_company_alerts = run_company_alerts
+    router.run_visual_snapshots = run_visual_snapshots
+
 
     # ---------------------- KPI validation module ----------------------
     async def _auto_fetch_for_kpis(company_id: str, user_id: str, company: str, ticker: str):

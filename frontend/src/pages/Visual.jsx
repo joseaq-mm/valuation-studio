@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing } from "lucide-react";
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisVisualData, alertsGet, alertSave, alertDelete } from "@/lib/api";
+import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete } from "@/lib/api";
 import { getPortfolio } from "@/lib/portfolio";
 import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
@@ -179,6 +179,42 @@ const Dot = (props) => {
     );
 };
 
+// ---------- Timeline helpers ----------
+const monthLabel = (m) => {
+    if (!m) return "";
+    const [y, mo] = m.split("-").map(Number);
+    return `${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
+};
+
+// Trail layer: draws each visible company's path through the quadrant up to the
+// current step. Rendered via recharts <Customized> so we can use the live axis
+// scales (xAxisMap/yAxisMap) to map data coords → pixels.
+const TrailLayer = (props) => {
+    const { xAxisMap, yAxisMap, trails } = props;
+    if (!trails || !xAxisMap || !yAxisMap) return null;
+    const xa = Object.values(xAxisMap)[0];
+    const ya = Object.values(yAxisMap)[0];
+    if (!xa?.scale || !ya?.scale) return null;
+    const sx = xa.scale, sy = ya.scale;
+    return (
+        <g pointerEvents="none">
+            {trails.map((tr) => {
+                if (!tr.path || tr.path.length < 2) return null;
+                const pts = tr.path.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ");
+                return (
+                    <g key={tr.ticker}>
+                        <polyline points={pts} fill="none" stroke={tr.color} strokeOpacity={0.28} strokeWidth={1.5} />
+                        {tr.path.map((p, i) => (
+                            <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={1.6} fill={tr.color} fillOpacity={0.3} />
+                        ))}
+                    </g>
+                );
+            })}
+        </g>
+    );
+};
+
+
 const ScatterTooltip = ({ active, payload }) => {
     if (!active || !payload || !payload.length) return null;
     const p = payload[0].payload;
@@ -212,6 +248,39 @@ export default function Visual() {
     const [kpiMean, setKpiMean] = useState(null);
     const [noKpiCount, setNoKpiCount] = useState(0);
     const [alerts, setAlerts] = useState({});  // ticker -> alert config
+
+    // --- Timeline (time dial) ---
+    const [tlMode, setTlMode] = useState(false);
+    const [tl, setTl] = useState(null);          // { months, current_month, series }
+    const [tlLoading, setTlLoading] = useState(false);
+    const [tlErr, setTlErr] = useState(null);
+    const [tlIdx, setTlIdx] = useState(0);
+    const [tlPlaying, setTlPlaying] = useState(false);
+    const [tlTrail, setTlTrail] = useState(true);
+    const [tlSpeed, setTlSpeed] = useState(600); // ms per step
+
+    const enableTimeline = useCallback(async () => {
+        if (tl) { setTlMode(true); return; }
+        setTlLoading(true); setTlErr(null);
+        try {
+            const d = await thesisVisualTimeline();
+            setTl(d);
+            setTlIdx(Math.max(0, (d.months || []).length - 1));
+            setTlMode(true);
+        } catch (e) {
+            setTlErr(e?.response?.data?.detail || e.message || "No se pudo cargar la línea de tiempo");
+        } finally { setTlLoading(false); }
+    }, [tl]);
+
+    // Playback loop
+    useEffect(() => {
+        if (!tlPlaying || !tl) return;
+        const last = (tl.months || []).length - 1;
+        if (tlIdx >= last) { setTlPlaying(false); return; }
+        const id = setTimeout(() => setTlIdx((i) => Math.min(last, i + 1)), tlSpeed);
+        return () => clearTimeout(id);
+    }, [tlPlaying, tlIdx, tl, tlSpeed]);
+
 
     useEffect(() => {
         if (!user) { setAlerts({}); return; }
@@ -403,6 +472,81 @@ export default function Visual() {
         return [Math.max(0, Math.floor(minScore / 5) * 5), 100];
     }, [mapRows, rows]);
 
+    // --- Timeline derived data ---
+    const tlLevelOk = useCallback((tk) => {
+        const lvl = filters.level || "both";
+        const T = (tk || "").toUpperCase();
+        if (lvl === "n1") return n1Set.has(T);
+        if (lvl === "n2") return n2Set.has(T);
+        return true;
+    }, [filters.level, n1Set, n2Set]);
+
+    const tlSeriesVisible = useMemo(() => {
+        if (!tl) return [];
+        return (tl.series || []).filter((s) => selected.has(s.ticker) && tlLevelOk(s.ticker));
+    }, [tl, selected, tlLevelOk]);
+
+    const tlDomains = useMemo(() => {
+        if (!tlSeriesVisible.length) return { x: [60, 100], y: [-50, 50] };
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const s of tlSeriesVisible) {
+            for (const m in s.pts) {
+                const a = s.pts[m];
+                if (a[0] != null) { minX = Math.min(minX, a[0]); maxX = Math.max(maxX, a[0]); }
+                if (a[2] != null) { minY = Math.min(minY, a[2]); maxY = Math.max(maxY, a[2]); }
+            }
+        }
+        const padY = (maxY - minY) * 0.08 || 10;
+        return { x: [Math.min(60, Math.floor(minX / 5) * 5), 100], y: [Math.floor(minY - padY), Math.ceil(maxY + padY)] };
+    }, [tlSeriesVisible]);
+
+    const tlStepRows = useMemo(() => {
+        if (!tl || !tl.months.length) return [];
+        const month = tl.months[Math.min(tlIdx, tl.months.length - 1)];
+        const raw = [];
+        for (const s of tlSeriesVisible) {
+            const a = s.pts[month];
+            if (!a || a[0] == null || a[2] == null) continue;
+            raw.push({
+                ticker: s.ticker, name: s.name,
+                avg_overall_score: a[0], sum_tam_score: a[1],
+                ratio_compra_pct: a[2], ratio_venta_pct: a[3],
+                kpi_coef: (typeof a[4] === "number" ? a[4] : null),
+            });
+        }
+        const coefs = raw.map((r) => r.kpi_coef).filter((v) => typeof v === "number");
+        const media = coefs.length ? coefs.reduce((x, y) => x + y, 0) / coefs.length : 1;
+        const REF = coefs.length ? Math.max(...coefs.map((c) => Math.abs(c - media))) : 0;
+        const neutro = (1 + media) / 2;
+        return raw.map((r) => {
+            const f = kpiFactor(r.kpi_coef, neutro);
+            const cq = clamp01(qualBase(r) * f);
+            return { ...r, kpi_arrow: kpiArrow(r.kpi_coef, media, REF), combined_qual: cq, combined: (cq + priceBase(r)) / 2 };
+        });
+    }, [tl, tlIdx, tlSeriesVisible]);
+
+    // Quadrant dividers fixed at PRESENT medians so dots visibly move across them.
+    const tlMedians = useMemo(() => {
+        if (!tl || !tlSeriesVisible.length) return { mx: 50, my: 0 };
+        const cur = tl.current_month;
+        const med = (arr) => { const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+        const xs = [], ys = [];
+        for (const s of tlSeriesVisible) { const a = s.pts[cur]; if (a) { if (a[0] != null) xs.push(a[0]); if (a[2] != null) ys.push(a[2]); } }
+        return { mx: xs.length ? med(xs) : 50, my: ys.length ? med(ys) : 0 };
+    }, [tl, tlSeriesVisible]);
+
+    const tlTrails = useMemo(() => {
+        if (!tl || !tlTrail) return [];
+        const upto = tl.months.slice(0, tlIdx + 1);
+        return tlSeriesVisible.map((s) => {
+            const path = [];
+            for (const m of upto) { const a = s.pts[m]; if (a && a[0] != null && a[2] != null) path.push({ x: a[0], y: a[2] }); }
+            const cur = s.pts[tl.months[Math.min(tlIdx, tl.months.length - 1)]];
+            return { ticker: s.ticker, path, color: colorForRv(cur ? cur[3] : 0) };
+        }).filter((t) => t.path.length >= 2);
+    }, [tl, tlIdx, tlSeriesVisible, tlTrail]);
+
+
     if (!user) {
         return (
             <div className="max-w-4xl mx-auto px-6 py-12 text-center">
@@ -434,20 +578,71 @@ export default function Visual() {
 
             {/* Quadrant Map */}
             <div className="border border-black/20 p-4 mb-6 bg-white" data-testid="visual-map">
-                <div className="overline text-[#4A4A4A] mb-2">Cuadrante calidad ↔ valoración</div>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="overline text-[#4A4A4A]">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
+                    <button
+                        onClick={() => (tlMode ? setTlMode(false) : enableTimeline())}
+                        disabled={tlLoading}
+                        className={`overline text-xs px-3 py-1.5 border flex items-center gap-1.5 transition ${tlMode ? "bg-[#052049] text-white border-[#052049]" : "border-black hover:bg-black hover:text-white"}`}
+                        data-testid="visual-timeline-toggle"
+                    >
+                        {tlLoading ? <Loader2 size={12} className="animate-spin" /> : <Clock size={12} />}
+                        {tlMode ? "Salir de línea de tiempo" : "Línea de tiempo"}
+                    </button>
+                </div>
+                {tlErr && <div className="text-xs text-[#B32A22] mb-2 font-mono" data-testid="visual-timeline-error">{tlErr}</div>}
                 <ResponsiveContainer width="100%" height={460}>
                     <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
                         <CartesianGrid stroke="#00000010" />
-                        <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={xDomain} tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={tlMode ? tlDomains.x : xDomain} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+                        <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={tlMode ? tlDomains.y : ["auto", "auto"]} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
                         <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
                         <Tooltip content={<ScatterTooltip />} />
-                        <ReferenceLine x={medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${medianX.toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        <ReferenceLine y={medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${medianY >= 0 ? "+" : ""}${medianY.toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                        <ReferenceLine x={tlMode ? tlMedians.mx : medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${(tlMode ? tlMedians.mx : medianX).toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+                        <ReferenceLine y={tlMode ? tlMedians.my : medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${(tlMode ? tlMedians.my : medianY) >= 0 ? "+" : ""}${(tlMode ? tlMedians.my : medianY).toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
                         <QuadrantLabels />
-                        <Scatter data={mapRows} shape={<Dot />} />
+                        {tlMode && tlTrail && <Customized component={(p) => <TrailLayer {...p} trails={tlTrails} />} />}
+                        <Scatter data={tlMode ? tlStepRows : mapRows} shape={<Dot />} isAnimationActive={!tlMode} />
                     </ScatterChart>
                 </ResponsiveContainer>
+                {tlMode && tl && (
+                    <div className="mt-3 border-t border-black/10 pt-3" data-testid="visual-timeline-controls">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => { if (tlIdx >= tl.months.length - 1) setTlIdx(0); setTlPlaying((p) => !p); }}
+                                className="w-9 h-9 flex items-center justify-center border border-black hover:bg-black hover:text-white transition shrink-0"
+                                data-testid="visual-timeline-play"
+                                title={tlPlaying ? "Pausar" : "Reproducir"}
+                            >
+                                {tlPlaying ? <Pause size={15} /> : <Play size={15} />}
+                            </button>
+                            <input
+                                type="range" min={0} max={Math.max(0, tl.months.length - 1)} value={tlIdx}
+                                onChange={(e) => { setTlPlaying(false); setTlIdx(parseInt(e.target.value, 10)); }}
+                                className="flex-1 accent-[#052049] cursor-pointer"
+                                data-testid="visual-timeline-slider"
+                            />
+                            <span className="font-mono text-xs text-black w-16 text-right tabular-nums">{monthLabel(tl.months[tlIdx])}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2 text-[11px] font-mono text-[#4A4A4A]">
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1.5 cursor-pointer" title="Muestra el rastro del recorrido de cada empresa">
+                                    <input type="checkbox" checked={tlTrail} onChange={(e) => setTlTrail(e.target.checked)} data-testid="visual-timeline-trail" />
+                                    Estela
+                                </label>
+                                <label className="flex items-center gap-1.5">
+                                    Velocidad
+                                    <select value={tlSpeed} onChange={(e) => setTlSpeed(parseInt(e.target.value, 10))} className="border border-black/30 px-1 py-0.5" data-testid="visual-timeline-speed">
+                                        <option value={1000}>Lenta</option>
+                                        <option value={600}>Normal</option>
+                                        <option value={250}>Rápida</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <span className="text-[10px] italic text-[#7A7A7A]">Izquierda = pasado · derecha = hoy. La valoración histórica se reconstruye proyectando el valor razonable actual; Score/TAM/KPI se congelan hasta que haya snapshots diarios.</span>
+                        </div>
+                    </div>
+                )}
                 <div className="text-xs text-[#4A4A4A] mt-3 font-sans flex items-center gap-5 flex-wrap leading-relaxed">
                     {(() => {
                         // Read live thresholds via signalFor probe values so the legend
