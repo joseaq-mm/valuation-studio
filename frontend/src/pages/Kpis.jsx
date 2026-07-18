@@ -234,7 +234,7 @@ export default function Kpis() {
                             if (!info) return null;
                             const col = info.stale ? (selId === c.id ? "#FCA5A5" : "#B32A22") : (selId === c.id ? "#D1D5DB" : "#111111");
                             return (
-                                <span className="text-[9px] font-normal tabular-nums" style={{ color: col, fontWeight: info.stale ? 700 : 400 }}
+                                <span className="text-[11px] font-normal tabular-nums" style={{ color: col, fontWeight: info.stale ? 700 : 400 }}
                                     title={freshnessTip(info, "la última actualización del KPI")} data-testid={`kpi-fresh-${c.ticker}`}>
                                     hace {info.days}d
                                 </span>
