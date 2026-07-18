@@ -2,8 +2,14 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
-## 18 jul 2026 — Fix: "Próx. result." nunca puede ser una fecha pasada
-- Causa raíz: `next_earnings_date` se tomaba de `info.get("earningsTimestamp")` de yfinance sin validar que fuese futura; Yahoo suele devolver ahí la fecha del ÚLTIMO resultado ya publicado (pasado).
+## 18 jul 2026 — Tabla Visual: nueva columna "Ant. result." + ahorro de espacio
+- Añadida columna **"Ant. result."** (`last_earnings_date`, últimos resultados publicados) entre "Tesis" y "Próx. result." → `LastEarningsBadge` (gris, no coloreado, ordenable).
+- Renombrada columna **"Actualiz." → "Tesis"** (tooltip sin cambios).
+- **Campanita de alerta** movida junto al nombre de la empresa (eliminada su columna dedicada) para dejar sitio a la nueva columna. `Visual.jsx`.
+- Verificado en vivo (usuario real, 38 filas): las 38 con Ant. result., 29 con Próx. result. (9 vacías correctas), campanita inline junto al nombre.
+
+
+## 18 jul 2026 — Fix: "Próx. result." nunca puede ser una fecha pasada- Causa raíz: `next_earnings_date` se tomaba de `info.get("earningsTimestamp")` de yfinance sin validar que fuese futura; Yahoo suele devolver ahí la fecha del ÚLTIMO resultado ya publicado (pasado).
 - `services/valuation.py`: `earningsTimestamp` solo se acepta si `>= hoy`; se prioriza la fecha futura más próxima del calendario `get_earnings_dates`; guard final que anula cualquier fecha < hoy. Si no hay fecha futura → `None` (celda vacía).
 - `routes/thesis.py`: nuevo helper `_future_earnings_date()` aplicado en tiempo de lectura en `/visual` y en el endpoint de KPIs, para que la caché existente (10 empresas con fecha pasada: SOUN, CRCL, CRWD, IOVA, MDB, SNOW, PATH, AVGO, IONQ, MU) tampoco muestre fechas pasadas sin necesidad de refrescar.
 - Verificado con `python -c` (helper) + inspección directa de `db.fundamentals`.

@@ -39,6 +39,22 @@ function EarningsBadge({ date, estimated, testid }) {
     );
 }
 
+// Last published earnings date. Plain/muted (a past reference date, never colour-coded).
+function LastEarningsBadge({ date, testid }) {
+    if (!date) return <span className="text-[#9A9A9A]" data-testid={testid}>—</span>;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return <span className="text-[#9A9A9A]" data-testid={testid}>—</span>;
+    const sameYear = d.getUTCFullYear() === new Date().getFullYear();
+    const label = `${d.getUTCDate()} ${MONTHS_ES[d.getUTCMonth()]}${sameYear ? "" : " '" + String(d.getUTCFullYear()).slice(2)}`;
+    return (
+        <HoverTip text={`Últimos resultados publicados: ${label}.`}>
+            <span className="font-mono tabular-nums cursor-help whitespace-nowrap text-[#4A4A4A]" data-testid={testid}>
+                {label}
+            </span>
+        </HoverTip>
+    );
+}
+
 const clamp01 = (v) => (v == null ? 0 : Math.max(0, Math.min(1, v)));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -281,7 +297,7 @@ export default function Visual() {
     // Sorting (table) — always over ALL rows. String columns (ticker/name) sort
     // alphabetically; the rest numerically.
     const STRING_KEYS = useMemo(() => new Set(["ticker", "name"]), []);
-    const DATE_KEYS = useMemo(() => new Set(["thesis_updated_at", "next_earnings_date"]), []);
+    const DATE_KEYS = useMemo(() => new Set(["thesis_updated_at", "next_earnings_date", "last_earnings_date"]), []);
     const sortedRows = useMemo(() => {
         const arr = [...rows];
         const isStr = STRING_KEYS.has(sortKey);
@@ -455,12 +471,8 @@ export default function Visual() {
                             </th>
                             <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" />
                             <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
-                            <th className="p-2 text-center w-10">
-                                <HoverTip text={"Alerta de seguimiento. Configura umbrales de Score, TAM Score y Coef KPI: si la empresa los alcanza, recibirás un email ese día. Las empresas con campanita también avisan al cruzar de barato↔caro. Todo se consolida en un único email diario."} maxWidth={320}>
-                                    <span className="cursor-help inline-flex"><Bell size={13} /></span>
-                                </HoverTip>
-                            </th>
-                            <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha publicado resultados posteriores a esa fecha (conviene reanalizar)." />
+                            <SortableTh label="Tesis" k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha publicado resultados posteriores a esa fecha (conviene reanalizar)." />
+                            <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Ant.</span><span>result.</span></span>} k="last_earnings_date" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Fecha de los últimos resultados publicados (Yahoo Finance)." />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Próx.</span><span>result.</span></span>} k="next_earnings_date" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Fecha estimada de los próximos resultados (Yahoo Finance). En rojo si faltan 7 días o menos. El símbolo ≈ indica que la fecha es tentativa." />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
@@ -482,9 +494,9 @@ export default function Visual() {
                                 <tr key={r.ticker} className={`border-t border-black/10 ${incomplete ? "text-[#9ca3af]" : "hover:bg-[#FAF6EE]"}`} data-testid={`visual-row-${r.ticker}`}>
                                     <td className="p-2"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
                                     <td className="p-2 font-semibold"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
-                                    <td className="p-2 font-sans text-xs">{r.name}</td>
-                                    <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
+                                    <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5"><span>{r.name}</span><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
                                     <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
+                                    <td className="p-2 text-right"><LastEarningsBadge date={r.last_earnings_date} testid={`visual-last-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
