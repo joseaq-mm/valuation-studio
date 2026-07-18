@@ -43,6 +43,20 @@ def _fmt_val(v):
     return v if v is not None else "—"
 
 
+def _future_earnings_date(iso: Optional[str]) -> Optional[str]:
+    """A 'next earnings' date is only valid if it is today or later. Old cached
+    payloads may hold a past date (Yahoo's earningsTimestamp pointing at the last
+    release), so we drop anything earlier than today at read time."""
+    if not iso:
+        return None
+    try:
+        if datetime.fromisoformat(iso).date() < datetime.now(timezone.utc).date():
+            return None
+    except Exception:
+        return None
+    return iso
+
+
 def prune_stale_split_dev(split_dev, alive_ids):
     """Keep only split_dev entries whose developed thesis still exists. When a
     developed (sub)thesis is deleted, its entry is dropped here so the origin
@@ -1373,8 +1387,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 data = cd.get("data") or {}
                 mrq_map[cd.get("ticker")] = data.get("most_recent_quarter")
                 earn_map[cd.get("ticker")] = {
-                    "date": data.get("next_earnings_date"),
+                    "date": _future_earnings_date(data.get("next_earnings_date")),
                     "estimated": data.get("next_earnings_estimated", False),
+                    "last": data.get("last_earnings_date"),
                 }
                 rev2y = (data.get("auto_projections") or {}).get("revenue_2y")
                 if rev2y is None:
@@ -1458,6 +1473,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "most_recent_quarter": mrq_map.get(tk),
                 "next_earnings_date": (earn_map.get(tk) or {}).get("date"),
                 "next_earnings_estimated": (earn_map.get(tk) or {}).get("estimated", False),
+                "last_earnings_date": (earn_map.get(tk) or {}).get("last"),
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 
@@ -1633,6 +1649,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "most_recent_quarter": c.get("most_recent_quarter"),
                 "next_earnings_date": c.get("next_earnings_date"),
                 "next_earnings_estimated": c.get("next_earnings_estimated", False),
+                "last_earnings_date": c.get("last_earnings_date"),
             })
 
         return {"rows": rows}
@@ -2047,16 +2064,20 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "coef_global": snap.get("coef_global"),
                 "kpi_generated_at": snap.get("generated_at"),
             })
-        # Attach the latest reported quarter (from the fundamentals cache) so the UI can
-        # flag a KPI snapshot as stale when the company has reported since it was generated.
+        # Attach the latest reported quarter + last/next earnings dates (from the fundamentals
+        # cache) so the UI can flag a KPI snapshot as stale when the company has published
+        # earnings after it was generated.
         if out:
             cached = await db.fundamentals.find(
                 {"ticker": {"$in": [o["ticker"] for o in out]}},
-                {"_id": 0, "ticker": 1, "data.most_recent_quarter": 1},
+                {"_id": 0, "ticker": 1, "data.most_recent_quarter": 1, "data.last_earnings_date": 1, "data.next_earnings_date": 1},
             ).to_list(length=len(out))
-            mrq = {cd["ticker"]: (cd.get("data") or {}).get("most_recent_quarter") for cd in cached}
+            fmap = {cd["ticker"]: (cd.get("data") or {}) for cd in cached}
             for o in out:
-                o["most_recent_quarter"] = mrq.get(o["ticker"])
+                _d = fmap.get(o["ticker"]) or {}
+                o["most_recent_quarter"] = _d.get("most_recent_quarter")
+                o["last_earnings_date"] = _d.get("last_earnings_date")
+                o["next_earnings_date"] = _future_earnings_date(_d.get("next_earnings_date"))
         return {"companies": out}
 
     @router.post("/{company_id}/kpis")

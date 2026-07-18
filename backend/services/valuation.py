@@ -798,16 +798,51 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         except Exception:
             most_recent_quarter = None
 
-    # Next scheduled earnings date (Unix ts → ISO date). May be an estimate; the
-    # start/end range flags whether Yahoo considers it tentative.
+    _today = datetime.now(timezone.utc).date()
+
+    # Next scheduled earnings date. Yahoo's earningsTimestamp often points at the LAST
+    # published release (a past date), so we only accept it when it is strictly in the
+    # future. A "next earnings" date can never be earlier than today.
     _ets = info.get("earningsTimestamp")
     next_earnings_date = None
     next_earnings_estimated = False
     if _ets:
         try:
-            next_earnings_date = datetime.fromtimestamp(int(_ets), tz=timezone.utc).date().isoformat()
-            _s, _e = info.get("earningsTimestampStart"), info.get("earningsTimestampEnd")
-            next_earnings_estimated = bool(_s and _e and _s != _e)
+            _ets_date = datetime.fromtimestamp(int(_ets), tz=timezone.utc).date()
+            if _ets_date >= _today:
+                next_earnings_date = _ets_date.isoformat()
+                _s, _e = info.get("earningsTimestampStart"), info.get("earningsTimestampEnd")
+                next_earnings_estimated = bool(_s and _e and _s != _e)
+        except Exception:
+            next_earnings_date = None
+
+    # Last PUBLISHED earnings date (most recent past release) and next upcoming, from the
+    # earnings calendar. Used by the freshness badge: an analysis older than the last
+    # published earnings is stale (new results the analysis didn't see).
+    last_earnings_date = None
+    try:
+        _ed = t.get_earnings_dates(limit=16)
+        if _ed is not None and len(_ed):
+            _dates = sorted({d.date() for d in _ed.index})
+            _past = [d for d in _dates if d < _today]
+            _fut = [d for d in _dates if d >= _today]
+            if _past:
+                last_earnings_date = _past[-1].isoformat()
+            # Prefer the earliest genuinely future date from the calendar.
+            if _fut:
+                _cal_next = _fut[0].isoformat()
+                if not next_earnings_date or _cal_next < next_earnings_date:
+                    next_earnings_date = _cal_next
+                    next_earnings_estimated = False
+    except Exception:
+        pass
+
+    # Final guard: never expose a past date as "next earnings".
+    if next_earnings_date:
+        try:
+            if datetime.fromisoformat(next_earnings_date).date() < _today:
+                next_earnings_date = None
+                next_earnings_estimated = False
         except Exception:
             next_earnings_date = None
 
@@ -824,6 +859,7 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "most_recent_quarter": most_recent_quarter,
         "next_earnings_date": next_earnings_date,
         "next_earnings_estimated": next_earnings_estimated,
+        "last_earnings_date": last_earnings_date,
         "current_price": current_price,
         "shares_outstanding": shares,
         "market_cap": market_cap,

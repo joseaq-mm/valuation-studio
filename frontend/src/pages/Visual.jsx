@@ -23,17 +23,16 @@ function EarningsBadge({ date, estimated, testid }) {
     const sameYear = d.getUTCFullYear() === new Date().getFullYear();
     const label = `${estimated ? "≈" : ""}${d.getUTCDate()} ${MONTHS_ES[d.getUTCMonth()]}${sameYear ? "" : " '" + String(d.getUTCFullYear()).slice(2)}`;
     const imminent = days >= 0 && days <= 7;
-    const past = days < 0;
-    const color = past ? "#B32A22" : "#111111";
-    const weight = (past || imminent) ? 700 : 400;
-    const tip = past
-        ? `Fecha estimada de resultados ya pasada (${label}); es probable que ya haya novedades — Yahoo aún no ha publicado la próxima.`
+    // "Próximos resultados" is by definition a future date → only normal or bold (≤7d).
+    const weight = imminent ? 700 : 400;
+    const tip = days < 0
+        ? `Fecha de resultados pendiente de actualizar por Yahoo (${label}).`
         : imminent
             ? `¡Resultados ${days === 0 ? "hoy" : "en " + days + " día" + (days === 1 ? "" : "s")}! (${label})${estimated ? " · fecha estimada" : ""}`
             : `Próximos resultados${estimated ? " (estimado)" : ""}: faltan ${days} días (${label}).`;
     return (
         <HoverTip text={tip}>
-            <span className="font-mono tabular-nums cursor-help whitespace-nowrap" style={{ color, fontWeight: weight }} data-testid={testid}>
+            <span className="font-mono tabular-nums cursor-help whitespace-nowrap" style={{ color: "#111111", fontWeight: weight }} data-testid={testid}>
                 {label}
             </span>
         </HoverTip>
@@ -461,7 +460,7 @@ export default function Visual() {
                                     <span className="cursor-help inline-flex"><Bell size={13} /></span>
                                 </HoverTip>
                             </th>
-                            <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha reportado un trimestre posterior (conviene reanalizar)." />
+                            <SortableTh label="Actualiz." k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha publicado resultados posteriores a esa fecha (conviene reanalizar)." />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Próx.</span><span>result.</span></span>} k="next_earnings_date" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Fecha estimada de los próximos resultados (Yahoo Finance). En rojo si faltan 7 días o menos. El símbolo ≈ indica que la fecha es tentativa." />
                             <SortableTh label="Score" k="avg_overall_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.score} />
                             <SortableTh label="TAM Score" k="sum_tam_score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip={TIP.tam} />
@@ -485,7 +484,7 @@ export default function Visual() {
                                     <td className="p-2 font-semibold"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
                                     <td className="p-2 font-sans text-xs">{r.name}</td>
                                     <td className="p-2 text-center"><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></td>
-                                    <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} mostRecentQuarter={r.most_recent_quarter} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
+                                    <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
                                     <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>

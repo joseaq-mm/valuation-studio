@@ -230,7 +230,7 @@ export default function Kpis() {
                             )}
                         </span>
                         {c.has_kpis && (() => {
-                            const info = freshnessInfo(c.kpi_generated_at, c.most_recent_quarter);
+                            const info = freshnessInfo(c.kpi_generated_at, c.last_earnings_date, c.next_earnings_date);
                             if (!info) return null;
                             const col = info.stale ? (selId === c.id ? "#FCA5A5" : "#B32A22") : (selId === c.id ? "#D1D5DB" : "#111111");
                             return (

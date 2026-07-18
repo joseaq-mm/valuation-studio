@@ -2,9 +2,9 @@ import React from "react";
 import HoverTip from "./HoverTip";
 import { freshnessInfo, freshnessTip } from "../lib/freshness";
 
-// Small "Nd" badge with tooltip. Red when a newer company report exists after the update.
-export function FreshnessBadge({ updatedAt, mostRecentQuarter, noun = "la última actualización", testid, className = "" }) {
-    const info = freshnessInfo(updatedAt, mostRecentQuarter);
+// Small "Nd" badge with tooltip. Red when the company has published earnings after the update.
+export function FreshnessBadge({ updatedAt, lastEarningsDate, nextEarningsDate, noun = "la última actualización", testid, className = "" }) {
+    const info = freshnessInfo(updatedAt, lastEarningsDate, nextEarningsDate);
     if (!info) return null;
     return (
         <HoverTip text={freshnessTip(info, noun)}>
