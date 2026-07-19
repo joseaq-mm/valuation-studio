@@ -201,12 +201,16 @@ const TrailLayer = (props) => {
             {trails.map((tr) => {
                 if (!tr.path || tr.path.length < 2) return null;
                 const pts = tr.path.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ");
+                const last = tr.path[tr.path.length - 1];
+                const first = tr.path[0];
                 return (
                     <g key={tr.ticker}>
-                        <polyline points={pts} fill="none" stroke={tr.color} strokeOpacity={0.28} strokeWidth={1.5} />
+                        <polyline points={pts} fill="none" stroke={tr.color} strokeOpacity={0.6} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
                         {tr.path.map((p, i) => (
-                            <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={1.6} fill={tr.color} fillOpacity={0.3} />
+                            <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={2.2} fill={tr.color} fillOpacity={0.55} />
                         ))}
+                        {/* hollow marker at the start of the path (oldest point) */}
+                        <circle cx={sx(first.x)} cy={sy(first.y)} r={3.5} fill="#fff" stroke={tr.color} strokeWidth={1.5} fillOpacity={0.9} />
                     </g>
                 );
             })}
