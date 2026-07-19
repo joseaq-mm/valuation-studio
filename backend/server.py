@@ -42,6 +42,9 @@ api_router.include_router(make_help_router())
 from routes.macro import make_router as make_macro_router
 api_router.include_router(make_macro_router(db))
 
+from routes.exports import make_router as make_exports_router
+api_router.include_router(make_exports_router(db, _auth_required))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 

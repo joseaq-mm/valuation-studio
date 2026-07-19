@@ -2,6 +2,14 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 19 jul 2026 — Grabar recorrido de la línea de tiempo + Biblioteca de exportaciones (reutilizable)
+- **Botones en los controles del dial**: **Grabar** (arma/desarma; al pulsar ▶ estando armado graba el recorrido completo a **WebM** vía canvas + MediaRecorder rasterizando el SVG del chart), **Exportar** (badge con nº de clips; abre la biblioteca), **Borrar** (vacía los clips guardados). Mientras Grabar está armado, cada reproducción genera un clip nuevo.
+- **Almacenamiento LOCAL** en IndexedDB (`lib/mediaLibrary.js`, genérico por `kind`): add/list/count/get/update/delete/clear. Sin backend para el guardado.
+- **Componente reutilizable `components/ExportLibrary.jsx`** (modal genérico, `kind`+`title`): miniatura, nombre editable, reproducir/previsualizar (vídeo/imagen/PDF), seleccionar uno/todos, **descargar**, **subir a la nube** (enlace público compartible), **compartir** (Web Share API con archivo; fallback a enlace de nube), **borrar** individual/selección/todo. Pensado para reutilizar con tesis/tendencias en PDF/Word/Google Doc.
+- **Backend `routes/exports.py`** (reutiliza object storage existente): `POST /api/exports/upload` (auth) → sube a `valuation-studio/exports/{uid}` y devuelve enlace público con token; `GET /api/exports/public/{token}` → sirve el archivo sin auth (compartible). Colección `exports`.
+- Verificado en vivo: grabación (WebM 871 KB) → miniatura → biblioteca → subida a nube + enlace público (curl). data-testids: `visual-timeline-record|export|clipcount|clear`, `export-library`, `export-item-*`, `export-select-*`, `export-download-*`, `export-share-*`, `export-upload-selected`, `export-delete-all`, `export-preview*`.
+
+
 ## 18 jul 2026 — Visual: línea de tiempo (dial de evolución en el cuadrante)
 - **Backend** (`services/timeline.py`, `routes/thesis.py`, `server.py`):
   - `GET /api/thesis/visual-timeline?months_back=120` → serie mensual por empresa de los 4 ejes + Coef KPI. Ejes de precio (Ratio Compra/Venta) reconstruidos hacia atrás proyectando el POC/POV implícito de hoy sobre el cierre de cada mes; Score/TAM/KPI **congelados** en el pasado reconstruido. Valores limitados (clamp -99..500) y ventana por defecto 10 años.

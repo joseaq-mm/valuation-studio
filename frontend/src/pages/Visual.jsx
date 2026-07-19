@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock } from "lucide-react";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete } from "@/lib/api";
+import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
+import { ExportLibrary } from "@/components/ExportLibrary";
 import { getPortfolio } from "@/lib/portfolio";
 import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
@@ -263,6 +265,15 @@ export default function Visual() {
     const [tlTrail, setTlTrail] = useState(true);
     const [tlSpeed, setTlSpeed] = useState(600); // ms per step
 
+    // --- Recording / export library ---
+    const chartRef = useRef(null);
+    const recCancelRef = useRef(false);
+    const [recArmed, setRecArmed] = useState(false);
+    const [recording, setRecording] = useState(false);
+    const [clipCount, setClipCount] = useState(0);
+    const [libOpen, setLibOpen] = useState(false);
+    useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
+
     const enableTimeline = useCallback(async () => {
         if (tl) { setTlMode(true); return; }
         setTlLoading(true); setTlErr(null);
@@ -284,6 +295,99 @@ export default function Visual() {
         const id = setTimeout(() => setTlIdx((i) => Math.min(last, i + 1)), tlSpeed);
         return () => clearTimeout(id);
     }, [tlPlaying, tlIdx, tl, tlSpeed]);
+
+    // Rasterize the live chart SVG onto a canvas (one frame).
+    const drawFrame = useCallback((canvas, ctx) => new Promise((resolve, reject) => {
+        const svg = chartRef.current && chartRef.current.querySelector("svg");
+        if (!svg) return reject(new Error("no-svg"));
+        const rect = svg.getBoundingClientRect();
+        const clone = svg.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.setAttribute("width", rect.width);
+        clone.setAttribute("height", rect.height);
+        const xml = new XMLSerializer().serializeToString(clone);
+        const img = new Image();
+        img.onload = () => {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve();
+        };
+        img.onerror = reject;
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+    }), []);
+
+    // Record a full playthrough of the time dial into a WebM clip (canvas capture).
+    const recordPlaythrough = useCallback(async () => {
+        if (!tl || !chartRef.current) return;
+        const svg = chartRef.current.querySelector("svg");
+        if (!svg || !window.MediaRecorder) { toast.error("La grabación no está disponible en este navegador"); return; }
+        const rect = svg.getBoundingClientRect();
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(rect.width); canvas.height = Math.round(rect.height);
+        const ctx = canvas.getContext("2d");
+        let mime = "video/webm;codecs=vp9";
+        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm;codecs=vp8";
+        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm";
+        const stream = canvas.captureStream(0);
+        const vtrack = stream.getVideoTracks()[0];
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        const stopped = new Promise((res) => { rec.onstop = res; });
+        setTlPlaying(false);
+        setRecording(true);
+        recCancelRef.current = false;
+        const fps = tlSpeed <= 250 ? 12 : (tlSpeed <= 600 ? 8 : 5);
+        const frameMs = 1000 / fps;
+        const wait2raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        rec.start();
+        try {
+            const N = tl.months.length;
+            for (let i = 0; i < N; i++) {
+                if (recCancelRef.current) break;
+                setTlIdx(i);
+                await wait2raf();
+                await drawFrame(canvas, ctx);
+                if (vtrack.requestFrame) vtrack.requestFrame();
+                await sleep(frameMs);
+            }
+            await drawFrame(canvas, ctx);
+            if (vtrack.requestFrame) vtrack.requestFrame();
+            await sleep(600);
+        } catch (e) {
+            toast.error("Error durante la grabación");
+        } finally {
+            rec.stop();
+            await stopped;
+            setRecording(false);
+        }
+        if (recCancelRef.current || !chunks.length) { toast("Grabación cancelada"); return; }
+        try {
+            const blob = new Blob(chunks, { type: "video/webm" });
+            const thumb = canvas.toDataURL("image/png");
+            const now = new Date();
+            const name = `Recorrido ${now.toLocaleDateString("es-ES")} ${now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`;
+            await addMediaItem({ kind: "timeline-clip", name, mime: "video/webm", blob, thumbnail: thumb, meta: { months: tl.months.length } });
+            setClipCount(await countMediaItems("timeline-clip"));
+            toast.success("Recorrido grabado ✓");
+        } catch (e) { toast.error("No se pudo guardar el clip"); }
+    }, [tl, tlSpeed, drawFrame]);
+
+    const onTimelinePlay = useCallback(() => {
+        if (recording) { recCancelRef.current = true; return; }   // acts as Stop
+        if (recArmed) { setTlIdx(0); recordPlaythrough(); return; }
+        if (!tl) return;
+        if (tlIdx >= tl.months.length - 1) setTlIdx(0);
+        setTlPlaying((p) => !p);
+    }, [recording, recArmed, tl, tlIdx, recordPlaythrough]);
+
+    const clearClips = useCallback(async () => {
+        const n = await clearMediaItems("timeline-clip");
+        setClipCount(0);
+        toast.success(`${n} clip(s) borrados`);
+    }, []);
 
 
     useEffect(() => {
@@ -595,6 +699,7 @@ export default function Visual() {
                     </button>
                 </div>
                 {tlErr && <div className="text-xs text-[#B32A22] mb-2 font-mono" data-testid="visual-timeline-error">{tlErr}</div>}
+                <div ref={chartRef}>
                 <ResponsiveContainer width="100%" height={460}>
                     <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
                         <CartesianGrid stroke="#00000010" />
@@ -609,42 +714,77 @@ export default function Visual() {
                         <Scatter data={tlMode ? tlStepRows : mapRows} shape={<Dot />} isAnimationActive={!tlMode} />
                     </ScatterChart>
                 </ResponsiveContainer>
+                </div>
                 {tlMode && tl && (
                     <div className="mt-3 border-t border-black/10 pt-3" data-testid="visual-timeline-controls">
                         <div className="flex items-center gap-3">
                             <button
-                                onClick={() => { if (tlIdx >= tl.months.length - 1) setTlIdx(0); setTlPlaying((p) => !p); }}
+                                onClick={onTimelinePlay}
                                 className="w-9 h-9 flex items-center justify-center border border-black hover:bg-black hover:text-white transition shrink-0"
                                 data-testid="visual-timeline-play"
-                                title={tlPlaying ? "Pausar" : "Reproducir"}
+                                title={recording ? "Detener grabación" : (tlPlaying ? "Pausar" : "Reproducir")}
                             >
-                                {tlPlaying ? <Pause size={15} /> : <Play size={15} />}
+                                {recording ? <Square size={14} /> : (tlPlaying ? <Pause size={15} /> : <Play size={15} />)}
                             </button>
                             <input
                                 type="range" min={0} max={Math.max(0, tl.months.length - 1)} value={tlIdx}
+                                disabled={recording}
                                 onChange={(e) => { setTlPlaying(false); setTlIdx(parseInt(e.target.value, 10)); }}
-                                className="flex-1 accent-[#052049] cursor-pointer"
+                                className="flex-1 accent-[#052049] cursor-pointer disabled:opacity-50"
                                 data-testid="visual-timeline-slider"
                             />
                             <span className="font-mono text-xs text-black w-16 text-right tabular-nums">{monthLabel(tl.months[tlIdx])}</span>
                         </div>
-                        <div className="flex items-center justify-between mt-2 text-[11px] font-mono text-[#4A4A4A]">
-                            <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
+                            <div className="flex items-center gap-3 text-[11px] font-mono text-[#4A4A4A]">
                                 <label className="flex items-center gap-1.5 cursor-pointer" title="Muestra el rastro del recorrido de cada empresa">
                                     <input type="checkbox" checked={tlTrail} onChange={(e) => setTlTrail(e.target.checked)} data-testid="visual-timeline-trail" />
                                     Estela
                                 </label>
                                 <label className="flex items-center gap-1.5">
                                     Velocidad
-                                    <select value={tlSpeed} onChange={(e) => setTlSpeed(parseInt(e.target.value, 10))} className="border border-black/30 px-1 py-0.5" data-testid="visual-timeline-speed">
+                                    <select value={tlSpeed} onChange={(e) => setTlSpeed(parseInt(e.target.value, 10))} disabled={recording} className="border border-black/30 px-1 py-0.5" data-testid="visual-timeline-speed">
                                         <option value={1000}>Lenta</option>
                                         <option value={600}>Normal</option>
                                         <option value={250}>Rápida</option>
                                     </select>
                                 </label>
                             </div>
-                            <span className="text-[10px] italic text-[#7A7A7A]">Izquierda = pasado · derecha = hoy. La valoración histórica se reconstruye proyectando el valor razonable actual; Score/TAM/KPI se congelan hasta que haya snapshots diarios.</span>
+                            {/* Record / Export / Delete */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setRecArmed((a) => !a)}
+                                    disabled={recording}
+                                    className={`text-xs font-mono px-2.5 py-1.5 border flex items-center gap-1.5 transition disabled:opacity-50 ${recArmed ? "bg-[#B32A22] text-white border-[#B32A22]" : "border-black hover:bg-black hover:text-white"}`}
+                                    data-testid="visual-timeline-record"
+                                    title={recArmed ? "Grabación activada: pulsa ▶ para grabar el recorrido. Clic para desactivar." : "Activar grabación del próximo recorrido"}
+                                >
+                                    <Circle size={11} fill={recArmed ? "#fff" : "none"} className={recording ? "animate-pulse" : ""} />
+                                    {recording ? "Grabando…" : (recArmed ? "Grabar ●" : "Grabar")}
+                                </button>
+                                <button
+                                    onClick={() => setLibOpen(true)}
+                                    disabled={clipCount === 0}
+                                    className="text-xs font-mono px-2.5 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-40"
+                                    data-testid="visual-timeline-export"
+                                    title="Ver, reproducir, renombrar, descargar y compartir tus recorridos grabados"
+                                >
+                                    <FolderOpen size={12} /> Exportar
+                                    {clipCount > 0 && <span className="bg-[#052049] text-white rounded-full px-1.5 py-0.5 text-[9px] leading-none" data-testid="visual-timeline-clipcount">{clipCount}</span>}
+                                </button>
+                                {clipCount > 0 && (
+                                    <button
+                                        onClick={clearClips}
+                                        className="text-xs font-mono px-2.5 py-1.5 border border-[#B32A22] text-[#B32A22] hover:bg-[#B32A22] hover:text-white transition flex items-center gap-1.5"
+                                        data-testid="visual-timeline-clear"
+                                        title="Borrar todos los recorridos guardados (empezar de cero)"
+                                    >
+                                        <Trash2 size={12} /> Borrar
+                                    </button>
+                                )}
+                            </div>
                         </div>
+                        <div className="mt-2 text-[10px] italic text-[#7A7A7A]">Izquierda = pasado · derecha = hoy. La valoración histórica se reconstruye proyectando el valor razonable actual; Score/TAM/KPI se congelan hasta que haya snapshots diarios.</div>
                     </div>
                 )}
                 <div className="text-xs text-[#4A4A4A] mt-3 font-sans flex items-center gap-5 flex-wrap leading-relaxed">
@@ -773,6 +913,13 @@ export default function Visual() {
                     </span>
                 )}
             </div>
+
+            <ExportLibrary
+                open={libOpen}
+                onClose={async () => { setLibOpen(false); setClipCount(await countMediaItems("timeline-clip")); }}
+                kind="timeline-clip"
+                title="Recorridos grabados"
+            />
         </div>
     );
 }

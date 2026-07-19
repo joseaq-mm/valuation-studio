@@ -182,6 +182,17 @@ export const thesisVisualData = () =>
 export const thesisVisualTimeline = () =>
     api.get(`/thesis/visual-timeline`, { timeout: 120000 }).then(r => r.data);
 
+// Generic exports store (upload local artifact to object storage → shareable link).
+export const exportUpload = (blob, name, kind = "timeline-clip") => {
+    const fd = new FormData();
+    const ext = (blob.type || "").split("/")[1] || "bin";
+    fd.append("file", blob, `${name}.${ext}`);
+    fd.append("name", name);
+    fd.append("kind", kind);
+    return api.post(`/exports/upload`, fd, { timeout: 180000, headers: { "Content-Type": "multipart/form-data" } }).then(r => r.data);
+};
+export const exportPublicUrl = (token) => `${API}/exports/public/${token}`;
+
 // Per-company watch alerts (Visual bell)
 export const alertsGet = () => api.get(`/thesis/alerts`).then(r => r.data);
 export const alertSave = (ticker, config) => api.put(`/thesis/alerts/${encodeURIComponent(ticker)}`, config).then(r => r.data);
