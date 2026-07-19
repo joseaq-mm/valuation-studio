@@ -323,15 +323,17 @@ export default function Visual() {
         const svg = chartRef.current.querySelector("svg");
         if (!svg || !window.MediaRecorder) { toast.error("La grabación no está disponible en este navegador"); return; }
         const rect = svg.getBoundingClientRect();
+        const scale = 1.75;  // supersample for sharper output
         const canvas = document.createElement("canvas");
-        canvas.width = Math.round(rect.width); canvas.height = Math.round(rect.height);
+        canvas.width = Math.round(rect.width * scale); canvas.height = Math.round(rect.height * scale);
         const ctx = canvas.getContext("2d");
-        let mime = "video/webm;codecs=vp9";
-        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm;codecs=vp8";
-        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm";
+        // Prefer MP4 (H.264) — universal & higher quality — then fall back to WebM.
+        const candidates = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+        const mime = candidates.find((m) => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } }) || "video/webm";
+        const baseMime = mime.startsWith("video/mp4") ? "video/mp4" : "video/webm";
         const stream = canvas.captureStream(0);
         const vtrack = stream.getVideoTracks()[0];
-        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
         const chunks = [];
         rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
         const stopped = new Promise((res) => { rec.onstop = res; });
@@ -365,11 +367,11 @@ export default function Visual() {
         }
         if (recCancelRef.current || !chunks.length) { toast("Grabación cancelada"); return; }
         try {
-            const blob = new Blob(chunks, { type: "video/webm" });
+            const blob = new Blob(chunks, { type: baseMime });
             const thumb = canvas.toDataURL("image/png");
             const now = new Date();
             const name = `Recorrido ${now.toLocaleDateString("es-ES")} ${now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`;
-            await addMediaItem({ kind: "timeline-clip", name, mime: "video/webm", blob, thumbnail: thumb, meta: { months: tl.months.length } });
+            await addMediaItem({ kind: "timeline-clip", name, mime: baseMime, blob, thumbnail: thumb, meta: { months: tl.months.length } });
             setClipCount(await countMediaItems("timeline-clip"));
             toast.success("Recorrido grabado ✓");
         } catch (e) { toast.error("No se pudo guardar el clip"); }

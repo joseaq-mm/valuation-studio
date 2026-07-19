@@ -23,6 +23,7 @@ export const ExportLibrary = ({ open, onClose, kind = "timeline-clip", title = "
     const [items, setItems] = useState([]);
     const [sel, setSel] = useState(new Set());
     const [preview, setPreview] = useState(null);
+    const [shareLinks, setShareLinks] = useState(null);
     const [editing, setEditing] = useState(null);
     const [editName, setEditName] = useState("");
     const [busy, setBusy] = useState(false);
@@ -75,21 +76,32 @@ export const ExportLibrary = ({ open, onClose, kind = "timeline-clip", title = "
         finally { setBusy(false); }
     };
 
-    const shareItem = async (item) => {
+    const shareSelected = async () => {
+        if (!selectedItems.length) return toast.error("Selecciona al menos un elemento");
+        const files = selectedItems.map((it) => {
+            const ext = (it.mime || "").split("/")[1] || "bin";
+            return new File([it.blob], `${it.name}.${ext}`, { type: it.mime });
+        });
+        // Native share (mainly mobile) — must run inside the click gesture, no await before it.
+        if (navigator.canShare && navigator.canShare({ files })) {
+            try { await navigator.share({ files, title: files.length === 1 ? selectedItems[0].name : "Recorridos" }); }
+            catch (e) { if (e?.name !== "AbortError") toast.error("No se pudo compartir"); }
+            return;
+        }
+        // Desktop fallback: upload to cloud and show copyable links (gesture-safe).
         setBusy(true);
         try {
-            const ext = (item.mime || "").split("/")[1] || "bin";
-            const file = new File([item.blob], `${item.name}.${ext}`, { type: item.mime });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: item.name, text: item.name });
-            } else {
-                const url = await ensureCloud(item);
-                await refresh();
-                if (navigator.share) await navigator.share({ title: item.name, text: item.name, url });
-                else { await navigator.clipboard.writeText(url); toast.success("Enlace copiado al portapapeles"); }
-            }
-        } catch (e) { if (e?.name !== "AbortError") toast.error("No se pudo compartir"); }
+            const links = [];
+            for (const it of selectedItems) links.push({ name: it.name, url: await ensureCloud(it) });
+            await refresh();
+            setShareLinks(links);
+        } catch (e) { toast.error(e?.response?.data?.detail || "Error al preparar el enlace"); }
         finally { setBusy(false); }
+    };
+
+    const copyLink = async (url) => {
+        try { await navigator.clipboard.writeText(url); toast.success("Enlace copiado"); }
+        catch { window.prompt("Copia el enlace:", url); }
     };
 
     const saveName = async (item) => {
@@ -171,12 +183,7 @@ export const ExportLibrary = ({ open, onClose, kind = "timeline-clip", title = "
                                                     <button onClick={() => { setEditing(item.id); setEditName(item.name); }} className="text-[#4A4A4A] hover:text-black" data-testid={`export-rename-${item.id}`}><Pencil size={12} /></button>
                                                 </div>
                                             )}
-                                            <div className="text-[10px] text-[#7A7A7A] font-mono mt-0.5">{fmtSize(item.size)} · {fmtDate(item.createdAt)}</div>
-                                            <div className="flex items-center gap-1 mt-2">
-                                                <button onClick={() => downloadItem(item)} title="Descargar" className="flex-1 border border-black/30 hover:bg-black hover:text-white transition py-1 flex items-center justify-center" data-testid={`export-download-${item.id}`}><Download size={13} /></button>
-                                                <button onClick={() => shareItem(item)} disabled={busy} title="Compartir" className="flex-1 border border-black/30 hover:bg-black hover:text-white transition py-1 flex items-center justify-center disabled:opacity-40" data-testid={`export-share-${item.id}`}><Share2 size={13} /></button>
-                                                <button onClick={async () => { await deleteMediaItems([item.id]); await refresh(); }} title="Borrar" className="flex-1 border border-[#B32A22]/40 text-[#B32A22] hover:bg-[#B32A22] hover:text-white transition py-1 flex items-center justify-center" data-testid={`export-delete-${item.id}`}><Trash2 size={13} /></button>
-                                            </div>
+                                            <div className="text-[10px] text-[#7A7A7A] font-mono mt-0.5">{fmtSize(item.size)} · {fmtDate(item.createdAt)}{item.cloudUrl ? " · en la nube" : ""}</div>
                                         </div>
                                     </div>
                                 ))}
@@ -191,10 +198,34 @@ export const ExportLibrary = ({ open, onClose, kind = "timeline-clip", title = "
                         <span className="text-xs font-mono text-[#4A4A4A] mr-auto">{sel.size} seleccionado(s)</span>
                         <button onClick={downloadSelected} className="text-xs font-mono px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5" data-testid="export-download-selected"><Download size={13} /> Descargar</button>
                         <button onClick={uploadSelected} disabled={busy} className="text-xs font-mono px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-40" data-testid="export-upload-selected">{busy ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />} Subir a la nube</button>
+                        <button onClick={shareSelected} disabled={busy} className="text-xs font-mono px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-40" data-testid="export-share-selected"><Share2 size={13} /> Compartir</button>
                         <button onClick={deleteSelected} className="text-xs font-mono px-3 py-1.5 border border-[#B32A22] text-[#B32A22] hover:bg-[#B32A22] hover:text-white transition flex items-center gap-1.5" data-testid="export-delete-selected"><Trash2 size={13} /> Borrar</button>
                     </div>
                 )}
             </div>
+
+            {/* Share links (desktop fallback) */}
+            {shareLinks && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" data-testid="export-share-links">
+                    <div className="absolute inset-0 bg-black/70" onClick={() => setShareLinks(null)} />
+                    <div className="relative bg-white border-2 border-black w-full max-w-lg">
+                        <div className="flex items-center justify-between border-b border-black px-3 py-2">
+                            <span className="font-serif text-lg">Compartir enlace</span>
+                            <button onClick={() => setShareLinks(null)} className="p-1 hover:bg-black/5"><X size={16} /></button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <p className="text-xs text-[#4A4A4A] font-sans">Tu dispositivo no admite el menú de compartir de archivos, así que hemos subido {shareLinks.length === 1 ? "el clip" : "los clips"} a la nube. Copia el enlace público para pegarlo donde quieras (WhatsApp, X, email…).</p>
+                            {shareLinks.map((l, i) => (
+                                <div key={i} className="flex items-center gap-2 border border-black/20 p-2">
+                                    <span className="text-xs font-mono truncate flex-1" title={l.url}>{l.name}</span>
+                                    <a href={l.url} target="_blank" rel="noreferrer" className="text-xs underline shrink-0">Abrir</a>
+                                    <button onClick={() => copyLink(l.url)} className="text-xs font-mono px-2 py-1 border border-black hover:bg-black hover:text-white transition shrink-0" data-testid={`export-copy-link-${i}`}>Copiar</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Preview overlay */}
             {preview && (

@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 19 jul 2026 — Ajustes de exportación (feedback usuario)
+- **Formato MP4 (H.264)**: la grabación ahora prefiere `video/mp4;codecs=avc1` (universal y mejor calidad) y cae a WebM solo si el navegador no lo soporta. Supersampling ×1.75 + bitrate 8 Mbps → más nitidez.
+- **Acciones consolidadas**: quitados los botones por clip (descargar/compartir/borrar); todo va por selección en la barra inferior, ahora con **Descargar · Subir a la nube · Compartir · Borrar**.
+- **Compartir arreglado**: usa Web Share nativo (móvil) dentro del gesto; en escritorio (donde no hay compartir de archivos) sube a la nube y abre un panel "Compartir enlace" con Abrir/Copiar (evita perder el gesto de usuario que rompía el intento anterior).
+
+
 ## 19 jul 2026 — Grabar recorrido de la línea de tiempo + Biblioteca de exportaciones (reutilizable)
 - **Botones en los controles del dial**: **Grabar** (arma/desarma; al pulsar ▶ estando armado graba el recorrido completo a **WebM** vía canvas + MediaRecorder rasterizando el SVG del chart), **Exportar** (badge con nº de clips; abre la biblioteca), **Borrar** (vacía los clips guardados). Mientras Grabar está armado, cada reproducción genera un clip nuevo.
 - **Almacenamiento LOCAL** en IndexedDB (`lib/mediaLibrary.js`, genérico por `kind`): add/list/count/get/update/delete/clear. Sin backend para el guardado.
