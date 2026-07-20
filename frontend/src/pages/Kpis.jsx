@@ -60,6 +60,38 @@ const CoefBadge = ({ c, signal, size = "lg" }) => (
     </div>
 );
 
+// Needle gauge for the global coefficient. Range [0.5, 1.5] (C = 1 + 0.5·S, S∈[-1,1]),
+// centred at 1.0. Styled like the macro indicator. 0.5 = tesis se deteriora (rojo),
+// 1.5 = tesis se valida (verde).
+const CoefGauge = ({ c }) => {
+    const cx = 100, cy = 96, R = 76;
+    if (c == null) return null;
+    const val = Math.max(0.5, Math.min(1.5, c));
+    const rot = (val - 1) * 180;   // 1→0° (up), 0.5→-90° (left), 1.5→+90° (right)
+    return (
+        <svg viewBox="0 0 200 118" className="w-full max-w-[210px]" data-testid="coef-gauge">
+            <defs>
+                <linearGradient id="kpiGaugeGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#B32A22" />
+                    <stop offset="25%" stopColor="#E8833A" />
+                    <stop offset="50%" stopColor="#9AA0A6" />
+                    <stop offset="75%" stopColor="#7BC47F" />
+                    <stop offset="100%" stopColor="#1F7A3D" />
+                </linearGradient>
+            </defs>
+            <path d={`M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} fill="none" stroke="url(#kpiGaugeGrad)" strokeWidth="13" strokeLinecap="round" />
+            <text x={cx - R} y={cy + 15} textAnchor="middle" className="fill-[#B32A22]" fontSize="9" fontWeight="700">0,5 · deteriora</text>
+            <text x={cx} y="16" textAnchor="middle" className="fill-[#6A6A6A]" fontSize="9" fontWeight="700">1</text>
+            <text x={cx + R} y={cy + 15} textAnchor="middle" className="fill-[#1F7A3D]" fontSize="9" fontWeight="700">1,5 · valida</text>
+            <g transform={`rotate(${rot} ${cx} ${cy})`}>
+                <line x1={cx} y1={cy} x2={cx} y2={cy - R + 8} stroke="#052049" strokeWidth="3" strokeLinecap="round" />
+            </g>
+            <circle cx={cx} cy={cy} r="5.5" fill="#052049" />
+        </svg>
+    );
+};
+
+
 export default function Kpis() {
     const { user } = useAuth();
     const [companies, setCompanies] = useState([]);
@@ -303,6 +335,9 @@ export default function Kpis() {
                                     </div>
                                 );
                             })()}
+                        </div>
+                        <div className="shrink-0" data-testid="coef-gauge-wrap">
+                            <CoefGauge c={snap.coef_global} />
                         </div>
                         <div className="flex items-center gap-2">
                             {!editing && (

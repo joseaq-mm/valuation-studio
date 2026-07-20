@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 20 jul 2026 — KPIs: aguja (gauge) del coeficiente global
+- Nuevo `CoefGauge` en `Kpis.jsx` (estilo del indicador macro): semicírculo con gradiente rojo→gris→verde, aguja y eje. Rango **[0,5–1,5]** centrado en 1,0 (C = 1 + 0,5·S, S∈[−1,+1]); rotación `(val-1)·180`. Etiquetas "0,5 · deteriora" / "1" / "1,5 · valida".
+- Insertada en la cabecera "Coeficiente global", entre la info y los botones Actualizar/Reanalizar. data-testid `coef-gauge`, `coef-gauge-wrap`.
+- Verificado en vivo (NVDA = 1,39 → aguja en zona verde).
+
+
 ## 20 jul 2026 — Company: pentágono "Perfil financiero" (radar de 5 ejes)
 - Nuevo `components/MetricsRadar.jsx` (recharts RadarChart) añadido como **tercera columna del hero**, junto a Ratio Compra y Ratio Venta (`hero-kpis` ahora `md:grid-cols-3`).
 - 5 ejes, cada uno 0-100 (mayor = mejor), con valor real en tooltip: **CAGR ingresos** (0→30%), **CAGR FCF** (0→30%), **Margen bruto** (0→100%), **Margen operativo** (0→40%), **Solidez (deuda)** = deuda neta/capitalización invertida (sin deuda/net cash → 100; deuda ≥50% mcap → 0).
