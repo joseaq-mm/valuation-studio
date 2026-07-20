@@ -13,11 +13,27 @@ import AlertToggle from "@/components/AlertToggle";
 import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
+import { ViewToggle } from "@/components/ViewToggle";
+import { CompanyCard } from "@/components/CompanyCard";
+import { NextEarnings, nextEarningsInfo } from "@/components/NextEarnings";
+import { CardSort } from "@/components/CardSort";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv", "score", "tam", "kpi"]);
+const WL_SORT_OPTIONS = [
+    { key: "ticker", label: "Alfabético (Ticker)" },
+    { key: "name", label: "Alfabético (Nombre)" },
+    { key: "price", label: "Precio" },
+    { key: "mcap", label: "Capitalización" },
+    { key: "rc", label: "Ratio Compra" },
+    { key: "rv", label: "Ratio Venta" },
+    { key: "score", label: "Score" },
+    { key: "tam", label: "TAM" },
+    { key: "kpi", label: "Coef KPI" },
+    { key: "earnings", label: "Próx. resultados" },
+];
 const WL_ACCESSORS = {
     ticker: (row) => row.data?.ticker,
     name: (row) => row.data?.name,
@@ -52,6 +68,8 @@ export default function Watchlist() {
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [sort, setSort] = useState(null);
+    const [view, setView] = useState(() => localStorage.getItem("vs:watchlist-view") || "table");
+    const changeView = (v) => { setView(v); localStorage.setItem("vs:watchlist-view", v); };
     const { user } = useAuth();
     const [notify, setNotify] = useState(null);
     const { display: displayCur, convert: fxConvert } = useFx();
@@ -158,6 +176,7 @@ export default function Watchlist() {
         score: (row) => qual[row.data?.ticker]?.score,
         tam: (row) => qual[row.data?.ticker]?.tam,
         kpi: (row) => qual[row.data?.ticker]?.kpi_coef,
+        earnings: (row) => { const info = nextEarningsInfo(row.data?.next_earnings_date); return info ? info.days : null; },
     };
     const sortedRows = useMemo(() => {
         if (!sort || !accessors[sort.key]) return rows;
@@ -178,7 +197,10 @@ export default function Watchlist() {
                         </div>
                     )}
                 </div>
-                <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">{t("nav.compare")} <ArrowRight size={12} className="inline ml-1" /></Link>
+                <div className="flex items-center gap-2">
+                    <ViewToggle view={view} onChange={changeView} testid="watchlist-view-toggle" />
+                    <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">{t("nav.compare")} <ArrowRight size={12} className="inline ml-1" /></Link>
+                </div>
             </div>
 
             {!user && (
@@ -198,6 +220,47 @@ export default function Watchlist() {
                     <div className="text-sm text-[#4A4A4A] mb-6">{t("watchlist.empty_sub")}</div>
                     <Link to="/" className="btn-primary">{t("watchlist.empty_cta")}</Link>
                 </div>
+            ) : view === "cards" ? (
+                <>
+                <CardSort options={WL_SORT_OPTIONS} sort={sort} onChange={setSort} testid="watchlist-card-sort" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" data-testid="watchlist-cards">
+                    {loading && <div className="col-span-full text-center py-8 font-mono text-[#4A4A4A]">{t("common.loading")}</div>}
+                    {!loading && sortedRows.map(({ entry, data: r }) => {
+                        if (r.error) return (
+                            <div key={r.ticker} className="border border-[#B32A22]/40 bg-white p-3 flex items-center justify-between" data-testid={`watchlist-card-${r.ticker}`}>
+                                <span className="font-mono font-bold">{r.ticker}</span>
+                                <span className="text-[#B32A22] text-xs">{r.error}</span>
+                                <button onClick={() => handleRemove(r.ticker)} className="text-[#B32A22]" data-testid={`remove-${r.ticker}`}><Trash2 size={12} /></button>
+                            </div>
+                        );
+                        const cr = r.custom_ratios || {};
+                        const q = qual[r.ticker];
+                        const useDisp = displayCur && displayCur !== "NATIVE";
+                        return (
+                            <CompanyCard
+                                key={r.ticker}
+                                testid={`watchlist-card-${r.ticker}`}
+                                ticker={r.ticker}
+                                name={r.name}
+                                price={useDisp ? fxConvert(r.current_price, r.currency) : r.current_price}
+                                priceCur={useDisp ? displayCur : r.currency}
+                                mcap={useDisp ? fxConvert(r.market_cap, r.currency) : r.market_cap}
+                                rc={cr.ratio_compra_pct}
+                                rv={cr.ratio_venta_pct}
+                                score={q?.score}
+                                tam={q?.tam}
+                                kpi={q?.kpi_coef}
+                                nextEarnings={r.next_earnings_date}
+                                badges={<span className={`overline px-1.5 py-0.5 border text-[9px] ${entry.mode === "manual" ? "border-[#1D7044] text-[#1D7044]" : "border-black/30 text-[#4A4A4A]"}`} data-testid={`mode-${r.ticker}`}>{entry.mode === "manual" ? "MAN" : "AUTO"}</span>}
+                                actions={<>
+                                    <AlertToggle enabled={!!entry.alert_enabled} onChange={(v) => { setWatchlistAlert(r.ticker, v); toast.success(v ? t("alerts.row_on") : t("alerts.row_off")); }} testid={r.ticker} />
+                                    <button onClick={() => handleRemove(r.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${r.ticker}`}><Trash2 size={13} /></button>
+                                </>}
+                            />
+                        );
+                    })}
+                </div>
+                </>
             ) : (
                 <div className="border border-black bg-white overflow-x-auto" data-testid="watchlist-table">
                     <table className="w-full text-xs">
@@ -208,6 +271,7 @@ export default function Watchlist() {
                                 <th className="overline text-center px-2 py-2">{t("watchlist.col_mode")}</th>
                                 <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
+                                <th className="overline text-right px-2 py-2">Próx. result.</th>
                                 <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_buy_signal")}>
@@ -235,12 +299,12 @@ export default function Watchlist() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="14" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="15" className="px-2 py-6 text-center font-mono text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {sortedRows.map(({ entry, data: r }) => {
                                 if (r.error) return (
                                     <tr key={r.ticker} className="border-b border-black/10">
                                         <td className="px-2 py-2 font-mono sticky left-0 z-10 bg-white">{r.ticker}</td>
-                                        <td colSpan="12" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td colSpan="13" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(r.ticker)} data-testid={`remove-${r.ticker}`}><Trash2 size={12} /></button>
                                         </td>
@@ -263,6 +327,7 @@ export default function Watchlist() {
                                         </td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtPrice(displayCur && displayCur !== "NATIVE" ? fxConvert(r.current_price, r.currency) : r.current_price, displayCur && displayCur !== "NATIVE" ? displayCur : r.currency)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtNum(displayCur && displayCur !== "NATIVE" ? fxConvert(r.market_cap, r.currency) : r.market_cap)}</td>
+                                        <td className="px-2 py-2 text-right"><NextEarnings iso={r.next_earnings_date} testid={`wl-earnings-${r.ticker}`} /></td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid={`rc-${r.ticker}`}>
                                             {fmtPctSigned(cr.ratio_compra_pct)}
                                         </td>

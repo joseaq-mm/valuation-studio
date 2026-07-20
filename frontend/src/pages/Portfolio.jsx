@@ -15,9 +15,27 @@ import AlertInfoBanner from "@/components/AlertInfoBanner";
 import MasterAlertToggle from "@/components/MasterAlertToggle";
 import HoverTip from "@/components/HoverTip";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
+import { ViewToggle } from "@/components/ViewToggle";
+import { CompanyCard } from "@/components/CompanyCard";
+import { NextEarnings, nextEarningsInfo } from "@/components/NextEarnings";
+import { CardSort } from "@/components/CardSort";
+import { PortfolioDonut } from "@/components/PortfolioDonut";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 
 const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv", "score", "tam", "kpi"]);
+
+// Options offered by the card-view sort dropdown (Nivel 1).
+const PF_SORT_OPTIONS = [
+    { key: "ticker", label: "Alfabético (Ticker)" },
+    { key: "price", label: "Precio" },
+    { key: "mcap", label: "Capitalización" },
+    { key: "rc", label: "Ratio Compra" },
+    { key: "rv", label: "Ratio Venta" },
+    { key: "score", label: "Score" },
+    { key: "tam", label: "TAM" },
+    { key: "kpi", label: "Coef KPI" },
+    { key: "earnings", label: "Próx. resultados" },
+];
 
 // Apply manual overrides to the API-fetched company snapshot before recomputing
 // ratios. Mirrors the same logic the Watchlist page uses.
@@ -48,7 +66,7 @@ const enrichRow = (companyData, position) => {
 export default function Portfolio() {
     const { t } = useI18n();
     const { user } = useAuth();
-    const { display: displayCur, convert: fxConvert } = useFx();
+    const { display: displayCur, convert: fxConvert, rates } = useFx();
     const [positions, setPositions] = useState([]);
     const [rows, setRows] = useState([]);
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
@@ -56,6 +74,8 @@ export default function Portfolio() {
     const [showAdd, setShowAdd] = useState(false);
     const [editing, setEditing] = useState(null);
     const [sort, setSort] = useState(null);
+    const [view, setView] = useState(() => localStorage.getItem("vs:portfolio-view") || "table");
+    const changeView = (v) => { setView(v); localStorage.setItem("vs:portfolio-view", v); };
     useThresholds();
 
     // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
@@ -147,6 +167,7 @@ export default function Portfolio() {
             case "score": return qual[p.ticker]?.score;
             case "tam": return qual[p.ticker]?.tam;
             case "kpi": return qual[p.ticker]?.kpi_coef;
+            case "earnings": { const info = nextEarningsInfo(r.next_earnings_date); return info ? info.days : null; }
             default: return null;
         }
     };
@@ -178,6 +199,25 @@ export default function Portfolio() {
     const totalPlPct = totInvested > 0 ? (totalPl / totInvested) * 100 : null;
     const trackedOnly = rows.length - completeCount;
 
+    // Portfolio composition (donut): current market value per holding in a common
+    // currency. Uses display currency when set, otherwise normalizes to USD.
+    const donutCur = useDisplay ? displayCur : "USD";
+    const toDonut = (v, cur) => {
+        if (v == null || isNaN(v)) return null;
+        if (useDisplay) return fxConvert(v, cur);
+        const rf = rates[String(cur || "USD").toUpperCase()];
+        return rf ? v / rf : v;
+    };
+    const holdings = [];
+    for (const r of rows) {
+        const p = r.position || {};
+        if (!p.shares || p.shares <= 0 || r.current_price == null) continue;
+        const cur = r.currency || p.buy_currency || "USD";
+        const val = toDonut(r.current_price * p.shares, cur);
+        if (val == null || val <= 0) continue;
+        holdings.push({ ticker: p.ticker, value: val });
+    }
+
     return (
         <div data-testid="portfolio-page">
             <div className="flex justify-between items-end mb-6 gap-3 flex-wrap">
@@ -191,7 +231,8 @@ export default function Portfolio() {
                         </div>
                     )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                    <ViewToggle view={view} onChange={changeView} testid="portfolio-view-toggle" />
                     <button onClick={() => { setEditing(null); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="portfolio-add">
                         <Plus size={14} /> {t("portfolio.add_position")}
                     </button>
@@ -207,7 +248,7 @@ export default function Portfolio() {
 
             {positions.length > 0 && <AlertInfoBanner context="portfolio" />}
 
-            {completeCount > 0 && (
+            {completeCount > 0 && view !== "cards" && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                     <Kpi label={t("portfolio.total_invested")} value={fmtPrice(totInvested, totalsCur)} testid="kpi-invested" />
                     <Kpi label={t("portfolio.total_now")} value={fmtPrice(totNow, totalsCur)} testid="kpi-now" />
@@ -227,7 +268,59 @@ export default function Portfolio() {
                     <div className="text-sm text-[#4A4A4A] mb-6 max-w-md mx-auto">{t("portfolio.empty_sub")}</div>
                     <button onClick={() => setShowAdd(true)} className="btn-primary">{t("portfolio.add_position")}</button>
                 </div>
+            ) : view === "cards" ? (
+                <>
+                <CardSort options={PF_SORT_OPTIONS} sort={sort} onChange={setSort} testid="portfolio-card-sort" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" data-testid="portfolio-cards">
+                    {loading && <div className="col-span-full text-center py-8 font-mono text-[#4A4A4A]">{t("common.loading")}</div>}
+                    {!loading && sortedRows.map((r) => {
+                        const p = r.position;
+                        if (r.error) return (
+                            <div key={p.ticker} className="border border-[#B32A22]/40 bg-white p-3 flex items-center justify-between" data-testid={`portfolio-card-${p.ticker}`}>
+                                <span className="font-mono font-bold">{p.ticker}</span>
+                                <span className="text-[#B32A22] text-xs">{r.error}</span>
+                                <button onClick={() => handleRemove(p.ticker)} className="text-[#B32A22]" data-testid={`remove-${p.ticker}`}><Trash2 size={12} /></button>
+                            </div>
+                        );
+                        const buyCur = p.buy_currency || r.currency || "USD";
+                        const showCur = displayCurFor(r.currency || buyCur);
+                        const isComplete = (p.shares != null && p.shares > 0) && (p.buy_price != null && p.buy_price > 0);
+                        const cr = r.custom_ratios || {};
+                        const q = qual[p.ticker];
+                        return (
+                            <CompanyCard
+                                key={p.ticker}
+                                testid={`portfolio-card-${p.ticker}`}
+                                ticker={p.ticker}
+                                name={r.name}
+                                price={convToDisplay(r.current_price, r.currency || buyCur)}
+                                priceCur={showCur}
+                                mcap={convToDisplay(r.market_cap, r.currency || buyCur)}
+                                rc={cr.ratio_compra_pct}
+                                rv={cr.ratio_venta_pct}
+                                score={q?.score}
+                                tam={q?.tam}
+                                kpi={q?.kpi_coef}
+                                nextEarnings={r.next_earnings_date}
+                                badges={<>
+                                    {!isComplete && <span className="overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px]" data-testid={`tracked-${p.ticker}`}>SEG</span>}
+                                    {p.mode === "manual" && <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px]" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>}
+                                </>}
+                                actions={<>
+                                    <AlertToggle enabled={!!p.alert_enabled} onChange={(v) => toggleAlert(p.ticker, v)} testid={p.ticker} />
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => { setEditing(p); setShowAdd(true); }} className="text-[#4A4A4A] hover:text-black text-[11px] underline" data-testid={`edit-${p.ticker}`}>Editar</button>
+                                        <button onClick={() => handleRemove(p.ticker)} className="text-[#B32A22] hover:text-black" data-testid={`remove-${p.ticker}`}><Trash2 size={13} /></button>
+                                    </div>
+                                </>}
+                            />
+                        );
+                    })}
+                </div>
+                <PortfolioDonut items={holdings} currency={donutCur} testid="portfolio-donut" />
+                </>
             ) : (
+                <>
                 <div className="border border-black bg-white overflow-x-auto" data-testid="portfolio-table">
                     <table className="w-full text-xs">
                         <thead>
@@ -249,6 +342,7 @@ export default function Portfolio() {
                                 </SortableTh>
                                 <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
+                                <th className="overline text-right px-2 py-2">Próx. result.</th>
                                 <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-center px-2 py-2">
                                     <HoverTip text={t("portfolio.tt_buy_signal")}>
@@ -276,13 +370,13 @@ export default function Portfolio() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="18" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="19" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {!loading && sortedRows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">
                                         <td className="px-2 py-2 font-mono sticky left-0 z-10 bg-white">{p.ticker}</td>
-                                        <td colSpan="16" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td colSpan="17" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(p.ticker)} data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
                                         </td>
@@ -327,6 +421,7 @@ export default function Portfolio() {
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
+                                        <td className="px-2 py-2 text-right"><NextEarnings iso={r.next_earnings_date} testid={`pf-earnings-${p.ticker}`} /></td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
                                         <td className="px-2 py-2 text-center">
                                             <span className="overline px-1.5 py-0.5 border border-black text-[10px]" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{signalLabel(cr.ratio_compra_pct)}</span>
@@ -353,6 +448,8 @@ export default function Portfolio() {
                         </tbody>
                     </table>
                 </div>
+                <PortfolioDonut items={holdings} currency={donutCur} testid="portfolio-donut-table" />
+                </>
             )}
 
             {showAdd && (

@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 20 jul 2026 — Vista Tarjetas: orden, limpieza de cartera y donut de composición
+- **Nivel 1 (Portfolio) vista tarjetas:** ocultado el bloque de KPIs de dinero invertido (Total invertido / Total ahora / P&L / P&L%) — solo se muestra en vista tabla (`view !== "cards"`).
+- **Orden en vista tarjetas (Nivel 1 y 2):** nuevo `components/CardSort.jsx` (select + botón dirección) que gobierna el mismo estado `sort` de las tablas. Opciones: Alfabético (Ticker / Nombre en N2), Precio, Capitalización, Ratio Compra, Ratio Venta, Score, TAM, Coef KPI y **Próx. resultados**. Añadido caso `earnings` en `sortVal` (Portfolio) y accessor `earnings` (Watchlist) usando `nextEarningsInfo().days`.
+- **Donut de composición (Nivel 1):** nuevo `components/PortfolioDonut.jsx` (recharts, anillo) al final de la página (tabla y tarjetas). Muestra % y valor por posición con `shares>0` y precio válido, normalizado a moneda de visualización o USD. Colores corporativos por ticker vía nuevo `lib/brandColors.js` (NVDA verde, MSFT azul, AAPL gris… + paleta fallback determinista).
+- Verificado en vivo (NVDA/AAPL/MSFT): donut correcto (AAPL 61,6% · NVDA 19,3% · MSFT 19,1%), orden por Precio asc y KPIs de dinero ausentes en tarjetas.
+
+
 ## 20 jul 2026 — KPIs: aguja (gauge) del coeficiente global
 - Nuevo `CoefGauge` en `Kpis.jsx` (estilo del indicador macro): semicírculo con gradiente rojo→gris→verde, aguja y eje. Rango **[0,5–1,5]** centrado en 1,0 (C = 1 + 0,5·S, S∈[−1,+1]); rotación `(val-1)·180`. Etiquetas "0,5 · deteriora" / "1" / "1,5 · valida".
 - Insertada en la cabecera "Coeficiente global", entre la info y los botones Actualizar/Reanalizar. data-testid `coef-gauge`, `coef-gauge-wrap`.
