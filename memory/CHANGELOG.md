@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 20 jul 2026 — Company: pentágono "Perfil financiero" (radar de 5 ejes)
+- Nuevo `components/MetricsRadar.jsx` (recharts RadarChart) añadido como **tercera columna del hero**, junto a Ratio Compra y Ratio Venta (`hero-kpis` ahora `md:grid-cols-3`).
+- 5 ejes, cada uno 0-100 (mayor = mejor), con valor real en tooltip: **CAGR ingresos** (0→30%), **CAGR FCF** (0→30%), **Margen bruto** (0→100%), **Margen operativo** (0→40%), **Solidez (deuda)** = deuda neta/capitalización invertida (sin deuda/net cash → 100; deuda ≥50% mcap → 0).
+- Lee `inputs` en vivo → refleja los overrides que edita el usuario. data-testid: `metrics-radar`, `metrics-radar-card`.
+- Verificado en vivo (NVDA).
+
+
 ## 19 jul 2026 — Ajustes de exportación (feedback usuario)
 - **Formato MP4 (H.264)**: la grabación ahora prefiere `video/mp4;codecs=avc1` (universal y mejor calidad) y cae a WebM solo si el navegador no lo soporta. Supersampling ×1.75 + bitrate 8 Mbps → más nitidez.
 - **Acciones consolidadas**: quitados los botones por clip (descargar/compartir/borrar); todo va por selección en la barra inferior, ahora con **Descargar · Subir a la nube · Compartir · Borrar**.

@@ -7,6 +7,7 @@ import LocaleNumberInput from "@/components/LocaleNumberInput";
 import { saveToWatchlist, removeFromWatchlist, getWatchlistEntry } from "@/lib/storage";
 import { getPortfolioEntry, savePortfolioOverrides, removePosition } from "@/lib/portfolio";
 import { computeCustomRatios, autoInputsFromData, valuesEqual, computeOverrides } from "@/lib/customRatios";
+import { MetricsRadar } from "@/components/MetricsRadar";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import { useAuth } from "@/lib/auth";
@@ -985,8 +986,8 @@ export default function Company() {
             {/* Qualitative thesis bridge (Thesis Engine ↔ quant dashboard) */}
             <CompanyQualCard ticker={data.ticker} refreshKey={qualRefreshKey} />
 
-            {/* Hero KPIs - Ratio Compra & Venta */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-black mb-6" data-testid="hero-kpis">
+            {/* Hero KPIs - Ratio Compra & Venta + Perfil financiero */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-black mb-6" data-testid="hero-kpis">
                 <div className="bg-white p-6 md:border-r border-black border-b md:border-b-0" data-testid="ratio-compra-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Compra</div>
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="ratio-compra-value">
@@ -1000,7 +1001,7 @@ export default function Company() {
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de compra.</div>
                 </div>
-                <div className="bg-white p-6" data-testid="ratio-venta-card">
+                <div className="bg-white p-6 md:border-r border-black border-b md:border-b-0" data-testid="ratio-venta-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Venta</div>
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_venta_pct, "venta") }} data-testid="ratio-venta-value">
                         {fmtPctSigned(cr.ratio_venta_pct)}
@@ -1012,6 +1013,9 @@ export default function Company() {
                         </HoverTip>
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de venta.</div>
+                </div>
+                <div className="bg-white p-6 border-t border-black md:border-t-0" data-testid="metrics-radar-card">
+                    <MetricsRadar inputs={inputs} />
                 </div>
             </div>
 
