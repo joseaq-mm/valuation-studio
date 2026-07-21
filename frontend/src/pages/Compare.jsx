@@ -6,6 +6,7 @@ import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { getWatchlistTickers } from "@/lib/storage";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
+import { CompareRadars } from "@/components/CompareRadars";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -118,6 +119,26 @@ export default function Compare() {
         { label: "Dividend yield", get: r => fmtPct(r.classic_ratios?.dividend_yield), align: "right" },
     ];
 
+    // Raw numeric parameters for the hexagonal radars (below the table).
+    const radarMetrics = [
+        { key: "price", label: "Precio", get: r => convPrice(r), fmt: v => fmtPrice(v, useDisplay ? displayCur : "") },
+        { key: "mcap", label: "Capitalización", get: r => convMcap(r), fmt: v => fmtNum(v) },
+        { key: "rc", label: "Ratio Compra %", get: r => r.custom_ratios?.ratio_compra_pct, fmt: v => fmtPctSigned(v) },
+        { key: "rv", label: "Ratio Venta %", get: r => r.custom_ratios?.ratio_venta_pct, fmt: v => fmtPctSigned(v) },
+        { key: "score", label: "Score", get: r => qual[r.ticker]?.score, fmt: v => Number(v).toFixed(1) },
+        { key: "tam", label: "TAM", get: r => qual[r.ticker]?.tam, fmt: v => Number(v).toFixed(2) },
+        { key: "kpi", label: "Coef KPI", get: r => qual[r.ticker]?.kpi_coef, fmt: v => Number(v).toFixed(2) },
+        { key: "trailing_pe", label: "Trailing P/E", get: r => r.classic_ratios?.trailing_pe, fmt: v => fmtNum(v) },
+        { key: "forward_pe", label: "Forward P/E", get: r => r.classic_ratios?.forward_pe, fmt: v => fmtNum(v) },
+        { key: "pb", label: "P/B", get: r => r.classic_ratios?.price_to_book, fmt: v => fmtNum(v) },
+        { key: "ev_ebitda", label: "EV/EBITDA", get: r => r.classic_ratios?.ev_to_ebitda, fmt: v => fmtNum(v) },
+        { key: "roe", label: "ROE", get: r => r.classic_ratios?.roe, fmt: v => fmtPct(v) },
+        { key: "profit_margin", label: "Profit margin", get: r => r.classic_ratios?.profit_margin, fmt: v => fmtPct(v) },
+        { key: "gross_margin", label: "Gross margin", get: r => r.gross_margin, fmt: v => fmtPct(v) },
+        { key: "operating_margin", label: "Operating margin", get: r => r.operating_margin, fmt: v => fmtPct(v) },
+        { key: "dividend_yield", label: "Dividend yield", get: r => r.classic_ratios?.dividend_yield, fmt: v => fmtPct(v) },
+    ];
+
     return (
         <div data-testid="compare-page">
             <div className="mb-6">
@@ -182,6 +203,8 @@ export default function Compare() {
                     </table>
                 </div>
             )}
+
+            {rows.length > 0 && <CompareRadars metrics={radarMetrics} rows={rows} />}
         </div>
     );
 }

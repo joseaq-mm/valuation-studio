@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Comparar: 5 hexágonos por parámetro
+- Nuevo `components/CompareRadars.jsx`: 5 fichas debajo de la tabla, cada una con un radar hexagonal (vértices = las empresas comparadas, hasta 6). Selector por ficha para elegir el parámetro; valores normalizados min-max (0-100) para forma comparable y tooltip con el valor real formateado.
+- Parámetros disponibles (`radarMetrics` en `Compare.jsx`): Precio, Capitalización, Ratio Compra/Venta %, Score, TAM, Coef KPI, Trailing/Forward P/E, P/B, EV/EBITDA, ROE, Profit/Gross/Operating margin, Dividend yield. Defaults de las 5 fichas: RC%, Score, Trailing P/E, ROE, Capitalización.
+- Verificado en vivo con 6 empresas (NVDA/AAPL/MSFT/GOOGL/AMZN/META); "Sin datos" cuando el parámetro no tiene valores (p.ej. Score sin tesis).
+
+
 ## 20 jul 2026 — Vista Tarjetas: orden, limpieza de cartera y donut de composición
 - **Nivel 1 (Portfolio) vista tarjetas:** ocultado el bloque de KPIs de dinero invertido (Total invertido / Total ahora / P&L / P&L%) — solo se muestra en vista tabla (`view !== "cards"`).
 - **Orden en vista tarjetas (Nivel 1 y 2):** nuevo `components/CardSort.jsx` (select + botón dirección) que gobierna el mismo estado `sort` de las tablas. Opciones: Alfabético (Ticker / Nombre en N2), Precio, Capitalización, Ratio Compra, Ratio Venta, Score, TAM, Coef KPI y **Próx. resultados**. Añadido caso `earnings` en `sortVal` (Portfolio) y accessor `earnings` (Watchlist) usando `nextEarningsInfo().days`.
