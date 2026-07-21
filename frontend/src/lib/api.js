@@ -232,6 +232,10 @@ export const kpiFileDelete = (companyId, fileId) =>
     api.delete(`/thesis/${companyId}/kpis/files/${fileId}`).then(r => r.data);
 export const kpiFileRetry = (companyId, fileId) =>
     api.post(`/thesis/${companyId}/kpis/files/${fileId}/retry`).then(r => r.data);
+export const kpiChat = (companyId, sessionId, message) =>
+    api.post(`/thesis/${companyId}/kpis/chat`, { session_id: sessionId, message }, { timeout: 120000 }).then(r => r.data);
+export const kpiChatSave = (companyId, sessionId, title) =>
+    api.post(`/thesis/${companyId}/kpis/chat/save`, { session_id: sessionId, title }).then(r => r.data);
 
 export const macroIndicators = (refresh = false) =>
     api.get(`/macro/indicators`, { params: { refresh } }).then(r => r.data);

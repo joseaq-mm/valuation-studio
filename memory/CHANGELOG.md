@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — KPIs: Chat con el analista (Fase 1)
+- **Backend (`routes/thesis.py`):** nuevos endpoints `POST /thesis/{company_id}/kpis/chat` (multi-turno, Gemini 3 Flash `gemini-3-flash-preview` vía Emergent LLM Key, memoria en proceso por sesión) y `POST /thesis/{company_id}/kpis/chat/save`. El chat se apoya en contexto compacto: fundamentales + coeficiente KPI + drivers/tesis de la empresa, **otras empresas del usuario como comparables**, y **búsqueda web** (`_run_searches`/DuckDuckGo) adjuntada por mensaje. Conversaciones persistidas en nueva colección `kpi_chats`.
+- **Guardar como documento:** crea un `kpi_files` con `kind:"chat"`, `selected:true`, título automático (del primer mensaje, renombrable). Como `_selected_doc_sources` ya lee el `extracted_text` de los seleccionados, al **Reanalizar** la conversación mueve los coeficientes particulares/global. Reutiliza toda la gestión de documentos (renombrar/descargar/borrar/seleccionar).
+- **Frontend:** nuevo `components/kpi/KpiChat.jsx` (sección desplegable en la página KPIs, tras Documentos), con sugerencias, memoria de conversación, fuentes citadas y botón "Guardar como documento" que refresca la lista de documentos. API en `api.js` (`kpiChat`, `kpiChatSave`).
+- Verificado end-to-end (usuario real con NVDA): turno 1 con 6 fuentes web, turno 2 con memoria + uso de comparables (coef NVDA 1.39 vs otras), y guardado del documento (kind chat, seleccionado). UI verificada por captura. Artefactos de prueba limpiados.
+
+
 ## 21 jul 2026 — Tooltips en títulos de sección (Tesis, Visual, Macro)
 - Añadidos tooltips explicativos (`HoverTip`, subrayado punteado + cursor de ayuda) en los títulos: **Tesis de inversión** (`thesis-title-tip`), **Visual** (`visual-title-tip`) y **Macro** (`macro-title-tip`), en la línea del anterior tooltip de KPIs.
 - Añadido import de `HoverTip` en `Thesis.jsx` (Visual y Macro ya lo tenían).

@@ -24,6 +24,7 @@ from services.thesis import (
     stage_tam_for_role, effective_stage_tam,
     detect_parent_thesis, aggregate_folder_tam,
     MODEL_PRESETS, get_model_preset, set_model_preset,
+    _run_searches,
 )
 from services.valuation import fetch_fundamentals_sync, compute_custom_ratios
 from services.timeline import get_monthly_closes_bulk
@@ -273,6 +274,14 @@ KPI_MAX_FILES = 10
 KPI_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 KPI_ALLOWED_EXT = {"pdf", "png", "jpg", "jpeg", "webp", "gif"}
 
+KPI_CHAT_MODEL = ("gemini", "gemini-3-flash-preview")
+KPI_CHAT_SYSTEM_BASE = """Eres el analista conversacional de KPIs de "Valuation Studio", integrado en la página de KPIs de una empresa concreta. Ayudas al usuario a razonar sobre la calidad operativa de esa empresa, sus tesis de crecimiento y cómo se compara con otras. Responde SIEMPRE en el idioma del usuario (por defecto español), de forma clara y concisa (2-6 frases; listas cortas solo si ayudan).
+
+Dispones de: (1) el CONTEXTO de la empresa (fundamentales, coeficiente KPI actual y sus drivers/tesis), (2) datos de otras empresas del usuario como comparables, y (3) resultados de búsqueda web recientes que se te adjuntan en cada mensaje entre corchetes. Usa la web solo cuando aporte y cita la fuente (dominio) cuando la uses.
+
+Sé honesto sobre la incertidumbre; no des recomendaciones de compra/venta concretas (la app es educativa). Cuando el usuario plantee una tesis (p.ej. "creo que esta empresa se convertirá en X"), ayúdale a contrastarla con datos y competidores y a identificar qué KPIs la confirmarían o la desmentirían. Recuerda que, si el usuario guarda esta conversación como documento, se tendrá en cuenta al recalcular el coeficiente KPI, así que sé riguroso."""
+
+
 _PERIOD_RE = re.compile(r"\b(q[1-4]|fy\s?\d{2,4}|h[12]|1h|2h|20\d{2}|19\d{2})\b", re.I)
 _DOC_STOP = {"the", "de", "del", "la", "el", "los", "las", "un", "una", "y", "and",
              "of", "for", "inc", "corp", "pdf", "a"}
@@ -458,6 +467,16 @@ class KpiFileSelectRequest(BaseModel):
 
 class KpiNewsRequest(BaseModel):
     query: Optional[str] = None
+
+
+class KpiChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+class KpiChatSaveRequest(BaseModel):
+    session_id: str
+    title: Optional[str] = None
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -2469,8 +2488,145 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.kpi_files.insert_one(rec)
         return {"file": _file_public(rec)}
 
-    @router.patch("/{company_id}/kpis/files/{file_id}")
-    async def update_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
+    # ----- KPI conversational assistant (Fase 1) -----
+    _kpi_chat_sessions = {}  # key -> LlmChat (in-process memory)
+
+    async def _kpi_chat_context(company_id: str, user_id: str):
+        """Compact context: this company (fundamentals + KPI coef + drivers), the
+        user's other companies (comparables) and the company's growth-driver theses."""
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
+        if not doc:
+            return None, None, None
+        company = doc.get("company") or {}
+        name = company.get("name") or doc.get("title") or company_id
+        ticker = company.get("ticker") or ""
+        lines = [f"EMPRESA ANALIZADA: {name} ({ticker})."]
+        cr = company.get("classic_ratios") or {}
+        fund = []
+        for k, lab in [("trailing_pe", "P/E"), ("forward_pe", "P/E fwd"), ("price_to_book", "P/B"),
+                       ("ev_to_ebitda", "EV/EBITDA"), ("roe", "ROE"), ("roic", "ROIC"), ("profit_margin", "margen neto")]:
+            v = cr.get(k)
+            if v is not None:
+                fund.append(f"{lab}={v}")
+        if fund:
+            lines.append("Fundamentales: " + ", ".join(fund) + ".")
+        snap = doc.get("kpi_snapshot") or {}
+        if snap.get("coef_global") is not None:
+            lines.append(f"Coeficiente KPI global actual: {snap['coef_global']} (rango 0.5–1.5; >1 a favor).")
+        dsum = [f"{d.get('name')} (coef {d.get('coef')})" for d in (snap.get("drivers") or []) if d.get("name")]
+        if dsum:
+            lines.append("Drivers/tesis con coeficiente: " + "; ".join(dsum) + ".")
+        kpi_bits = []
+        for k in (snap.get("kpis") or [])[:12]:
+            nm = k.get("name")
+            if not nm:
+                continue
+            kpi_bits.append(f"{nm}={k.get('value')} ({k.get('signal')})")
+        if kpi_bits:
+            lines.append("KPIs actuales: " + "; ".join(kpi_bits) + ".")
+        for d in _company_drivers(doc)[:6]:
+            if d.get("name"):
+                lines.append(f"Tesis '{d['name']}' — {d.get('fit_description') or d.get('demand_driver') or ''} (TAM {d.get('tam_busd')} B$).")
+        others = await db.theses.find(
+            {"user_id": user_id, "type": "company", "id": {"$ne": company_id}},
+            {"_id": 0, "company": 1, "kpi_snapshot": 1}).to_list(length=8)
+        comp = []
+        for o in others:
+            oc = o.get("company") or {}
+            if not oc.get("name"):
+                continue
+            ocoef = (o.get("kpi_snapshot") or {}).get("coef_global")
+            comp.append(f"{oc['name']} ({oc.get('ticker') or ''}) coef KPI {ocoef}")
+        if comp:
+            lines.append("OTRAS EMPRESAS DEL USUARIO (comparables): " + "; ".join(comp) + ".")
+        return name, ticker, "\n".join(lines)
+
+    @router.post("/{company_id}/kpis/chat")
+    async def kpi_chat(company_id: str, req: KpiChatRequest, user: Dict[str, Any] = Depends(auth_required)):
+        msg = (req.message or "").strip()
+        if not msg:
+            raise HTTPException(status_code=400, detail="Escribe un mensaje")
+        name, ticker, ctx = await _kpi_chat_context(company_id, user["user_id"])
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        key = f"{user['user_id']}:{company_id}:{req.session_id}"
+        chat_obj = _kpi_chat_sessions.get(key)
+        if chat_obj is None:
+            from emergentintegrations.llm.chat import LlmChat
+            if len(_kpi_chat_sessions) > 500:
+                _kpi_chat_sessions.clear()
+            system = KPI_CHAT_SYSTEM_BASE + "\n\nCONTEXTO ACTUAL:\n" + ctx
+            chat_obj = LlmChat(
+                api_key=os.environ["EMERGENT_LLM_KEY"], session_id=key, system_message=system,
+            ).with_model(*KPI_CHAT_MODEL)
+            _kpi_chat_sessions[key] = chat_obj
+
+        try:
+            web = await asyncio.to_thread(_run_searches, [f"{name} {msg}", msg], 4, 8)
+        except Exception:
+            web = []
+        web_block = ""
+        if web:
+            web_block = "\n\n[Resultados web recientes — úsalos si aportan y cita el dominio]\n" + \
+                "\n".join(f"- {w['title']}: {w['snippet']} ({w['url']})" for w in web[:6])
+
+        from emergentintegrations.llm.chat import UserMessage
+        try:
+            reply = await chat_obj.send_message(UserMessage(text=msg + web_block))
+        except Exception as e:
+            logger.exception("kpi chat error")
+            low = str(e).lower()
+            if "budget" in low or "quota" in low or "insufficient" in low:
+                raise HTTPException(status_code=402, detail="Se ha agotado el saldo de IA. Añade saldo a tu clave e inténtalo de nuevo.")
+            if "rate" in low or "429" in low:
+                raise HTTPException(status_code=429, detail="Demasiadas peticiones ahora mismo. Prueba en unos segundos.")
+            raise HTTPException(status_code=502, detail="No se pudo responder. Inténtalo de nuevo.")
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.kpi_chats.update_one(
+            {"session_id": req.session_id, "company_id": company_id, "user_id": user["user_id"]},
+            {"$setOnInsert": {"created_at": now, "company_name": name, "ticker": ticker},
+             "$push": {"messages": {"$each": [{"role": "user", "text": msg}, {"role": "assistant", "text": reply}]}},
+             "$set": {"updated_at": now}},
+            upsert=True)
+        return {"reply": reply, "sources": [{"title": w["title"], "url": w["url"]} for w in (web or [])[:6]]}
+
+    @router.post("/{company_id}/kpis/chat/save")
+    async def kpi_chat_save(company_id: str, req: KpiChatSaveRequest, user: Dict[str, Any] = Depends(auth_required)):
+        conv = await db.kpi_chats.find_one(
+            {"session_id": req.session_id, "company_id": company_id, "user_id": user["user_id"]}, {"_id": 0})
+        if not conv or not conv.get("messages"):
+            raise HTTPException(status_code=400, detail="No hay conversación que guardar todavía")
+        count = await db.kpi_files.count_documents(
+            {"company_id": company_id, "user_id": user["user_id"], "is_deleted": False})
+        if count >= KPI_MAX_FILES:
+            raise HTTPException(status_code=400, detail=f"Máximo {KPI_MAX_FILES} documentos por empresa. Borra alguno antiguo.")
+        parts = []
+        first_user = ""
+        for m in conv["messages"]:
+            who = "Usuario" if m.get("role") == "user" else "Asistente"
+            if m.get("role") == "user" and not first_user:
+                first_user = (m.get("text") or "").strip()
+            parts.append(f"{who}: {(m.get('text') or '').strip()}")
+        transcript = "\n\n".join(parts)
+        title = (req.title or "").strip()
+        if not title:
+            base = " ".join(first_user.split())[:60]
+            title = f"Conversación KPI · {base}" if base else "Conversación KPI"
+        fid = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        rec = {
+            "id": fid, "user_id": user["user_id"], "company_id": company_id,
+            "storage_path": None, "original_filename": title[:120], "display_name": title[:120],
+            "description": "Conversación con el analista de KPIs guardada como fuente.",
+            "content_type": "text/plain", "size": len(transcript.encode()), "ext": "txt", "kind": "chat",
+            "status": "ready", "selected": True, "is_deleted": False,
+            "extracted_text": transcript[:40000], "created_at": now,
+        }
+        await db.kpi_files.insert_one(rec)
+        return {"file": _file_public(rec)}
+
         upd, unset = {}, {}
         if req.selected is not None:
             upd["selected"] = bool(req.selected)

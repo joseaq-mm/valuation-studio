@@ -3,6 +3,7 @@ import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw
 import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
+import KpiChat from "@/components/kpi/KpiChat";
 import KpiNews from "@/components/kpi/KpiNews";
 import HoverTip from "@/components/HoverTip";
 import { freshnessInfo, freshnessTip } from "@/lib/freshness";
@@ -290,6 +291,9 @@ export default function Kpis() {
 
             {/* Document sources (available before & after analysis) */}
             {selId && <KpiDocuments companyId={selId} refreshKey={docsRefresh} />}
+
+            {/* Conversational KPI analyst — save chat as a document that feeds the coefficient */}
+            {selId && <KpiChat companyId={selId} onSaved={() => setDocsRefresh((n) => n + 1)} />}
 
             {/* Qualitative news (informs scores; aged out over time) */}
             {selId && <KpiNews companyId={selId} />}
