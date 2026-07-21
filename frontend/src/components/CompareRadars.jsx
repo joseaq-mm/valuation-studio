@@ -20,22 +20,33 @@ function HexCard({ metrics, rows, defaultKey, color, idx, highlight, onHighlight
             return (v == null || isNaN(v)) ? null : Number(v);
         });
         const valid = raws.filter((v) => v != null);
-        const min = valid.length ? Math.min(...valid) : 0;
-        const max = valid.length ? Math.max(...valid) : 0;
-        const span = max - min;
         const invert = metric.dir === "low";
+
+        // "goodness": bigger = better = closer to the vertex.
+        // - high/neutral: goodness = raw (higher raw wins).
+        // - low (P/E, EV/EBITDA, P/B…): lower POSITIVE is best. A negative multiple
+        //   means the denominator (earnings/EBITDA/book) is negative → unprofitable,
+        //   which is WORSE than any positive; and the more negative, the worse.
+        let maxPos = 0;
+        if (invert) {
+            const pos = valid.filter((v) => v > 0);
+            maxPos = pos.length ? Math.max(...pos) : 0;
+        }
+        const goods = raws.map((v) => {
+            if (v == null) return null;
+            if (!invert) return v;
+            return v > 0 ? (maxPos - v) : (v - maxPos);
+        });
+
+        const gValid = goods.filter((g) => g != null);
+        const gMin = gValid.length ? Math.min(...gValid) : 0;
+        const gMax = gValid.length ? Math.max(...gValid) : 0;
+        const span = gMax - gMin;
         const d = companies.map((r, i) => {
-            const raw = raws[i];
+            const g = goods[i];
             let norm = 0;
-            if (raw != null) {
-                if (span > 0) {
-                    const p = (raw - min) / span;          // 0..1 (higher raw → 1)
-                    norm = (invert ? 1 - p : p) * 90 + 10;  // near vertex = better
-                } else {
-                    norm = 55;
-                }
-            }
-            return { ticker: r.ticker, value: norm, raw };
+            if (g != null) norm = span > 0 ? ((g - gMin) / span) * 90 + 10 : 55;
+            return { ticker: r.ticker, value: norm, raw: raws[i] };
         });
         return { data: d, hasData: valid.length > 0 };
     }, [companies, metric]);

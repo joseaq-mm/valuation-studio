@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Hexágonos: tratamiento correcto de valores negativos (dir "low")
+- En métricas "menos es mejor" (EV/EBITDA, Trailing/Forward P/E, P/B) un múltiplo **negativo** significa denominador negativo (EBITDA/beneficio/patrimonio en pérdidas) → es lo PEOR, no lo mejor. Antes la normalización invertida lo mandaba al vértice.
+- Nueva función de "goodness" en `CompareRadars.jsx`: para dir `low`, positivos → cuanto menor mejor (`maxPos - v`); negativos → siempre por debajo de cualquier positivo y cuanto más negativo peor (`v - maxPos`). Se normaliza goodness a radio 10–100. dir `high`/`neutral` sin cambios.
+- Verificado (node): EV/EBITDA [16,30,45,−5] → radios [100,84,67,10] (el −5 al centro); [20,40,−3,−10] → [100,74,19,10].
+
+
 ## 21 jul 2026 — Botón "Volver" global + estado de Comparar persistente
 - Nuevo `components/BackButton.jsx` renderizado en `Layout.jsx` justo encima del contenido. Usa `navigate(-1)` (historial del router). Oculto en Home y cuando no hay entrada previa (`window.history.state.idx <= 0`). Aparece en todas las páginas. `data-testid="back-button"`.
 - **Comparar (`Compare.jsx`):** el estado (tickers + filas + empresa resaltada) se guarda en `sessionStorage` (`vs:compare-state`) y se restaura al montar. Así, al pulsar un nombre en la tabla → ir a la ficha → "Volver", la comparación sigue cargada sin re-fetch.
