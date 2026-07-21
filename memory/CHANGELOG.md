@@ -2,6 +2,11 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Limpieza: eliminados botones de vuelta específicos en Tesis
+- Quitados de `ThesisDetail.jsx` los enlaces "Volver a Tesis" (`back-to-thesis`) y "Volver a {empresa}" (`back-to-source-company`), ahora redundantes con el botón global "Volver". Eliminado también el estado/effect `sourceCompany` asociado y los imports `Link`/`ArrowLeft` que quedaban sin uso.
+- Cabecera de la ficha de tesis ahora solo mantiene el `RefreshButton` (alineado a la derecha).
+
+
 ## 21 jul 2026 — Hexágonos: tratamiento correcto de valores negativos (dir "low")
 - En métricas "menos es mejor" (EV/EBITDA, Trailing/Forward P/E, P/B) un múltiplo **negativo** significa denominador negativo (EBITDA/beneficio/patrimonio en pérdidas) → es lo PEOR, no lo mejor. Antes la normalización invertida lo mandaba al vértice.
 - Nueva función de "goodness" en `CompareRadars.jsx`: para dir `low`, positivos → cuanto menor mejor (`maxPos - v`); negativos → siempre por debajo de cualquier positivo y cuanto más negativo peor (`v - maxPos`). Se normaliza goodness a radio 10–100. dir `high`/`neutral` sin cambios.
