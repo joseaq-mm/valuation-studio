@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Rentabilidad: ROIC y ROCE (ficha + comparar + hexágonos)
+- **Backend (`valuation.py`):** ROE/ROA ya venían de Yahoo `info`. Añadido cálculo de **ROIC** = NOPAT/(patrimonio+deuda−caja), NOPAT = EBIT·(1−tax efectivo, fallback 21%) y **ROCE** = EBIT/(activos totales − pasivo corriente), leyendo `t.balance_sheet` + income statement. Nuevas claves `roic`, `roce` en `classic_ratios`. Verificado vía `/api/compare` (KO: roic 19,4% · roce 17,9%).
+- **Ficha empresa (`Company.jsx`):** filas ROIC y ROCE tras ROA en "Ratios clásicos", con tooltips y semáforos (`roic`: <0 destruye valor, <7% bajo, <15% aceptable, ≥15% excelente; `roce`: <10% bajo, <15% aceptable, ≥15% bueno).
+- **Comparar (`Compare.jsx`):** añadidas filas ROA, ROIC, ROCE a la tabla y como parámetros de los hexágonos (`dir: high`).
+- Nota: los tickers ya cacheados mostrarán ROIC/ROCE al refrescarse (TTL de `db.fundamentals`).
+
+
 ## 21 jul 2026 — Comparar hexágonos: dirección "mejor inversión" + resaltado de empresa
 - **Semántica del radio:** cerca del vértice = mejor para invertir. Añadido `dir` por métrica en `radarMetrics` (`Compare.jsx`): `low` invierte la escala (Trailing/Forward P/E, P/B, EV/EBITDA, Ratio Venta) para que la empresa cara quede hacia el centro; `high` (Score, TAM, KPI, RC%, ROE, márgenes, dividend yield); `neutral` (Precio, Capitalización = solo magnitud). Verificado: ARM (Trailing P/E 338) queda casi en el centro.
 - **Resaltado cruzado:** estado `highlight` en `Compare.jsx`. Clic en el chip (texto del ticker) o en el vértice de cualquier hexágono resalta esa empresa en los 5 diagramas a la vez (etiqueta en negrita roja + punto rojo). Chips con `data-testid` `chip-highlight-<T>` y `chip-remove-<T>`.

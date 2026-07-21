@@ -732,6 +732,48 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         projection_flags["revenue_cagr_fallback"] = True
 
     # Classic ratios from info
+    # --- ROIC & ROCE: not provided by Yahoo `info`; computed from statements. ---
+    # ROCE = EBIT / (Total Assets − Current Liabilities)
+    # ROIC = NOPAT / Invested Capital,  NOPAT = EBIT × (1 − effective tax)
+    #        Invested Capital = Total Equity + Total Debt − Cash
+    try:
+        bs = t.balance_sheet
+    except Exception:
+        bs = pd.DataFrame()
+
+    def _latest(series):
+        if series is None:
+            return None
+        try:
+            return _safe_float(series.iloc[0])
+        except Exception:
+            return None
+
+    ebit_latest = _latest(operating_income_series)
+    total_assets_latest = _latest(_get_row(bs, ["Total Assets", "TotalAssets"]))
+    curr_liab_latest = _latest(_get_row(bs, ["Current Liabilities", "Total Current Liabilities", "CurrentLiabilities"]))
+    equity_latest = _latest(_get_row(bs, ["Stockholders Equity", "Total Stockholder Equity", "TotalStockholderEquity", "StockholdersEquity", "Common Stock Equity"]))
+
+    roce = None
+    if ebit_latest is not None and total_assets_latest is not None and curr_liab_latest is not None:
+        cap_employed = total_assets_latest - curr_liab_latest
+        if cap_employed and cap_employed > 0:
+            roce = ebit_latest / cap_employed
+
+    tax_latest = _latest(_get_row(fin, ["Tax Provision", "Income Tax Expense", "TaxProvision"]))
+    pretax_latest = _latest(_get_row(fin, ["Pretax Income", "Income Before Tax", "PretaxIncome"]))
+    tax_rate = 0.21
+    if tax_latest is not None and pretax_latest and pretax_latest > 0:
+        tr = tax_latest / pretax_latest
+        if 0 <= tr <= 0.6:
+            tax_rate = tr
+
+    roic = None
+    if ebit_latest is not None and equity_latest is not None and total_debt is not None:
+        invested_capital = equity_latest + total_debt - (cash or 0)
+        if invested_capital and invested_capital > 0:
+            roic = (ebit_latest * (1 - tax_rate)) / invested_capital
+
     classic_ratios = {
         "trailing_pe": _safe_float(info.get("trailingPE")),
         "forward_pe": _safe_float(info.get("forwardPE")),
@@ -742,6 +784,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
         "ev_to_revenue": _safe_float(info.get("enterpriseToRevenue")),
         "roe": _safe_float(info.get("returnOnEquity")),
         "roa": _safe_float(info.get("returnOnAssets")),
+        "roic": roic,
+        "roce": roce,
         "profit_margin": _safe_float(info.get("profitMargins")),
         "debt_to_equity": _safe_float(info.get("debtToEquity")),
         "current_ratio": _safe_float(info.get("currentRatio")),

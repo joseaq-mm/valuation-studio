@@ -27,6 +27,8 @@ const ratioRows = [
     ["EV/Revenue", "ev_to_revenue", null, "Enterprise Value entre ventas. Variante de P/S que incluye la deuda. Útil para empresas con poca rentabilidad o pre-beneficio."],
     ["ROE", "roe", "pct", "Return on Equity: beneficio neto / patrimonio. Cuánto rinde el capital propio. > 15% bueno, > 20% excelente. Cuidado: un ROE alto con mucha deuda puede ser frágil."],
     ["ROA", "roa", "pct", "Return on Assets: beneficio neto / activos totales. Mide eficiencia del balance completo. > 5% decente, > 10% muy bueno. Mejor que ROE para comparar empresas con apalancamientos distintos."],
+    ["ROIC", "roic", "pct", "Return on Invested Capital: NOPAT (EBIT tras impuestos) / capital invertido (patrimonio + deuda − caja). Mide el retorno del capital realmente puesto a trabajar. > 10% crea valor si supera el coste del capital (WACC ~8-10%); > 15% excelente. Calculado a partir de los estados financieros."],
+    ["ROCE", "roce", "pct", "Return on Capital Employed: EBIT / capital empleado (activos totales − pasivo corriente). Similar al ROIC pero antes de impuestos y sobre todo el capital operativo. > 15% muy bueno. Útil en industriales y capital-intensivas. Calculado a partir del balance."],
     ["Profit margin", "profit_margin", "pct", "Beneficio neto / ingresos. > 10% saludable, > 20% excelente. Negativos = pérdidas. Compara siempre dentro del mismo sector (retail ~3%, software ~20%)."],
     ["Debt/Equity", "debt_to_equity", null, "Deuda total / patrimonio. < 0,5 conservador, 0,5-1,5 normal, > 2 apalancado. Depende mucho del sector (utilities y bancos toleran más)."],
     ["Current ratio", "current_ratio", null, "Activo corriente / pasivo corriente. Liquidez a corto plazo. > 1,5 saludable, < 1 riesgo. > 3 puede indicar caja parada sin uso productivo."],
@@ -174,6 +176,16 @@ const ratioHealth = (key, v) => {
             if (v < 0) return { color: R, label: "Pérdidas" };
             if (v < 0.02) return { color: R, label: "Bajo" };
             if (v < 0.05) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Bueno" };
+        case "roic":
+            if (v < 0) return { color: R, label: "Destruye valor" };
+            if (v < 0.07) return { color: R, label: "Bajo" };
+            if (v < 0.15) return { color: A, label: "Aceptable" };
+            return { color: G, label: "Excelente" };
+        case "roce":
+            if (v < 0) return { color: R, label: "Pérdidas" };
+            if (v < 0.10) return { color: R, label: "Bajo" };
+            if (v < 0.15) return { color: A, label: "Aceptable" };
             return { color: G, label: "Bueno" };
         case "profit_margin":
             if (v < 0) return { color: R, label: "Pérdidas" };
