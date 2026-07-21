@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { compare, thesisVisualData } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { getWatchlistTickers } from "@/lib/storage";
+import { getPortfolio } from "@/lib/portfolio";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 import { CompareRadars } from "@/components/CompareRadars";
+import HoverTip from "@/components/HoverTip";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,7 +65,14 @@ export default function Compare() {
 
     const loadFromWl = () => {
         const wl = getWatchlistTickers().slice(0, 6);
+        if (!wl.length) { toast.message("No tienes acciones en Nivel 2"); return; }
         setTickers(wl);
+    };
+
+    const loadFromPf = () => {
+        const pf = getPortfolio().map(p => p.ticker).slice(0, 6);
+        if (!pf.length) { toast.message("No tienes acciones en Nivel 1"); return; }
+        setTickers(pf);
     };
 
     const metricRows = [
@@ -166,10 +176,17 @@ export default function Compare() {
                             testid="compare-input"
                         />
                     </div>
-                    <button onClick={loadFromWl} className="btn-ghost" data-testid="compare-from-watchlist">{t("compare.load_watchlist")}</button>
-                    <button onClick={loadAll} className="btn-primary" disabled={!tickers.length || loading} data-testid="compare-load">
-                        {loading ? t("compare.running") : t("compare.run")}
-                    </button>
+                    <HoverTip text="Carga las 6 primeras acciones de tu Nivel 1 (cartera) en el comparador.">
+                        <button onClick={loadFromPf} className="btn-ghost" data-testid="compare-from-portfolio">Cargar Nivel 1</button>
+                    </HoverTip>
+                    <HoverTip text="Carga las 6 primeras acciones de tu Nivel 2 (watchlist) en el comparador.">
+                        <button onClick={loadFromWl} className="btn-ghost" data-testid="compare-from-watchlist">{t("compare.load_watchlist")}</button>
+                    </HoverTip>
+                    <HoverTip text="Se comparan un máximo de 6 empresas a la vez. Añade tickers y pulsa Comparar.">
+                        <button onClick={loadAll} className="btn-primary" disabled={!tickers.length || loading} data-testid="compare-load">
+                            {loading ? t("compare.running") : t("compare.run")}
+                        </button>
+                    </HoverTip>
                 </div>
                 {tickers.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-3">
@@ -199,8 +216,10 @@ export default function Compare() {
                                 <th className="overline text-left px-4 py-3 sticky left-0 bg-white">{t("compare.metric")}</th>
                                 {rows.map(r => (
                                     <th key={r.ticker} className="overline text-right px-4 py-3 border-l border-black/20">
-                                        <div className="font-mono text-base text-black">{r.ticker}</div>
-                                        <div className="font-sans text-[10px] text-[#4A4A4A] normal-case tracking-normal mt-1">{r.name}</div>
+                                        <Link to={`/company/${r.ticker}`} className="block group" data-testid={`compare-head-link-${r.ticker}`}>
+                                            <div className="font-mono text-base text-black group-hover:text-[#B32A22] transition-colors">{r.ticker}</div>
+                                            <div className="font-sans text-[10px] text-[#4A4A4A] normal-case tracking-normal mt-1 underline decoration-dotted underline-offset-2 group-hover:text-[#B32A22]">{r.name}</div>
+                                        </Link>
                                     </th>
                                 ))}
                             </tr>

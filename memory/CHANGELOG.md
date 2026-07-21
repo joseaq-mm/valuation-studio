@@ -2,6 +2,13 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Comparar: fixes y ampliaciones
+- **Tabla:** confirmadas filas ROA/ROIC/ROCE (no aparecían por caché previa; limpiada `db.fundamentals`). Nombres/tickers de la cabecera ahora **enlazan a la ficha** `/company/<T>` (`compare-head-link-<T>`).
+- **Toolbar:** añadido botón **"Cargar Nivel 1"** (carga las 6 primeras de la cartera) junto al de Nivel 2. Tooltips (`HoverTip`) en los tres botones: Nivel 1 / Nivel 2 explican que cargan las 6 primeras; Comparar avisa del máximo de 6 empresas.
+- **Hexágonos:** ahora **10 diagramas en 2 filas** (antes 5). Defaults fila 2: Ratio Venta %, ROIC, EV/EBITDA, Gross margin, Dividend yield.
+- Verificado en vivo (AAPL/MSFT/KO/NVDA): tabla con ROIC/ROCE, enlaces, tooltip visible, 10 selects.
+
+
 ## 21 jul 2026 — Rentabilidad: ROIC y ROCE (ficha + comparar + hexágonos)
 - **Backend (`valuation.py`):** ROE/ROA ya venían de Yahoo `info`. Añadido cálculo de **ROIC** = NOPAT/(patrimonio+deuda−caja), NOPAT = EBIT·(1−tax efectivo, fallback 21%) y **ROCE** = EBIT/(activos totales − pasivo corriente), leyendo `t.balance_sheet` + income statement. Nuevas claves `roic`, `roce` en `classic_ratios`. Verificado vía `/api/compare` (KO: roic 19,4% · roce 17,9%).
 - **Ficha empresa (`Company.jsx`):** filas ROIC y ROCE tras ROA en "Ratios clásicos", con tooltips y semáforos (`roic`: <0 destruye valor, <7% bajo, <15% aceptable, ≥15% excelente; `roce`: <10% bajo, <15% aceptable, ≥15% bueno).

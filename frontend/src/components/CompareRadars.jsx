@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 const COLORS = ["#052049", "#B32A22", "#1D7044", "#B8860B", "#5A189A"];
-const DEFAULT_KEYS = ["rc", "score", "trailing_pe", "roe", "mcap"];
+const DEFAULT_KEYS = ["rc", "score", "trailing_pe", "roe", "mcap", "rv", "roic", "ev_ebitda", "gross_margin", "dividend_yield"];
 const HL = "#B32A22";
 
 // One hexagon: axes = companies, single parameter chosen by the user.
@@ -103,7 +103,7 @@ export const CompareRadars = ({ metrics, rows, highlight, onHighlight, testid = 
                 Elige un parámetro en cada hexágono. <strong>Cuanto más cerca del vértice, mejor para la inversión</strong> (p.ej. en P/E o EV/EBITDA una empresa cara queda hacia el centro). Toca una empresa para resaltarla en los cinco.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                {Array.from({ length: 5 }).map((_, i) => (
+                {Array.from({ length: 10 }).map((_, i) => (
                     <HexCard
                         key={i}
                         idx={i}
