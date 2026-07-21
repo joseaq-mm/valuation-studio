@@ -16,6 +16,7 @@ import ThesisExplore from "@/components/thesis/ThesisExplore";
 import ModelPicker from "@/components/thesis/ModelPicker";
 import RefreshButton from "@/components/RefreshButton";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
+import HoverTip from "@/components/HoverTip";
 
 const EXAMPLES_COMPANY = ["NVDA", "ASML", "Novo Nordisk", "Inditex"];
 const EXAMPLES_TREND = ["Inteligencia artificial y centros de datos", "Transición energética y baterías", "GLP-1 y obesidad", "Defensa europea"];
@@ -543,7 +544,11 @@ export default function Thesis() {
                     <div className="mb-5 flex items-start justify-between gap-4">
                         <div className="min-w-0">
                             <div className="overline text-[#B32A22] mb-1">Thesis Engine · Análisis cualitativo con IA</div>
-                            <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">Tesis de inversión</h1>
+                            <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">
+                                <HoverTip text="Una tesis de inversión es el razonamiento que justifica por qué inviertes en algo: qué esperas que ocurra, por qué la empresa o tendencia ganará valor y qué debe cumplirse para acertar. Aquí la construyes y validas con ayuda de IA.">
+                                    <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="thesis-title-tip">Tesis de inversión</span>
+                                </HoverTip>
+                            </h1>
                             <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">
                                 Parte de una empresa y descubre las tesis (drivers de crecimiento) en las que encaja —
                                 o explora una tendencia y su cadena de valor de forma informativa.

@@ -670,7 +670,11 @@ export default function Visual() {
             {/* Header */}
             <div className="flex items-end justify-between mb-6 border-b border-black/20 pb-3">
                 <div>
-                    <h1 className="font-serif text-4xl text-black tracking-tight">Visual</h1>
+                    <h1 className="font-serif text-4xl text-black tracking-tight">
+                        <HoverTip text="Vista visual: un mapa interactivo donde cada empresa de tus niveles se sitúa según su valoración (Ratio Compra/Venta) y calidad cualitativa. Te da una foto global de dónde están las oportunidades de un vistazo.">
+                            <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="visual-title-tip">Visual</span>
+                        </HoverTip>
+                    </h1>
                     <div className="text-xs text-[#4A4A4A] mt-1 font-mono">
                         {selected.size} / {rows.length} empresas seleccionadas · {mapRows.length} visibles en el mapa
                     </div>

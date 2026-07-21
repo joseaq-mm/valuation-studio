@@ -628,7 +628,10 @@ export default function Macro() {
             <div className="overline text-[#B32A22] mb-1">Contexto de mercado · EEUU</div>
             <div className="flex items-end justify-between gap-3 flex-wrap mb-2">
                 <h1 className="font-serif text-4xl sm:text-5xl text-[#052049] flex items-center gap-2">
-                    <Globe2 size={32} className="text-[#052049]" /> Macro
+                    <Globe2 size={32} className="text-[#052049]" />
+                    <HoverTip text="Macro = contexto macroeconómico: los grandes indicadores de la economía (PIB, inflación, tipos de interés, empleo, energía…) que marcan el entorno en el que invierten todas las empresas. Ayuda a saber si el mercado está caro o barato en conjunto.">
+                        <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="macro-title-tip">Macro</span>
+                    </HoverTip>
                 </h1>
                 <button
                     onClick={() => load(true)}

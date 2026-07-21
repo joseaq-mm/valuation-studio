@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Tooltips en títulos de sección (Tesis, Visual, Macro)
+- Añadidos tooltips explicativos (`HoverTip`, subrayado punteado + cursor de ayuda) en los títulos: **Tesis de inversión** (`thesis-title-tip`), **Visual** (`visual-title-tip`) y **Macro** (`macro-title-tip`), en la línea del anterior tooltip de KPIs.
+- Añadido import de `HoverTip` en `Thesis.jsx` (Visual y Macro ya lo tenían).
+- Verificado en vivo en Macro (público). Tesis/Visual están en la vista con sesión (mismo patrón).
+
+
 ## 21 jul 2026 — Limpieza: eliminados botones de vuelta específicos en Tesis
 - Quitados de `ThesisDetail.jsx` los enlaces "Volver a Tesis" (`back-to-thesis`) y "Volver a {empresa}" (`back-to-source-company`), ahora redundantes con el botón global "Volver". Eliminado también el estado/effect `sourceCompany` asociado y los imports `Link`/`ArrowLeft` que quedaban sin uso.
 - Cabecera de la ficha de tesis ahora solo mantiene el `RefreshButton` (alineado a la derecha).
