@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Botón "Volver" global + estado de Comparar persistente
+- Nuevo `components/BackButton.jsx` renderizado en `Layout.jsx` justo encima del contenido. Usa `navigate(-1)` (historial del router). Oculto en Home y cuando no hay entrada previa (`window.history.state.idx <= 0`). Aparece en todas las páginas. `data-testid="back-button"`.
+- **Comparar (`Compare.jsx`):** el estado (tickers + filas + empresa resaltada) se guarda en `sessionStorage` (`vs:compare-state`) y se restaura al montar. Así, al pulsar un nombre en la tabla → ir a la ficha → "Volver", la comparación sigue cargada sin re-fetch.
+- Verificado en vivo: Comparar con NVDA/AAPL/KO → ficha de NVDA (botón Volver) → vuelta a Comparar con las 3 intactas.
+
+
 ## 21 jul 2026 — Comparar: fixes y ampliaciones
 - **Tabla:** confirmadas filas ROA/ROIC/ROCE (no aparecían por caché previa; limpiada `db.fundamentals`). Nombres/tickers de la cabecera ahora **enlazan a la ficha** `/company/<T>` (`compare-head-link-<T>`).
 - **Toolbar:** añadido botón **"Cargar Nivel 1"** (carga las 6 primeras de la cartera) junto al de Nivel 2. Tooltips (`HoverTip`) en los tres botones: Nivel 1 / Nivel 2 explican que cargan las 6 primeras; Comparar avisa del máximo de 6 empresas.

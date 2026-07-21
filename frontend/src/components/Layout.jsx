@@ -8,6 +8,7 @@ import AuthButton from "./AuthButton";
 import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
+import BackButton from "./BackButton";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -180,7 +181,10 @@ export default function Layout({ children }) {
                 </div>
             </header>
 
-            <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">{children}</main>
+            <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+                <BackButton />
+                {children}
+            </main>
 
             <footer className="border-t border-black/30 py-4 px-4 sm:px-6 text-xs text-[#4A4A4A]" data-testid="footer">
                 <div className="max-w-[1400px] mx-auto space-y-2">

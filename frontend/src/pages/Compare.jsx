@@ -35,6 +35,30 @@ export default function Compare() {
             .catch(() => setQual({}));
     }, []);
 
+    // Restore the last comparison (tickers + fetched rows + highlight) so returning
+    // to this page from a company detail keeps everything loaded — no re-fetch.
+    useEffect(() => {
+        try {
+            const saved = JSON.parse(sessionStorage.getItem("vs:compare-state") || "null");
+            if (saved && Array.isArray(saved.tickers) && saved.tickers.length) {
+                setTickers(saved.tickers);
+                if (Array.isArray(saved.rows)) setRows(saved.rows);
+                if (saved.highlight) setHighlight(saved.highlight);
+            }
+        } catch { /* ignore */ }
+    }, []);
+
+    // Persist comparison state on every change.
+    useEffect(() => {
+        try {
+            if (tickers.length || rows.length) {
+                sessionStorage.setItem("vs:compare-state", JSON.stringify({ tickers, rows, highlight }));
+            } else {
+                sessionStorage.removeItem("vs:compare-state");
+            }
+        } catch { /* ignore */ }
+    }, [tickers, rows, highlight]);
+
     const useDisplay = displayCur && displayCur !== "NATIVE";
     const convPrice = (r) => useDisplay ? fxConvert(r.current_price, r.currency) : r.current_price;
     const convMcap = (r) => useDisplay ? fxConvert(r.market_cap, r.currency) : r.market_cap;
