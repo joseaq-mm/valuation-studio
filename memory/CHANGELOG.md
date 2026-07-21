@@ -2,6 +2,12 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — Comparar hexágonos: dirección "mejor inversión" + resaltado de empresa
+- **Semántica del radio:** cerca del vértice = mejor para invertir. Añadido `dir` por métrica en `radarMetrics` (`Compare.jsx`): `low` invierte la escala (Trailing/Forward P/E, P/B, EV/EBITDA, Ratio Venta) para que la empresa cara quede hacia el centro; `high` (Score, TAM, KPI, RC%, ROE, márgenes, dividend yield); `neutral` (Precio, Capitalización = solo magnitud). Verificado: ARM (Trailing P/E 338) queda casi en el centro.
+- **Resaltado cruzado:** estado `highlight` en `Compare.jsx`. Clic en el chip (texto del ticker) o en el vértice de cualquier hexágono resalta esa empresa en los 5 diagramas a la vez (etiqueta en negrita roja + punto rojo). Chips con `data-testid` `chip-highlight-<T>` y `chip-remove-<T>`.
+- Verificado en vivo con NVDA/AAPL/MSFT/GOOGL/AMZN/ARM.
+
+
 ## 21 jul 2026 — Comparar: 5 hexágonos por parámetro
 - Nuevo `components/CompareRadars.jsx`: 5 fichas debajo de la tabla, cada una con un radar hexagonal (vértices = las empresas comparadas, hasta 6). Selector por ficha para elegir el parámetro; valores normalizados min-max (0-100) para forma comparable y tooltip con el valor real formateado.
 - Parámetros disponibles (`radarMetrics` en `Compare.jsx`): Precio, Capitalización, Ratio Compra/Venta %, Score, TAM, Coef KPI, Trailing/Forward P/E, P/B, EV/EBITDA, ROE, Profit/Gross/Operating margin, Dividend yield. Defaults de las 5 fichas: RC%, Score, Trailing P/E, ROE, Capitalización.

@@ -16,6 +16,7 @@ export default function Compare() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
+    const [highlight, setHighlight] = useState(null);  // ticker highlighted across radars
     const { display: displayCur, convert: fxConvert } = useFx();
     const { t } = useI18n();
     useThresholds();
@@ -120,23 +121,25 @@ export default function Compare() {
     ];
 
     // Raw numeric parameters for the hexagonal radars (below the table).
+    // dir: "high" = higher is better (closer to vertex), "low" = lower is better
+    // (inverted so cheap/attractive reaches the edge), "neutral" = magnitude only.
     const radarMetrics = [
-        { key: "price", label: "Precio", get: r => convPrice(r), fmt: v => fmtPrice(v, useDisplay ? displayCur : "") },
-        { key: "mcap", label: "Capitalización", get: r => convMcap(r), fmt: v => fmtNum(v) },
-        { key: "rc", label: "Ratio Compra %", get: r => r.custom_ratios?.ratio_compra_pct, fmt: v => fmtPctSigned(v) },
-        { key: "rv", label: "Ratio Venta %", get: r => r.custom_ratios?.ratio_venta_pct, fmt: v => fmtPctSigned(v) },
-        { key: "score", label: "Score", get: r => qual[r.ticker]?.score, fmt: v => Number(v).toFixed(1) },
-        { key: "tam", label: "TAM", get: r => qual[r.ticker]?.tam, fmt: v => Number(v).toFixed(2) },
-        { key: "kpi", label: "Coef KPI", get: r => qual[r.ticker]?.kpi_coef, fmt: v => Number(v).toFixed(2) },
-        { key: "trailing_pe", label: "Trailing P/E", get: r => r.classic_ratios?.trailing_pe, fmt: v => fmtNum(v) },
-        { key: "forward_pe", label: "Forward P/E", get: r => r.classic_ratios?.forward_pe, fmt: v => fmtNum(v) },
-        { key: "pb", label: "P/B", get: r => r.classic_ratios?.price_to_book, fmt: v => fmtNum(v) },
-        { key: "ev_ebitda", label: "EV/EBITDA", get: r => r.classic_ratios?.ev_to_ebitda, fmt: v => fmtNum(v) },
-        { key: "roe", label: "ROE", get: r => r.classic_ratios?.roe, fmt: v => fmtPct(v) },
-        { key: "profit_margin", label: "Profit margin", get: r => r.classic_ratios?.profit_margin, fmt: v => fmtPct(v) },
-        { key: "gross_margin", label: "Gross margin", get: r => r.gross_margin, fmt: v => fmtPct(v) },
-        { key: "operating_margin", label: "Operating margin", get: r => r.operating_margin, fmt: v => fmtPct(v) },
-        { key: "dividend_yield", label: "Dividend yield", get: r => r.classic_ratios?.dividend_yield, fmt: v => fmtPct(v) },
+        { key: "price", label: "Precio", get: r => convPrice(r), fmt: v => fmtPrice(v, useDisplay ? displayCur : ""), dir: "neutral" },
+        { key: "mcap", label: "Capitalización", get: r => convMcap(r), fmt: v => fmtNum(v), dir: "neutral" },
+        { key: "rc", label: "Ratio Compra %", get: r => r.custom_ratios?.ratio_compra_pct, fmt: v => fmtPctSigned(v), dir: "high" },
+        { key: "rv", label: "Ratio Venta %", get: r => r.custom_ratios?.ratio_venta_pct, fmt: v => fmtPctSigned(v), dir: "low" },
+        { key: "score", label: "Score", get: r => qual[r.ticker]?.score, fmt: v => Number(v).toFixed(1), dir: "high" },
+        { key: "tam", label: "TAM", get: r => qual[r.ticker]?.tam, fmt: v => Number(v).toFixed(2), dir: "high" },
+        { key: "kpi", label: "Coef KPI", get: r => qual[r.ticker]?.kpi_coef, fmt: v => Number(v).toFixed(2), dir: "high" },
+        { key: "trailing_pe", label: "Trailing P/E", get: r => r.classic_ratios?.trailing_pe, fmt: v => fmtNum(v), dir: "low" },
+        { key: "forward_pe", label: "Forward P/E", get: r => r.classic_ratios?.forward_pe, fmt: v => fmtNum(v), dir: "low" },
+        { key: "pb", label: "P/B", get: r => r.classic_ratios?.price_to_book, fmt: v => fmtNum(v), dir: "low" },
+        { key: "ev_ebitda", label: "EV/EBITDA", get: r => r.classic_ratios?.ev_to_ebitda, fmt: v => fmtNum(v), dir: "low" },
+        { key: "roe", label: "ROE", get: r => r.classic_ratios?.roe, fmt: v => fmtPct(v), dir: "high" },
+        { key: "profit_margin", label: "Profit margin", get: r => r.classic_ratios?.profit_margin, fmt: v => fmtPct(v), dir: "high" },
+        { key: "gross_margin", label: "Gross margin", get: r => r.gross_margin, fmt: v => fmtPct(v), dir: "high" },
+        { key: "operating_margin", label: "Operating margin", get: r => r.operating_margin, fmt: v => fmtPct(v), dir: "high" },
+        { key: "dividend_yield", label: "Dividend yield", get: r => r.classic_ratios?.dividend_yield, fmt: v => fmtPct(v), dir: "high" },
     ];
 
     return (
@@ -165,9 +168,17 @@ export default function Compare() {
                 {tickers.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-3">
                         {tickers.map(t => (
-                            <span key={t} className="font-mono text-sm border border-black px-2 py-1 flex items-center gap-2" data-testid={`chip-${t}`}>
-                                {t}
-                                <button onClick={() => remove(t)} className="text-[#B32A22]"><X size={12} /></button>
+                            <span key={t} className={`font-mono text-sm border px-2 py-1 flex items-center gap-2 ${highlight === t ? "border-[#B32A22] bg-[#B32A22]/10" : "border-black"}`} data-testid={`chip-${t}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setHighlight(highlight === t ? null : t)}
+                                    className={highlight === t ? "text-[#B32A22] font-bold" : "hover:text-[#B32A22]"}
+                                    title="Resaltar en los hexágonos"
+                                    data-testid={`chip-highlight-${t}`}
+                                >
+                                    {t}
+                                </button>
+                                <button onClick={() => remove(t)} className="text-[#B32A22]" data-testid={`chip-remove-${t}`}><X size={12} /></button>
                             </span>
                         ))}
                     </div>
@@ -204,7 +215,7 @@ export default function Compare() {
                 </div>
             )}
 
-            {rows.length > 0 && <CompareRadars metrics={radarMetrics} rows={rows} />}
+            {rows.length > 0 && <CompareRadars metrics={radarMetrics} rows={rows} highlight={highlight} onHighlight={setHighlight} />}
         </div>
     );
 }
