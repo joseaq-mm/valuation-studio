@@ -236,6 +236,10 @@ export const kpiChat = (companyId, sessionId, message) =>
     api.post(`/thesis/${companyId}/kpis/chat`, { session_id: sessionId, message }, { timeout: 120000 }).then(r => r.data);
 export const kpiChatSave = (companyId, sessionId, title) =>
     api.post(`/thesis/${companyId}/kpis/chat/save`, { session_id: sessionId, title }).then(r => r.data);
+export const kpiChatProposeThesis = (companyId, sessionId, origin = "usuario") =>
+    api.post(`/thesis/${companyId}/kpis/chat/propose-thesis`, { session_id: sessionId, origin }, { timeout: 90000 }).then(r => r.data);
+export const kpiChatAddThesis = (companyId, payload) =>
+    api.post(`/thesis/${companyId}/kpis/chat/add-thesis`, payload).then(r => r.data);
 
 export const macroIndicators = (refresh = false) =>
     api.get(`/macro/indicators`, { params: { refresh } }).then(r => r.data);

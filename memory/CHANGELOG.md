@@ -2,6 +2,14 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 21 jul 2026 — KPIs Chat: abierto por defecto + Fase 2 (proponer tesis nueva)
+- Chat de KPIs ahora **desplegado por defecto** (`open=true`).
+- **Fase 2 backend (`routes/thesis.py`):** el prompt del chat instruye a la IA a marcar con el token `[[TESIS_SUGERIDA]]` cuando detecta una tesis nueva con fundamento. Nuevos endpoints: `POST /kpis/chat/propose-thesis` (extrae del hilo una propuesta estructurada JSON: name, type actual/futuro, demand_driver, fit_description, rationale, tam_busd, relevance/win) y `POST /kpis/chat/add-thesis` (añade el driver a `trends` de la empresa con `added_from_chat`/`origin` y **encola su generación** vía `_enqueue_generation`, mismo mecanismo que el plan → camino congruente; el driver entra además como input de KPIs).
+- **Fase 2 frontend (`KpiChat.jsx`):** detecta y limpia el token; muestra banner "La IA sugiere una tesis nueva — ¿revisarla?" (pregunta al usuario cuando la idea es de la IA) y botón "Convertir en nueva tesis" (iniciada por el usuario). Tarjeta de propuesta **editable** con badge de origen (Idea de la IA / Idea tuya), pasos guiados, y al confirmar → tarjeta de éxito con enlace "Ver en la ficha de tesis" (`/thesis/{companyId}`). API `kpiChatProposeThesis`/`kpiChatAddThesis`.
+- **Fix de regresión:** una edición previa había dejado huérfano el cuerpo de `update_kpi_file` (PATCH de documentos KPI); restaurado el decorador `@router.patch`+def. Renombrar/seleccionar documentos vuelve a funcionar.
+- Verificado end-to-end con usuario real (AMD/NVDA): token IA emitido, propuesta estructurada correcta, add-thesis añade driver + encola job, y UI de propuesta/confirmación. Artefactos de prueba limpiados.
+
+
 ## 21 jul 2026 — KPIs: Chat con el analista (Fase 1)
 - **Backend (`routes/thesis.py`):** nuevos endpoints `POST /thesis/{company_id}/kpis/chat` (multi-turno, Gemini 3 Flash `gemini-3-flash-preview` vía Emergent LLM Key, memoria en proceso por sesión) y `POST /thesis/{company_id}/kpis/chat/save`. El chat se apoya en contexto compacto: fundamentales + coeficiente KPI + drivers/tesis de la empresa, **otras empresas del usuario como comparables**, y **búsqueda web** (`_run_searches`/DuckDuckGo) adjuntada por mensaje. Conversaciones persistidas en nueva colección `kpi_chats`.
 - **Guardar como documento:** crea un `kpi_files` con `kind:"chat"`, `selected:true`, título automático (del primer mensaje, renombrable). Como `_selected_doc_sources` ya lee el `extracted_text` de los seleccionados, al **Reanalizar** la conversación mueve los coeficientes particulares/global. Reutiliza toda la gestión de documentos (renombrar/descargar/borrar/seleccionar).

@@ -279,7 +279,9 @@ KPI_CHAT_SYSTEM_BASE = """Eres el analista conversacional de KPIs de "Valuation 
 
 Dispones de: (1) el CONTEXTO de la empresa (fundamentales, coeficiente KPI actual y sus drivers/tesis), (2) datos de otras empresas del usuario como comparables, y (3) resultados de búsqueda web recientes que se te adjuntan en cada mensaje entre corchetes. Usa la web solo cuando aporte y cita la fuente (dominio) cuando la uses.
 
-Sé honesto sobre la incertidumbre; no des recomendaciones de compra/venta concretas (la app es educativa). Cuando el usuario plantee una tesis (p.ej. "creo que esta empresa se convertirá en X"), ayúdale a contrastarla con datos y competidores y a identificar qué KPIs la confirmarían o la desmentirían. Recuerda que, si el usuario guarda esta conversación como documento, se tendrá en cuenta al recalcular el coeficiente KPI, así que sé riguroso."""
+Sé honesto sobre la incertidumbre; no des recomendaciones de compra/venta concretas (la app es educativa). Cuando el usuario plantee una tesis (p.ej. "creo que esta empresa se convertirá en X"), ayúdale a contrastarla con datos y competidores y a identificar qué KPIs la confirmarían o la desmentirían. Recuerda que, si el usuario guarda esta conversación como documento, se tendrá en cuenta al recalcular el coeficiente KPI, así que sé riguroso.
+
+MUY IMPORTANTE — SUGERIR TESIS NUEVA: si durante la conversación identificas un DRIVER DE CRECIMIENTO nuevo y con fundamento que merecería añadirse como una tesis independiente de esta empresa (y que NO duplique las tesis/drivers que ya tiene), termina tu mensaje con una última línea que contenga EXACTAMENTE el token [[TESIS_SUGERIDA]] (sin nada más en esa línea). No abuses de él: úsalo solo cuando de verdad haya surgido una idea de tesis clara. Antes del token, explica en una frase qué tesis propondrías. Si el usuario es quien pide crear la tesis, no necesitas el token."""
 
 
 _PERIOD_RE = re.compile(r"\b(q[1-4]|fy\s?\d{2,4}|h[12]|1h|2h|20\d{2}|19\d{2})\b", re.I)
@@ -477,6 +479,24 @@ class KpiChatRequest(BaseModel):
 class KpiChatSaveRequest(BaseModel):
     session_id: str
     title: Optional[str] = None
+
+
+class KpiProposeThesisRequest(BaseModel):
+    session_id: str
+    origin: Optional[str] = "usuario"  # "ia" | "usuario"
+
+
+class KpiAddThesisRequest(BaseModel):
+    name: str
+    type: Optional[str] = "actual"  # "actual" | "futuro"
+    demand_driver: Optional[str] = ""
+    fit_description: Optional[str] = ""
+    rationale: Optional[str] = ""
+    tam_busd: Optional[float] = None
+    relevance_score: Optional[int] = None
+    win_probability: Optional[int] = None
+    origin: Optional[str] = "usuario"
+    session_id: Optional[str] = None
 
 
 class SaveTendenciaRequest(BaseModel):
@@ -2627,6 +2647,110 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.kpi_files.insert_one(rec)
         return {"file": _file_public(rec)}
 
+    @router.post("/{company_id}/kpis/chat/propose-thesis")
+    async def kpi_chat_propose(company_id: str, req: KpiProposeThesisRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """From the current conversation, extract ONE structured new-thesis proposal
+        (a growth driver) for the company. Does not add anything yet."""
+        conv = await db.kpi_chats.find_one(
+            {"session_id": req.session_id, "company_id": company_id, "user_id": user["user_id"]}, {"_id": 0})
+        if not conv or not conv.get("messages"):
+            raise HTTPException(status_code=400, detail="No hay conversación de la que extraer una tesis")
+        name, ticker, ctx = await _kpi_chat_context(company_id, user["user_id"])
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        transcript = "\n".join(
+            f"{'Usuario' if m.get('role') == 'user' else 'Asistente'}: {(m.get('text') or '').strip()}"
+            for m in conv["messages"])[-8000:]
+        propose_system = (
+            "Eres un analista que propone tesis de inversión (drivers de crecimiento) para una empresa. "
+            "A partir del contexto y la conversación, extrae LA tesis nueva más prometedora y con fundamento que haya "
+            "surgido, que NO duplique las tesis/drivers que la empresa ya tiene. Devuelve SOLO un objeto JSON válido, sin texto extra, con las claves: "
+            "name (título corto, 3-8 palabras), type ('actual' si es crecimiento ya en marcha o 'futuro' si es una apuesta futura), "
+            "demand_driver (qué demanda la impulsa, 1-2 frases), fit_description (por qué encaja con esta empresa, 1-2 frases), "
+            "rationale (razón resumida, 1 frase), tam_busd (estimación numérica del mercado direccionable en miles de millones de $, número), "
+            "relevance_score (0-100), win_probability (0-10). Responde en español."
+        )
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"propose-{uuid.uuid4().hex}",
+            system_message=propose_system,
+        ).with_model(*KPI_CHAT_MODEL)
+        try:
+            raw = await chat.send_message(UserMessage(text=f"CONTEXTO DE LA EMPRESA:\n{ctx}\n\nCONVERSACIÓN:\n{transcript}\n\nDevuelve SOLO el JSON."))
+        except Exception:
+            logger.exception("kpi propose-thesis error")
+            raise HTTPException(status_code=502, detail="No se pudo generar la propuesta de tesis. Inténtalo de nuevo.")
+        import json as _json
+        txt = (raw or "").strip()
+        if "```" in txt:
+            txt = txt.split("```")[1] if txt.split("```")[1].strip().startswith("{") else txt
+            txt = txt.replace("json", "", 1).strip() if txt.lower().startswith("json") else txt
+        m = re.search(r"\{.*\}", txt, re.DOTALL)
+        if not m:
+            raise HTTPException(status_code=502, detail="No se pudo interpretar la propuesta de tesis. Inténtalo de nuevo.")
+        try:
+            data = _json.loads(m.group(0))
+        except Exception:
+            raise HTTPException(status_code=502, detail="No se pudo interpretar la propuesta de tesis. Inténtalo de nuevo.")
+        def _num(v, d=None):
+            try:
+                return float(v)
+            except Exception:
+                return d
+        proposal = {
+            "name": (data.get("name") or "").strip()[:120],
+            "type": "futuro" if str(data.get("type")).strip().lower() == "futuro" else "actual",
+            "demand_driver": (data.get("demand_driver") or "").strip()[:600],
+            "fit_description": (data.get("fit_description") or "").strip()[:600],
+            "rationale": (data.get("rationale") or "").strip()[:400],
+            "tam_busd": _num(data.get("tam_busd"), 0.0) or 0.0,
+            "relevance_score": int(_num(data.get("relevance_score"), 70) or 70),
+            "win_probability": int(_num(data.get("win_probability"), 6) or 6),
+        }
+        if not proposal["name"]:
+            raise HTTPException(status_code=502, detail="La IA no identificó una tesis clara. Sigue conversando y vuelve a intentarlo.")
+        return {"proposal": proposal, "origin": req.origin or "usuario"}
+
+    @router.post("/{company_id}/kpis/chat/add-thesis")
+    async def kpi_chat_add_thesis(company_id: str, req: KpiAddThesisRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Add the confirmed thesis as a new growth driver to the company plan and
+        enqueue its generation — the same machinery as the plan page (congruent path)."""
+        uid = user["user_id"]
+        nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+        doc = await db.theses.find_one({"id": company_id, "user_id": uid, "type": "company"}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        name = (req.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="La tesis necesita un título")
+        trends = doc.get("trends") or []
+        if any(nrm(t.get("name")) == nrm(name) for t in trends):
+            raise HTTPException(status_code=400, detail="Ya existe una tesis con ese nombre en esta empresa")
+        now = datetime.now(timezone.utc).isoformat()
+        entry = {
+            "name": name[:120],
+            "type": "futuro" if str(req.type).strip().lower() == "futuro" else "actual",
+            "demand_driver": (req.demand_driver or "").strip()[:600],
+            "fit_description": (req.fit_description or "").strip()[:600],
+            "rationale": (req.rationale or "").strip()[:400],
+            "relevance_score": int(req.relevance_score) if req.relevance_score is not None else 70,
+            "win_probability": int(req.win_probability) if req.win_probability is not None else 6,
+            "tam_busd": float(req.tam_busd) if req.tam_busd else 0.0,
+            "value_chain_role": "Líder",
+            "splits": [],
+            "plan": "whole",
+            "added_from_chat": True,
+            "origin": "ia" if str(req.origin).strip().lower() == "ia" else "usuario",
+            "added_at": now,
+        }
+        trends.append(entry)
+        await db.theses.update_one({"id": company_id, "user_id": uid}, {"$set": {"trends": trends}})
+        jid, st, _a = await _enqueue_generation(
+            uid, "trend", name, from_company=company_id, core=name, develop_whole=True)
+        return {"ok": True, "job_id": jid, "status": st, "thesis_id": company_id, "driver": entry}
+
+    @router.patch("/{company_id}/kpis/files/{file_id}")
+    async def update_kpi_file(company_id: str, file_id: str, req: KpiFileSelectRequest, user: Dict[str, Any] = Depends(auth_required)):
         upd, unset = {}, {}
         if req.selected is not None:
             upd["selected"] = bool(req.selected)
