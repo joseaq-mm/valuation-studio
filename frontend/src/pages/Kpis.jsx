@@ -209,7 +209,11 @@ export default function Kpis() {
         return (
             <div data-testid="kpis-page">
                 <div className="overline text-[#B32A22] mb-2">Validación operativa</div>
-                <h1 className="font-serif text-4xl mb-4">KPIs</h1>
+                <h1 className="font-serif text-4xl mb-4">
+                    <HoverTip text="KPIs = Indicadores Clave de Rendimiento (Key Performance Indicators): las métricas operativas más importantes de cada empresa (ARR, NRR, clientes, backlog, suscriptores…) que usamos para validar tu tesis.">
+                        <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="kpis-title-tip-guest">KPIs</span>
+                    </HoverTip>
+                </h1>
                 <div className="border border-black bg-white p-8 text-center text-[#4A4A4A]">
                     Inicia sesión con Google para validar tus tesis con los KPIs operativos de cada empresa.
                 </div>
@@ -222,7 +226,12 @@ export default function Kpis() {
             <div className="flex items-start justify-between gap-4 flex-wrap mb-2">
                 <div>
                     <div className="overline text-[#B32A22] mb-1">Validación operativa de la tesis</div>
-                    <h1 className="font-serif text-4xl leading-none flex items-center gap-2"><BarChart3 size={30} /> KPIs</h1>
+                    <h1 className="font-serif text-4xl leading-none flex items-center gap-2">
+                        <BarChart3 size={30} />
+                        <HoverTip text="KPIs = Indicadores Clave de Rendimiento (Key Performance Indicators): las métricas operativas más importantes de cada empresa (ARR, NRR, clientes, backlog, suscriptores…) que usamos para validar tu tesis.">
+                            <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="kpis-title-tip">KPIs</span>
+                        </HoverTip>
+                    </h1>
                 </div>
             </div>
             <p className="text-sm text-[#4A4A4A] max-w-2xl mb-6">
