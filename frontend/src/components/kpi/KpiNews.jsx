@@ -18,7 +18,6 @@ export default function KpiNews({ companyId, onChanged }) {
     const [open, setOpen] = useState(false);
     const [irUrls, setIrUrls] = useState([]);
     const [irInput, setIrInput] = useState("");
-    const [irOpen, setIrOpen] = useState(false);
     const [irRefreshing, setIrRefreshing] = useState(false);
     const [irSaving, setIrSaving] = useState(false);
 
@@ -34,7 +33,7 @@ export default function KpiNews({ companyId, onChanged }) {
         catch { setIrUrls([]); }
     }, [companyId]);
 
-    useEffect(() => { load(); loadIr(); setOpen(false); setIrOpen(false); }, [load, loadIr]);
+    useEffect(() => { load(); loadIr(); setOpen(false); }, [load, loadIr]);
 
     const saveIr = async (urls) => {
         setIrSaving(true);
@@ -123,47 +122,44 @@ export default function KpiNews({ companyId, onChanged }) {
                     {/* IR (Investor Relations) sources — daily auto-ingest */}
                     <div className="border border-[#052049]/20 bg-[#F4F6FA] p-2.5 mb-3" data-testid="kpi-ir-sources">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <button onClick={() => setIrOpen((o) => !o)} className="flex items-center gap-1.5 group" data-testid="kpi-ir-toggle">
-                                {irOpen ? <ChevronDown size={14} className="text-[#052049]" /> : <ChevronRight size={14} className="text-[#052049]" />}
+                            <div className="flex items-center gap-1.5">
                                 <Building2 size={13} className="text-[#052049]" />
-                                <span className="overline text-[#052049] group-hover:text-black">Fuentes IR</span>
+                                <span className="overline text-[#052049]">Fuentes IR</span>
                                 <span className="text-[11px] text-[#7A7A7A] normal-case tracking-normal">{irUrls.length ? `${irUrls.length} configurada${irUrls.length === 1 ? "" : "s"} · revisión diaria` : "— añade la web de noticias/IR de la empresa"}</span>
-                            </button>
+                            </div>
                             {irUrls.length > 0 && (
                                 <button onClick={refreshIr} disabled={irRefreshing} className="btn-ghost !py-1 !px-2.5 inline-flex items-center gap-1.5 text-xs disabled:opacity-40" data-testid="kpi-ir-refresh-btn">
                                     {irRefreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Actualizar desde IR
                                 </button>
                             )}
                         </div>
-                        {irOpen && (
-                            <div className="mt-2">
-                                <p className="text-[11px] text-[#7A7A7A] mb-2">Pega la URL de la sala de prensa / resultados (IR) de la empresa (admite RSS). Se revisan <strong>automáticamente cada día</strong>; las novedades se añaden aquí, se marcan como “pendiente actualizar” y se suman al Radar semanal.</p>
-                                {irUrls.length > 0 && (
-                                    <ul className="space-y-1 mb-2" data-testid="kpi-ir-list">
-                                        {irUrls.map((u) => (
-                                            <li key={u} className="flex items-center gap-2 text-xs bg-white border border-black/10 px-2 py-1" data-testid={`kpi-ir-item`}>
-                                                <Rss size={11} className="text-[#B8860B] shrink-0" />
-                                                <a href={u} target="_blank" rel="noreferrer" className="text-[#052049] truncate flex-1 hover:underline">{u}</a>
-                                                <button onClick={() => removeIr(u)} disabled={irSaving} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-0.5 shrink-0" title="Quitar" data-testid="kpi-ir-remove"><X size={13} /></button>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        value={irInput}
-                                        onChange={(e) => setIrInput(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIr(); } }}
-                                        placeholder="https://investor.empresa.com/news  (o feed RSS)"
-                                        className="flex-1 border border-black/30 bg-white px-2 py-1 text-xs outline-none focus:border-[#052049]"
-                                        data-testid="kpi-ir-input"
-                                    />
-                                    <button onClick={addIr} disabled={irSaving || !irInput.trim()} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1 disabled:opacity-40" data-testid="kpi-ir-add">
-                                        {irSaving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Añadir
-                                    </button>
-                                </div>
+                        <div className="mt-2">
+                            <p className="text-[11px] text-[#7A7A7A] mb-2">Pega la URL de la sala de prensa / resultados (IR) de la empresa (admite RSS). Se revisan <strong>automáticamente cada día</strong>; las novedades se añaden aquí, se marcan como “pendiente actualizar” y se suman al Radar semanal.</p>
+                            {irUrls.length > 0 && (
+                                <ul className="space-y-1 mb-2" data-testid="kpi-ir-list">
+                                    {irUrls.map((u) => (
+                                        <li key={u} className="flex items-center gap-2 text-xs bg-white border border-black/10 px-2 py-1" data-testid={`kpi-ir-item`}>
+                                            <Rss size={11} className="text-[#B8860B] shrink-0" />
+                                            <a href={u} target="_blank" rel="noreferrer" className="text-[#052049] truncate flex-1 hover:underline">{u}</a>
+                                            <button onClick={() => removeIr(u)} disabled={irSaving} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-0.5 shrink-0" title="Quitar" data-testid="kpi-ir-remove"><X size={13} /></button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <input
+                                    value={irInput}
+                                    onChange={(e) => setIrInput(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIr(); } }}
+                                    placeholder="https://investor.empresa.com/news  (o feed RSS)"
+                                    className="flex-1 border border-black/30 bg-white px-2 py-1 text-xs outline-none focus:border-[#052049]"
+                                    data-testid="kpi-ir-input"
+                                />
+                                <button onClick={addIr} disabled={irSaving || !irInput.trim()} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1 disabled:opacity-40" data-testid="kpi-ir-add">
+                                    {irSaving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Añadir
+                                </button>
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     {loading && news.length === 0 ? (
