@@ -319,9 +319,14 @@ export default function Kpis() {
                             Hay cambios sin reflejar en el coeficiente{stale.reasons?.length ? ` (${stale.reasons.join(", ")})` : ""}. Reanaliza para actualizarlo.
                         </span>
                     </div>
-                    <button onClick={() => analyze("full")} disabled={loading} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1.5 shrink-0 disabled:opacity-40" data-testid="kpi-stale-reanalyze">
-                        <RefreshCw size={13} /> Reanalizar
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => analyze("incremental")} disabled={loading} className="btn-ghost !py-1 !px-2.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40" data-testid="kpi-stale-incremental" title="Recalcula solo con los cambios nuevos (más rápido y barato)">
+                            <Zap size={13} /> Actualizar solo con los cambios
+                        </button>
+                        <button onClick={() => analyze("full")} disabled={loading} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1.5 disabled:opacity-40" data-testid="kpi-stale-reanalyze">
+                            <RefreshCw size={13} /> Reanalizar
+                        </button>
+                    </div>
                 </div>
             )}
 
