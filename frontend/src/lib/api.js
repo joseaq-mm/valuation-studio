@@ -253,3 +253,9 @@ export const kpiNewsSearch = (companyId, query = null, onStatus = null) =>
     api.post(`/thesis/${companyId}/kpis/news`, { query }).then(r => startAndPoll(r.data, onStatus));
 export const kpiNewsDelete = (companyId, newsId) =>
     api.delete(`/thesis/${companyId}/kpis/news/${newsId}`).then(r => r.data);
+export const kpiIrSourcesGet = (companyId) =>
+    api.get(`/thesis/${companyId}/kpis/ir-sources`).then(r => r.data);
+export const kpiIrSourcesSet = (companyId, urls) =>
+    api.put(`/thesis/${companyId}/kpis/ir-sources`, { urls }).then(r => r.data);
+export const kpiIrRefresh = (companyId, onStatus = null) =>
+    api.post(`/thesis/${companyId}/kpis/ir-refresh`).then(r => startAndPoll(r.data, onStatus));

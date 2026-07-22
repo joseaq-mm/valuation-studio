@@ -300,6 +300,30 @@ async def _dispatch_to_users(db, users: List[Dict[str, Any]], new_trends: List[D
             continue
         user_news_keys = {c["ticker"] for c in cs}
         user_news = {tk: items for tk, items in news_by_ticker.items() if tk in user_news_keys}
+        # Fold in IR-sourced news collected daily (origin="ir") so it also reaches the radar.
+        cmap = {c["ticker"]: c.get("plan_id") for c in cs}
+        for tk in user_news_keys:
+            cid = cmap.get(tk)
+            if not cid:
+                continue
+            try:
+                ir_items = await db.kpi_news.find(
+                    {"company_id": cid, "user_id": uid, "origin": "ir", "is_deleted": {"$ne": True}},
+                    {"_id": 0}).sort("published_at", -1).to_list(length=6)
+            except Exception:
+                ir_items = []
+            if not ir_items:
+                continue
+            existing = user_news.get(tk, [])
+            seen_urls = {(i.get("url") or "").strip() for i in existing if i.get("url")}
+            merged = list(existing)
+            for it in ir_items:
+                u2 = (it.get("url") or "").strip()
+                if u2 and u2 in seen_urls:
+                    continue
+                seen_urls.add(u2)
+                merged.append(it)
+            user_news[tk] = merged
         n_news = sum(len(v) for v in user_news.values())
         # Persist this user's radar news into the KPI news store (origin="radar"),
         # so it feeds the KPI module's qualitative context (decayed/pruned over time).

@@ -9,6 +9,8 @@ import asyncio
 import logging
 import os
 import re
+import hashlib
+import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -244,8 +246,79 @@ def _news_sync(company: str, ticker: str, drivers: list, query: str = None) -> l
     return result if isinstance(result, list) else []
 
 
-def _kpi_search_sync(company: str, ticker: str, drivers: list, query: str, docs: list = None) -> dict:
-    """Blocking targeted single-KPI search (live search + document digests + LLM)."""
+def _ir_fetch_sources(urls: list) -> tuple:
+    """Fetch IR pages/feeds → (sources[{title,url,snippet}], content_hash).
+    RSS/Atom feeds yield one source per entry; plain HTML yields the page text.
+    The hash lets the daily job skip the LLM entirely when nothing changed."""
+    from bs4 import BeautifulSoup
+    sources, blobs = [], []
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; ValuationStudio/1.0; +https://valuation)"}
+    for u in (urls or [])[:10]:
+        u = (u or "").strip()
+        if not u:
+            continue
+        try:
+            r = requests.get(u, headers=headers, timeout=12)
+            body = r.text or ""
+            ctype = (r.headers.get("content-type") or "").lower()
+        except Exception:
+            continue
+        if not body:
+            continue
+        blobs.append(body[:20000])
+        head = body.lstrip()[:300].lower()
+        is_feed = ("<rss" in head or "<feed" in head or "rss+xml" in ctype or "atom+xml" in ctype or "application/xml" in ctype)
+        try:
+            soup = BeautifulSoup(body, "xml" if is_feed else "html.parser")
+        except Exception:
+            soup = BeautifulSoup(body, "html.parser")
+        if is_feed:
+            for e in soup.find_all(["item", "entry"])[:15]:
+                t = e.find("title")
+                link = e.find("link")
+                href = ""
+                if link:
+                    href = (link.get("href") or link.get_text() or "").strip()
+                desc = e.find(["description", "summary", "content"])
+                sources.append({
+                    "title": (t.get_text().strip() if t else "")[:200],
+                    "url": (href or u)[:500],
+                    "snippet": (desc.get_text().strip() if desc else "")[:400],
+                })
+        else:
+            for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
+                tag.decompose()
+            title = (soup.title.get_text().strip() if soup.title else u)[:200]
+            text = " ".join(soup.get_text(" ").split())[:4000]
+            if text:
+                sources.append({"title": title, "url": u, "snippet": text})
+    h = hashlib.sha256("\n".join(blobs).encode("utf-8", "ignore")).hexdigest() if blobs else ""
+    return sources, h
+
+
+def _ir_extract_sync(company: str, ticker: str, drivers: list, sources: list) -> list:
+    """Structure IR sources into scored news items (same LLM extractor as search)."""
+    if not sources:
+        return []
+    result, _cost = run_costed(run_company_news(company, ticker, drivers, sources))
+    return result if isinstance(result, list) else []
+
+
+def _normalize_urls(urls) -> list:
+    out, seen = [], set()
+    for u in (urls or []):
+        u = (u or "").strip()
+        if not u:
+            continue
+        if not re.match(r"^https?://", u, re.I):
+            u = "https://" + u
+        if u.lower() in seen:
+            continue
+        seen.add(u.lower())
+        out.append(u[:500])
+        if len(out) >= 10:
+            break
+    return out
     sources = gather_kpi_search_sources(company, ticker, query)
     if docs:
         sources = sources + docs
@@ -506,6 +579,10 @@ class KpiFileSelectRequest(BaseModel):
 
 class KpiNewsRequest(BaseModel):
     query: Optional[str] = None
+
+
+class KpiIrSourcesRequest(BaseModel):
+    urls: List[str] = Field(default_factory=list)
 
 
 class KpiChatRequest(BaseModel):
@@ -2994,6 +3071,97 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             raise HTTPException(status_code=404, detail="Noticia no encontrada")
         return {"ok": True}
 
+    # ----- IR (Investor Relations) sources: auto-daily news ingestion -----
+    @router.get("/{company_id}/kpis/ir-sources")
+    async def get_ir_sources(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "ir_urls": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        return {"urls": doc.get("ir_urls") or []}
+
+    @router.put("/{company_id}/kpis/ir-sources")
+    async def set_ir_sources(company_id: str, req: KpiIrSourcesRequest, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "id": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        urls = _normalize_urls(req.urls)
+        await db.theses.update_one(
+            {"id": company_id, "user_id": user["user_id"]},
+            {"$set": {"ir_urls": urls}, "$unset": {"ir_last_hash": ""}})
+        return {"urls": urls}
+
+    async def _run_ir_for_company(company_id: str, user_id: str) -> int:
+        """Pull IR sources, dedup-merge new items, mark stale. Skips the LLM when
+        the fetched content is unchanged since last run (near-zero cost on quiet days)."""
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
+        if not doc:
+            return 0
+        urls = doc.get("ir_urls") or []
+        if not urls:
+            return 0
+        company = (doc.get("company") or {}).get("name") or company_id
+        ticker = (doc.get("company") or {}).get("ticker") or ""
+        drivers = _company_drivers(doc)
+        sources, chash = await asyncio.to_thread(_ir_fetch_sources, urls)
+        if not sources:
+            return 0
+        if chash and chash == doc.get("ir_last_hash"):
+            return 0  # nothing new since last run → no LLM
+        items = await asyncio.to_thread(_ir_extract_sync, company, ticker, drivers, sources)
+        await _news_merge_prune(company_id, user_id, ticker, items, "ir")
+        await db.theses.update_one({"id": company_id, "user_id": user_id}, {"$set": {"ir_last_hash": chash}})
+        if items:
+            await _mark_kpi_stale(company_id, user_id, "noticias IR nuevas")
+        return len(items)
+
+    async def _run_ir_news_job(job_id, company_id, user_id):
+        try:
+            n = await _run_ir_for_company(company_id, user_id)
+            kept = await _load_company_news(company_id, user_id)
+            await db.thesis_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "done", "result": {"news": [_news_public(x) for x in kept], "found": n},
+                          "updated_at": datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.error(f"ir news job failed ({company_id}): {e}")
+            await db.thesis_jobs.update_one(
+                {"id": job_id}, {"$set": {"status": "error", "error": _friendly_err(e) or "Error leyendo fuentes IR"}})
+
+    @router.post("/{company_id}/kpis/ir-refresh")
+    async def refresh_ir_news(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"}, {"_id": 0, "ir_urls": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        if not (doc.get("ir_urls") or []):
+            raise HTTPException(status_code=400, detail="Añade primero al menos una URL de IR")
+        job_id = f"job_{uuid.uuid4().hex[:14]}"
+        await db.thesis_jobs.insert_one({
+            "id": job_id, "user_id": user["user_id"], "kind": "kpi_news",
+            "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _spawn(_run_ir_news_job(job_id, company_id, user["user_id"]))
+        return {"job_id": job_id}
+
+    async def run_ir_news() -> Dict[str, Any]:
+        """Daily job: for every company with IR sources, ingest new items."""
+        docs = await db.theses.find(
+            {"type": "company", "ir_urls": {"$exists": True, "$ne": []}},
+            {"_id": 0, "id": 1, "user_id": 1}).to_list(length=2000)
+        comps, total = 0, 0
+        for d in docs:
+            try:
+                total += await _run_ir_for_company(d["id"], d["user_id"])
+                comps += 1
+            except Exception as e:
+                logger.warning(f"ir daily {d.get('id')} failed: {e}")
+        logger.info(f"IR daily news: {comps} empresas, {total} items nuevos")
+        return {"companies": comps, "items": total}
+
+    router.run_ir_news = run_ir_news
 
 
     @router.get("/{thesis_id}")

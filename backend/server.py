@@ -808,6 +808,14 @@ async def _scheduled_visual_snapshots_run():
         logger.error(f"scheduled visual-snapshots crashed: {e}")
 
 
+async def _scheduled_ir_news_run():
+    """Daily IR (Investor Relations) news ingestion from user-configured URLs, 06:15 UTC."""
+    try:
+        await _thesis_router.run_ir_news()
+    except Exception as e:
+        logger.error(f"scheduled ir-news crashed: {e}")
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
@@ -831,6 +839,7 @@ async def _startup_scheduler():
         _scheduler.add_job(_scheduled_screener_run, CronTrigger(hour=6, minute=0))
         _scheduler.add_job(_scheduled_alerts_run, CronTrigger(hour=6, minute=5))
         _scheduler.add_job(_scheduled_visual_snapshots_run, CronTrigger(hour=6, minute=10))
+        _scheduler.add_job(_scheduled_ir_news_run, CronTrigger(hour=6, minute=15))
         # Hourly tick: dispatches the radar to users whose configured (weekday, hour_utc)
         # match the current UTC moment. Discovery is cached and reused inside run_radar.
         _scheduler.add_job(_scheduled_radar_run, CronTrigger(minute=0))
