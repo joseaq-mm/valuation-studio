@@ -96,7 +96,9 @@ export default function KpiNews({ companyId, onChanged }) {
                 <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1.5 group" data-testid="kpi-news-toggle" aria-expanded={open}>
                     {open ? <ChevronDown size={15} className="text-[#4A4A4A]" /> : <ChevronRight size={15} className="text-[#4A4A4A]" />}
                     <Newspaper size={14} className="text-[#4A4A4A]" />
-                    <span className="overline text-[#4A4A4A] group-hover:text-black">Noticias</span>
+                    <HoverTip text="Noticias que matizan los scores de tus KPIs al Reanalizar. Puedes buscarlas con IA y, además, añadir las páginas de Investor Relations (IR) de la empresa para que se revisen automáticamente cada día e incorporen sus novedades." maxWidth={300}>
+                        <span className="overline text-[#4A4A4A] group-hover:text-black cursor-help">Noticias</span>
+                    </HoverTip>
                     {news.length > 0 ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 bg-[#FBF3E0] border border-[#B8860B]/50 text-[#7a5a10]" data-testid="kpi-news-count">
                             {news.length} {news.length === 1 ? "noticia" : "noticias"}
