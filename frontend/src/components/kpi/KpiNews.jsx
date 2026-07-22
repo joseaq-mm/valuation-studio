@@ -42,12 +42,13 @@ export default function KpiNews({ companyId, onChanged }) {
         finally { setIrSaving(false); }
     };
 
-    const addIr = () => {
+    const addIr = async () => {
         const u = irInput.trim();
         if (!u) return;
         if (irUrls.length >= 10) { toast.message("Máximo 10 fuentes IR"); return; }
         setIrInput("");
-        saveIr([...irUrls, u]);
+        await saveIr([...irUrls, u]);
+        refreshIr();  // instant first read of the source just added
     };
 
     const removeIr = (u) => saveIr(irUrls.filter((x) => x !== u));

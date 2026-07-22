@@ -460,7 +460,7 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                 </div>
 
                 <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className={`border p-2.5 ${expensive ? "border-[#B32A22] bg-[#FBE9E7]" : "border-black/15 opacity-60"}`} data-testid="coef-defensive">
                             <div className="flex items-center justify-between gap-1 mb-1">
                                 <span className="text-[11px] uppercase tracking-wide font-semibold text-[#B32A22]">Caro → Defensivas/efectivo</span>
@@ -478,7 +478,7 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                     </div>
                     <div className="border-t border-black/10 pt-2">
                         <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Valores usados</div>
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
                             {factorRows.map(([code, label, v]) => (
                                 <div key={code} className="flex justify-between gap-1">
                                     <span className="text-[#7A7A7A] truncate" title={label}>{label}</span>

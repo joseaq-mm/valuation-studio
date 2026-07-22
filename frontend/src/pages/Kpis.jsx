@@ -147,6 +147,7 @@ export default function Kpis() {
 
     const selectCompany = async (id) => {
         setSelId(id); setSnap(null); setEditing(false); setLoading(true); setStale(null);
+        setCompanies((prev) => prev.map((c) => (c.id === id ? { ...c, ir_unread: 0 } : c)));  // opening clears the IR alert
         try {
             const d = await kpiGet(id);
             setSnap(d.kpi_snapshot || null);
@@ -279,6 +280,11 @@ export default function Kpis() {
                     >
                         <span className="flex items-center gap-1.5">
                             {c.ticker}
+                            {c.ir_unread > 0 && (
+                                <HoverTip text={`${c.ir_unread} novedad${c.ir_unread === 1 ? "" : "es"} de Investor Relations (IR) sin revisar. Ábrela para verlas y reanaliza si procede.`}>
+                                    <span className="inline-block w-2 h-2 rounded-full animate-pulse cursor-help" style={{ backgroundColor: selId === c.id ? "#FBBF24" : "#B8860B" }} data-testid={`kpi-ir-unread-${c.ticker}`} />
+                                </HoverTip>
+                            )}
                             {c.has_kpis && c.coef_global != null && (
                                 <span className="tabular-nums" style={{ color: selId === c.id ? "#fff" : coefColor(c.coef_global) }}>· {c.coef_global.toFixed(2)}</span>
                             )}

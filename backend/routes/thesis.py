@@ -2319,7 +2319,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         deduped by ticker (latest plan). Each flags whether KPIs were already run."""
         docs = await db.theses.find(
             {"user_id": user["user_id"], "type": "company"},
-            {"_id": 0, "id": 1, "company": 1, "trends": 1, "split_dev": 1, "kpi_snapshot": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "company": 1, "trends": 1, "split_dev": 1, "kpi_snapshot": 1, "created_at": 1, "ir_unread": 1},
         ).sort("created_at", -1).to_list(length=500)
         seen, out = set(), []
         for d in docs:
@@ -2336,6 +2336,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "has_kpis": bool(snap),
                 "coef_global": snap.get("coef_global"),
                 "kpi_generated_at": snap.get("generated_at"),
+                "ir_unread": int(d.get("ir_unread") or 0),
             })
         # Attach the latest reported quarter + last/next earnings dates (from the fundamentals
         # cache) so the UI can flag a KPI snapshot as stale when the company has published
@@ -2389,9 +2390,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def get_kpis(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one(
             {"id": company_id, "user_id": user["user_id"], "type": "company"},
-            {"_id": 0, "kpi_snapshot": 1, "company": 1, "kpi_stale": 1, "kpi_stale_reasons": 1})
+            {"_id": 0, "kpi_snapshot": 1, "company": 1, "kpi_stale": 1, "kpi_stale_reasons": 1, "ir_unread": 1})
         if not doc:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        # Opening the company = the IR novelties have been seen → clear the alert.
+        if doc.get("ir_unread"):
+            await db.theses.update_one(
+                {"id": company_id, "user_id": user["user_id"]},
+                {"$unset": {"ir_unread": "", "ir_unread_at": ""}})
         return {"company": doc.get("company"), "kpi_snapshot": doc.get("kpi_snapshot"),
                 "kpi_stale": bool(doc.get("kpi_stale")), "kpi_stale_reasons": doc.get("kpi_stale_reasons") or []}
 
@@ -3092,9 +3098,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             {"$set": {"ir_urls": urls}, "$unset": {"ir_last_hash": ""}})
         return {"urls": urls}
 
-    async def _run_ir_for_company(company_id: str, user_id: str) -> int:
+    async def _run_ir_for_company(company_id: str, user_id: str, mark_unread: bool = False) -> int:
         """Pull IR sources, dedup-merge new items, mark stale. Skips the LLM when
-        the fetched content is unchanged since last run (near-zero cost on quiet days)."""
+        the fetched content is unchanged since last run (near-zero cost on quiet days).
+        When `mark_unread` (daily job), flags the company `ir_unread` so the KPI list
+        shows an alert dot; manual/instant refreshes don't (the user is already looking)."""
         doc = await db.theses.find_one(
             {"id": company_id, "user_id": user_id, "type": "company"}, {"_id": 0})
         if not doc:
@@ -3115,6 +3123,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.theses.update_one({"id": company_id, "user_id": user_id}, {"$set": {"ir_last_hash": chash}})
         if items:
             await _mark_kpi_stale(company_id, user_id, "noticias IR nuevas")
+            if mark_unread:
+                await db.theses.update_one(
+                    {"id": company_id, "user_id": user_id},
+                    {"$set": {"ir_unread": len(items), "ir_unread_at": datetime.now(timezone.utc).isoformat()}})
         return len(items)
 
     async def _run_ir_news_job(job_id, company_id, user_id):
@@ -3154,7 +3166,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         comps, total = 0, 0
         for d in docs:
             try:
-                total += await _run_ir_for_company(d["id"], d["user_id"])
+                total += await _run_ir_for_company(d["id"], d["user_id"], mark_unread=True)
                 comps += 1
             except Exception as e:
                 logger.warning(f"ir daily {d.get('id')} failed: {e}")

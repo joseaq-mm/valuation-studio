@@ -14,6 +14,7 @@ async def main():
         "trends": [{"name": "Cómputo acelerado IA", "type": "actual", "plan": "whole", "tam_busd": 800}],
         "split_dev": [{"core": "Cómputo acelerado IA", "whole": True}],
         "ir_urls": ["https://investor.nvidia.com/news/default.aspx"],
+        "ir_unread": 2,
     }
     await db.theses.update_one({"id": "co_ir_ui"}, {"$set": doc}, upsert=True)
     print("SEEDED co_ir_ui (NVDA) complete company with 1 IR url")
