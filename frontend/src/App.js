@@ -20,6 +20,7 @@ import { FxProvider } from "@/lib/fx";
 import { I18nProvider } from "@/lib/i18n";
 import { TourProvider } from "@/lib/tour";
 import WatchlistCloudSync from "@/components/WatchlistCloudSync";
+import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 
 // Detect OAuth callback synchronously during render — running this in useEffect
 // would be too late and produce a race with the auth /me check.
@@ -60,6 +61,7 @@ function App() {
                                 <AppRouter />
                             </TourProvider>
                             <Toaster position="bottom-right" toastOptions={{ style: { borderRadius: 0, border: "1px solid #111", fontFamily: "IBM Plex Sans" } }} />
+                            <PWAInstallPrompt />
                         </I18nProvider>
                     </FxProvider>
                 </AuthProvider>

@@ -18,6 +18,12 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ PWA — app instalable iOS + Android (Responsive Fase 3) (22 jul 2026, verificado por curl + screenshot):**
+  - `public/manifest.json` (name/short_name, display standalone, start_url ".", scope "/", theme/background `#FDF1E6`, iconos 192/512 `any maskable` + 180 apple-touch + favicons) generados a partir de un icono de marca (salmón FT + monograma navy) con PIL.
+  - `public/service-worker.js` network-first (nunca cachea `/api`, fallback offline a `/index.html`), registrado en `src/index.js` en `load`.
+  - `index.html`: meta `theme-color`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-title`, `application-name`, `viewport-fit=cover`, link manifest + apple-touch-icon, `<title>` de marca.
+  - `components/PWAInstallPrompt.jsx` (montado en `App.js`): banner flotante que usa `beforeinstallprompt` en Android/Chrome/Edge (`pwa-install-btn`) y, en iOS Safari, muestra la instrucción manual "Compartir → Añadir a pantalla de inicio". Descartable 14 días (localStorage). No aparece si ya está en modo standalone.
+  - Verificado: manifest/sw/iconos sirven 200, SW registra (1 registration), banner renderiza. NOTA: en el preview (dev server) el SW registra igual; en deploy también.
 - **✅ Responsive Fase 2 + Lectura IR inmediata + Aviso IR sin leer (22 jul 2026, verificado por curl + screenshots móvil/desktop):**
   - *Aviso IR*: el job diario de IR marca `ir_unread` (nº de novedades) en la empresa; `GET /kpis/kpi-companies` lo expone y la lista de KPIs muestra un punto ámbar pulsante junto al ticker (`kpi-ir-unread-<TICKER>`), que se limpia al abrir la empresa (`GET /kpis`). El refresh manual/instantáneo no marca unread. Verificado: set ir_unread=3 → aparece en API/UI → abrir empresa → vuelve a 0.
   - *Lectura IR inmediata*: al añadir una fuente IR (`KpiNews.addIr`) se guarda y se dispara `refreshIr()` al momento (sin esperar al chequeo diario 06:15 UTC).
