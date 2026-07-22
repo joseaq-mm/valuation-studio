@@ -372,6 +372,43 @@ def _company_drivers(doc: dict) -> list:
     return out
 
 
+def _existing_theses(doc: dict) -> list:
+    """Existing (non-merged) driver theses with a 'pending' flag = added to the
+    plan but not yet developed/generated (not present in split_dev)."""
+    nrm = lambda s: (s or "").strip().lower()  # noqa: E731
+    dev = {nrm(e.get("core")) for e in (doc.get("split_dev") or []) if e.get("core")}
+    out = []
+    for t in (doc.get("trends") or []):
+        if t.get("merged_into") or not t.get("name"):
+            continue
+        out.append({"name": t["name"], "pending": nrm(t["name"]) not in dev})
+    return out
+
+
+def _thesis_match_existing(name: str, existing: list):
+    """Return the matched existing thesis (dict) if `name` duplicates one already
+    in the plan (exact, containment or token-Jaccard >= 0.5 ignoring stopwords)."""
+    STOP = {"y", "e", "de", "del", "la", "el", "los", "las", "en", "un", "una", "para", "con", "a", "al", "o", "u"}
+    def toks(s):
+        return {w for w in re.sub(r"[^\w\s]", " ", (s or "").lower()).split() if w not in STOP}
+    a = toks(name)
+    na = " ".join(sorted(a))
+    if not a:
+        return None
+    for e in existing:
+        b = toks(e.get("name"))
+        if not b:
+            continue
+        nb = " ".join(sorted(b))
+        if na == nb or na in nb or nb in na:
+            return e
+        inter = len(a & b)
+        union = len(a | b) or 1
+        if inter / union >= 0.5:
+            return e
+    return None
+
+
 def _match_sync(company: str, company_trends: list, existing: list) -> dict:
     return asyncio.run(match_company_to_theses(company, company_trends, existing))
 
@@ -2189,6 +2226,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             snap["coef_history"] = history[-20:]
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": snap}})
+            await _clear_kpi_stale(company_id, user_id)
             await db.thesis_jobs.update_one(
                 {"id": job_id},
                 {"$set": {"status": "done", "result": snap,
@@ -2238,6 +2276,23 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 o["next_earnings_date"] = _future_earnings_date(_d.get("next_earnings_date"))
         return {"companies": out}
 
+    # Mark/clear "pending reanalyze" flag on a company (new docs, news, thesis, etc.)
+    async def _mark_kpi_stale(company_id: str, uid: str, reason: str):
+        try:
+            await db.theses.update_one(
+                {"id": company_id, "user_id": uid, "type": "company"},
+                {"$set": {"kpi_stale": True}, "$addToSet": {"kpi_stale_reasons": reason}})
+        except Exception:
+            pass
+
+    async def _clear_kpi_stale(company_id: str, uid: str):
+        try:
+            await db.theses.update_one(
+                {"id": company_id, "user_id": uid},
+                {"$set": {"kpi_stale": False}, "$unset": {"kpi_stale_reasons": ""}})
+        except Exception:
+            pass
+
     @router.post("/{company_id}/kpis")
     async def run_kpis(company_id: str, mode: str = "full", user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one(
@@ -2257,10 +2312,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def get_kpis(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
         doc = await db.theses.find_one(
             {"id": company_id, "user_id": user["user_id"], "type": "company"},
-            {"_id": 0, "kpi_snapshot": 1, "company": 1})
+            {"_id": 0, "kpi_snapshot": 1, "company": 1, "kpi_stale": 1, "kpi_stale_reasons": 1})
         if not doc:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
-        return {"company": doc.get("company"), "kpi_snapshot": doc.get("kpi_snapshot")}
+        return {"company": doc.get("company"), "kpi_snapshot": doc.get("kpi_snapshot"),
+                "kpi_stale": bool(doc.get("kpi_stale")), "kpi_stale_reasons": doc.get("kpi_stale_reasons") or []}
 
     @router.put("/{company_id}/kpis")
     async def edit_kpis(company_id: str, req: EditKpisRequest, user: Dict[str, Any] = Depends(auth_required)):
@@ -2287,6 +2343,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         recomputed["coef_history"] = snap.get("coef_history") or []
         await db.theses.update_one(
             {"id": company_id, "user_id": user["user_id"]}, {"$set": {"kpi_snapshot": recomputed}})
+        await _clear_kpi_stale(company_id, user["user_id"])
         return {"kpi_snapshot": recomputed}
 
     async def _run_kpi_search_job(job_id: str, company_id: str, user_id: str, query: str):
@@ -2354,6 +2411,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": recomputed}})
+            await _clear_kpi_stale(company_id, user_id)
             await db.thesis_jobs.update_one(
                 {"id": job_id}, {"$set": {"status": "done", "result": recomputed,
                                           "updated_at": datetime.now(timezone.utc).isoformat()}})
@@ -2436,7 +2494,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "kind": f.get("kind", "file"), "created_at": f.get("created_at"),
             "auto_fetched": bool(f.get("auto_fetched")), "source_url": f.get("source_url"),
             "supersedes": f.get("supersedes"),
-            "downloadable": bool(f.get("storage_path")),
+            "downloadable": bool(f.get("storage_path")) or bool(f.get("extracted_text")),
             "error": f.get("error"), "preview": txt[:180],
             "has_text": bool(txt),
         }
@@ -2482,6 +2540,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         }
         await db.kpi_files.insert_one(rec)
         _spawn(_run_doc_extract(fid, user["user_id"], data, ext, mime, company, file.filename))
+        await _mark_kpi_stale(company_id, user["user_id"], "documentos nuevos")
         return {"file": _file_public(rec)}
 
     @router.post("/{company_id}/kpis/files/transcript")
@@ -2506,6 +2565,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "extracted_text": text[:40000], "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.kpi_files.insert_one(rec)
+        await _mark_kpi_stale(company_id, user["user_id"], "documentos nuevos")
         return {"file": _file_public(rec)}
 
     # ----- KPI conversational assistant (Fase 1) -----
@@ -2548,6 +2608,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         for d in _company_drivers(doc)[:6]:
             if d.get("name"):
                 lines.append(f"Tesis '{d['name']}' — {d.get('fit_description') or d.get('demand_driver') or ''} (TAM {d.get('tam_busd')} B$).")
+        existing = _existing_theses(doc)
+        if existing:
+            lines.append(
+                "TESIS YA EXISTENTES EN EL PLAN (NO las vuelvas a proponer como nuevas; si el usuario describe una de estas, recuérdaselo — indica si está pendiente de ejecutarse — en lugar de sugerirla otra vez): "
+                + "; ".join(f"{e['name']}{' [pendiente de ejecutar]' if e['pending'] else ''}" for e in existing) + ".")
         others = await db.theses.find(
             {"user_id": user_id, "type": "company", "id": {"$ne": company_id}},
             {"_id": 0, "company": 1, "kpi_snapshot": 1}).to_list(length=8)
@@ -2645,6 +2710,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "extracted_text": transcript[:40000], "created_at": now,
         }
         await db.kpi_files.insert_one(rec)
+        await _mark_kpi_stale(company_id, user["user_id"], "una conversación guardada")
         return {"file": _file_public(rec)}
 
     @router.post("/{company_id}/kpis/chat/propose-thesis")
@@ -2709,6 +2775,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         }
         if not proposal["name"]:
             raise HTTPException(status_code=502, detail="La IA no identificó una tesis clara. Sigue conversando y vuelve a intentarlo.")
+        # Dedupe: don't re-propose a thesis already in the plan.
+        cdoc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"},
+            {"_id": 0, "trends": 1, "split_dev": 1})
+        existing = _existing_theses(cdoc or {})
+        matched = _thesis_match_existing(proposal["name"], existing)
+        if matched:
+            return {"duplicate": True, "existing": matched, "origin": req.origin or "usuario"}
         return {"proposal": proposal, "origin": req.origin or "usuario"}
 
     @router.post("/{company_id}/kpis/chat/add-thesis")
@@ -2724,8 +2798,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if not name:
             raise HTTPException(status_code=400, detail="La tesis necesita un título")
         trends = doc.get("trends") or []
-        if any(nrm(t.get("name")) == nrm(name) for t in trends):
-            raise HTTPException(status_code=400, detail="Ya existe una tesis con ese nombre en esta empresa")
+        existing = _existing_theses(doc)
+        if _thesis_match_existing(name, existing):
+            raise HTTPException(status_code=400, detail="Ya existe una tesis igual o muy parecida en esta empresa")
         now = datetime.now(timezone.utc).isoformat()
         entry = {
             "name": name[:120],
@@ -2747,6 +2822,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         await db.theses.update_one({"id": company_id, "user_id": uid}, {"$set": {"trends": trends}})
         jid, st, _a = await _enqueue_generation(
             uid, "trend", name, from_company=company_id, core=name, develop_whole=True)
+        await _mark_kpi_stale(company_id, uid, "una nueva tesis")
         return {"ok": True, "job_id": jid, "status": st, "thesis_id": company_id, "driver": entry}
 
     @router.patch("/{company_id}/kpis/files/{file_id}")
@@ -2813,6 +2889,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return {"ok": True, "file": _file_public(rec)}
 
 
+    @router.get("/{company_id}/kpis/files/{file_id}/download")
     async def download_kpi_file(company_id: str, file_id: str, auth: str = Query(None), authorization: str = Header(None), session_token: str = Cookie(None)):
         token = None
         if authorization and authorization.lower().startswith("bearer "):
@@ -2829,7 +2906,16 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         if not rec or rec.get("user_id") != uid:
             raise HTTPException(status_code=404, detail="Archivo no encontrado")
         if not rec.get("storage_path"):
-            raise HTTPException(status_code=404, detail="Sin archivo descargable")
+            # Text-only docs (pasted transcript / saved chat): serve the text as .txt
+            txt = rec.get("extracted_text") or ""
+            if not txt:
+                raise HTTPException(status_code=404, detail="Sin contenido descargable")
+            fname = (rec.get("display_name") or rec.get("original_filename") or "documento")
+            fname = re.sub(r'[^\w.\- ]', "_", fname)
+            if not fname.lower().endswith(".txt"):
+                fname = f"{fname}.txt"
+            return Response(content=txt.encode("utf-8"), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="{fname}"'})
         data, ctype = await asyncio.to_thread(get_object, rec["storage_path"])
         fname = (rec.get("display_name") or rec.get("original_filename") or "documento")
         if not fname.lower().endswith(f".{rec.get('ext','')}") and rec.get("ext"):
@@ -2874,6 +2960,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             drivers = _company_drivers(doc)
             fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, query or None)
             kept = await _news_merge_prune(company_id, user_id, ticker, fresh, "news_search")
+            if fresh:
+                await _mark_kpi_stale(company_id, user_id, "noticias nuevas")
             await db.thesis_jobs.update_one(
                 {"id": job_id},
                 {"$set": {"status": "done", "result": {"news": [_news_public(n) for n in kept], "found": len(fresh)},

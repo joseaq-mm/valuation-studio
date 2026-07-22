@@ -13,7 +13,7 @@ const fmtSize = (b) => (b == null ? "" : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` 
 
 // Per-company document sources for KPI analysis: upload PDF/images (pre-extracted
 // by AI on upload), paste a transcript, select which to use, delete obsolete.
-export default function KpiDocuments({ companyId, refreshKey }) {
+export default function KpiDocuments({ companyId, refreshKey, onChanged }) {
     const [files, setFiles] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [tOpen, setTOpen] = useState(false);
@@ -66,8 +66,8 @@ export default function KpiDocuments({ companyId, refreshKey }) {
         let ok = 0;
         for (const f of toUpload) { if (await uploadOne(f)) ok += 1; }
         setUploading(false);
-        if (ok) toast.success(ok === 1 ? "Archivo subido · leyéndolo con IA…" : `${ok} archivos subidos · leyéndolos con IA…`);
-    }, [companyId, files.length]);
+        if (ok) { toast.success(ok === 1 ? "Archivo subido · leyéndolo con IA…" : `${ok} archivos subidos · leyéndolos con IA…`); onChanged?.(); }
+    }, [companyId, files.length, onChanged]);
 
     const onPick = (e) => {
         const list = e.target.files;
@@ -92,6 +92,7 @@ export default function KpiDocuments({ companyId, refreshKey }) {
             setFiles((prev) => [d.file, ...prev]);
             setTText(""); setTTitle(""); setTOpen(false);
             toast.success("Transcript añadido");
+            onChanged?.();
         } catch (err) { toast.error(err?.response?.data?.detail || "Error"); }
     };
 

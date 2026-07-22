@@ -2,6 +2,14 @@
 
 > Histórico de implementaciones. PRD.md = problema/arquitectura estática.
 
+## 22 jul 2026 — Afinado Fase 2 KPIs + fix descarga + estética títulos
+- **(1) Descarga de documentos**: corregido bug latente — el endpoint `GET /kpis/files/{file_id}/download` NO tenía decorador `@router.get` (nunca se registró; la descarga fallaba para todos los docs). Añadido. Además, los documentos de texto (transcript / conversación de chat) ahora se sirven como `.txt` y `downloadable=true`, así que aparece el botón de descarga.
+- **(2) Aviso "pendiente actualizar" (stale)**: nuevo flag `kpi_stale`/`kpi_stale_reasons` en el doc de empresa. Se marca al guardar una conversación, subir documentos, añadir transcript, generar tesis desde el chat y encontrar noticias nuevas; se limpia al reanalizar/editar/buscar KPIs. `GET /kpis` lo devuelve. Banner en `Kpis.jsx` con botón "Reanalizar"; `KpiDocuments`/`KpiChat`/`KpiNews` reciben `onChanged` → refrescan el estado.
+- **(3) No re-sugerir tesis existentes**: el contexto del chat lista explícitamente "TESIS YA EXISTENTES (NO las vuelvas a proponer)" con marca de pendiente; `propose-thesis` deduplica (helper `_thesis_match_existing`, Jaccard ≥0.5 sin stopwords + containment) y devuelve `duplicate` con aviso (con enlace a la ficha e indicación de si está pendiente). `add-thesis` rechaza duplicados/near-dup. UI de aviso de duplicado en `KpiChat.jsx`.
+- **(4) Estética**: eliminadas las líneas de puntos (subrayado) bajo los títulos de Tesis, Visual, KPIs y Macro (se mantiene el tooltip y el cursor de ayuda).
+- Verificado por curl (descarga 200 text/plain, stale set/clear, dedupe exacto y fuzzy 400) y captura (título sin subrayado). Artefactos de prueba limpiados.
+
+
 ## 21 jul 2026 — KPIs Chat: abierto por defecto + Fase 2 (proponer tesis nueva)
 - Chat de KPIs ahora **desplegado por defecto** (`open=true`).
 - **Fase 2 backend (`routes/thesis.py`):** el prompt del chat instruye a la IA a marcar con el token `[[TESIS_SUGERIDA]]` cuando detecta una tesis nueva con fundamento. Nuevos endpoints: `POST /kpis/chat/propose-thesis` (extrae del hilo una propuesta estructurada JSON: name, type actual/futuro, demand_driver, fit_description, rationale, tam_busd, relevance/win) y `POST /kpis/chat/add-thesis` (añade el driver a `trends` de la empresa con `added_from_chat`/`origin` y **encola su generación** vía `_enqueue_generation`, mismo mecanismo que el plan → camino congruente; el driver entra además como input de KPIs).

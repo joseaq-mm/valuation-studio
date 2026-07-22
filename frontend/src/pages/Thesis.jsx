@@ -546,7 +546,7 @@ export default function Thesis() {
                             <div className="overline text-[#B32A22] mb-1">Thesis Engine · Análisis cualitativo con IA</div>
                             <h1 className="font-serif text-4xl sm:text-5xl font-medium leading-tight">
                                 <HoverTip text="Una tesis de inversión es el razonamiento que justifica por qué inviertes en algo: qué esperas que ocurra, por qué la empresa o tendencia ganará valor y qué debe cumplirse para acertar. Aquí la construyes y validas con ayuda de IA.">
-                                    <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="thesis-title-tip">Tesis de inversión</span>
+                                    <span className="cursor-help" data-testid="thesis-title-tip">Tesis de inversión</span>
                                 </HoverTip>
                             </h1>
                             <p className="text-base text-[#4A4A4A] mt-2 max-w-2xl leading-relaxed">

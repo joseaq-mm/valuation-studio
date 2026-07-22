@@ -18,7 +18,7 @@ const stripToken = (t) => (t || "").replace(TOKEN, "").trim();
 // Fase 1: conversational KPI analyst grounded on company + comparables + web.
 // Fase 2: the AI (or the user) can propose a NEW thesis; the user confirms and it
 // is added to the company plan (same machinery as the plan page) and generated.
-export default function KpiChat({ companyId, onSaved }) {
+export default function KpiChat({ companyId, onSaved, onChanged }) {
     const navigate = useNavigate();
     const [open, setOpen] = useState(true);
     const [messages, setMessages] = useState([]);   // {role, text, sources?, aiSuggested?}
@@ -31,13 +31,14 @@ export default function KpiChat({ companyId, onSaved }) {
     const [proposal, setProposal] = useState(null);   // { name, type, tam_busd, fit_description, rationale, ... , origin }
     const [adding, setAdding] = useState(false);
     const [added, setAdded] = useState(null);         // { driver }
+    const [dupNotice, setDupNotice] = useState(null); // { name, pending }
     const sessionRef = useRef(newSession(companyId));
     const scrollRef = useRef(null);
 
     useEffect(() => {
         sessionRef.current = newSession(companyId);
         setMessages([]); setInput(""); setSavedOnce(false);
-        setAiSuggest(false); setProposal(null); setAdded(null);
+        setAiSuggest(false); setProposal(null); setAdded(null); setDupNotice(null);
     }, [companyId]);
 
     useEffect(() => {
@@ -71,6 +72,7 @@ export default function KpiChat({ companyId, onSaved }) {
             toast.success(`Guardado como documento «${d.file.display_name}». Reanaliza para que cuente en el coeficiente.`);
             setSavedOnce(true);
             onSaved?.();
+            onChanged?.();
         } catch (err) {
             toast.error(err?.response?.data?.detail || "No se pudo guardar la conversación");
         } finally {
@@ -80,10 +82,14 @@ export default function KpiChat({ companyId, onSaved }) {
 
     const propose = async (origin) => {
         if (proposing) return;
-        setProposing(true); setAdded(null);
+        setProposing(true); setAdded(null); setDupNotice(null);
         try {
             const d = await kpiChatProposeThesis(companyId, sessionRef.current, origin);
-            setProposal({ ...d.proposal, origin: d.origin || origin });
+            if (d.duplicate) {
+                setDupNotice({ name: d.existing?.name, pending: !!d.existing?.pending });
+            } else {
+                setProposal({ ...d.proposal, origin: d.origin || origin });
+            }
             setAiSuggest(false);
         } catch (err) {
             toast.error(err?.response?.data?.detail || "No se pudo generar la propuesta de tesis");
@@ -111,6 +117,7 @@ export default function KpiChat({ companyId, onSaved }) {
             setAdded({ driver: d.driver });
             setProposal(null);
             toast.success("Tesis añadida al plan de la empresa. Generándose…");
+            onChanged?.();
         } catch (err) {
             toast.error(err?.response?.data?.detail || "No se pudo añadir la tesis");
         } finally {
@@ -185,6 +192,20 @@ export default function KpiChat({ companyId, onSaved }) {
 
                         {proposing && (
                             <div className="flex justify-start"><div className="bg-[#FFF8E6] border border-[#B8860B]/40 px-3 py-2 text-sm text-[#7a5c00] inline-flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Preparando la propuesta de tesis…</div></div>
+                        )}
+
+                        {/* Duplicate: the thesis is already in the plan */}
+                        {dupNotice && (
+                            <div className="border-2 border-[#052049] bg-[#EEF2F8] px-3 py-2.5" data-testid="kpi-chat-duplicate">
+                                <div className="text-sm text-[#052049] flex items-start gap-2">
+                                    <Check size={16} className="shrink-0 mt-0.5" />
+                                    <span>Esa tesis <strong>ya está en el plan</strong> de esta empresa (<em>{dupNotice.name}</em>){dupNotice.pending ? ", y está pendiente de ejecutarse" : ""}. No hace falta volver a crearla.</span>
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                    <button onClick={() => navigate(`/thesis/${companyId}`)} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1.5" data-testid="kpi-chat-dup-goto">Ver en la ficha de tesis <ArrowRight size={13} /></button>
+                                    <button onClick={() => setDupNotice(null)} className="btn-ghost !py-1 !px-2.5 text-xs">Entendido</button>
+                                </div>
+                            </div>
                         )}
 
                         {/* Editable proposal card + step-by-step permission */}

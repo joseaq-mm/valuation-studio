@@ -102,6 +102,7 @@ export default function Kpis() {
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null);   // analysis progress text
     const [editing, setEditing] = useState(false);
+    const [stale, setStale] = useState(null);   // { reasons: [] } when reanalyze pending
     const [sortMode, setSortMode] = useState("thesis");  // thesis | analysis | alpha | coef
 
     const sortedCompanies = useMemo(() => {
@@ -145,13 +146,23 @@ export default function Kpis() {
     useEffect(() => { loadCompanies(); }, [loadCompanies]);
 
     const selectCompany = async (id) => {
-        setSelId(id); setSnap(null); setEditing(false); setLoading(true);
+        setSelId(id); setSnap(null); setEditing(false); setLoading(true); setStale(null);
         try {
             const d = await kpiGet(id);
             setSnap(d.kpi_snapshot || null);
+            setStale(d.kpi_stale ? { reasons: d.kpi_stale_reasons || [] } : null);
         } catch { setSnap(null); }
         finally { setLoading(false); }
     };
+
+    // Re-fetch stale flag for the current company (after adding docs/chat/thesis).
+    const refreshStale = useCallback(async () => {
+        if (!selId) return;
+        try {
+            const d = await kpiGet(selId);
+            setStale(d.kpi_stale ? { reasons: d.kpi_stale_reasons || [] } : null);
+        } catch { /* ignore */ }
+    }, [selId]);
 
     const analyze = async (mode = "full") => {
         if (!selId) return;
@@ -161,6 +172,7 @@ export default function Kpis() {
             const res = await kpiRun(selId, (s) => setStatus(s?.message || (incr ? "Actualizando KPIs…" : "Analizando KPIs con IA…")), mode);
             const result = res?.result || res;
             setSnap(result);
+            setStale(null);
             await loadCompanies();
             setDocsRefresh((n) => n + 1);  // reveal auto-fetched docs (SEC/deck/página) added during the analysis
             toast.success(incr ? "KPIs actualizados" : "KPIs analizados");
@@ -212,7 +224,7 @@ export default function Kpis() {
                 <div className="overline text-[#B32A22] mb-2">Validación operativa</div>
                 <h1 className="font-serif text-4xl mb-4">
                     <HoverTip text="KPIs = Indicadores Clave de Rendimiento (Key Performance Indicators): las métricas operativas más importantes de cada empresa (ARR, NRR, clientes, backlog, suscriptores…) que usamos para validar tu tesis.">
-                        <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="kpis-title-tip-guest">KPIs</span>
+                        <span className="cursor-help" data-testid="kpis-title-tip-guest">KPIs</span>
                     </HoverTip>
                 </h1>
                 <div className="border border-black bg-white p-8 text-center text-[#4A4A4A]">
@@ -230,7 +242,7 @@ export default function Kpis() {
                     <h1 className="font-serif text-4xl leading-none flex items-center gap-2">
                         <BarChart3 size={30} />
                         <HoverTip text="KPIs = Indicadores Clave de Rendimiento (Key Performance Indicators): las métricas operativas más importantes de cada empresa (ARR, NRR, clientes, backlog, suscriptores…) que usamos para validar tu tesis.">
-                            <span className="underline decoration-dotted underline-offset-4 cursor-help" data-testid="kpis-title-tip">KPIs</span>
+                            <span className="cursor-help" data-testid="kpis-title-tip">KPIs</span>
                         </HoverTip>
                     </h1>
                 </div>
@@ -290,13 +302,28 @@ export default function Kpis() {
             {!selId && <div className="text-sm text-[#4A4A4A] border border-dashed border-black/30 p-6 text-center">Elige una empresa para empezar.</div>}
 
             {/* Document sources (available before & after analysis) */}
-            {selId && <KpiDocuments companyId={selId} refreshKey={docsRefresh} />}
+            {selId && <KpiDocuments companyId={selId} refreshKey={docsRefresh} onChanged={refreshStale} />}
 
             {/* Conversational KPI analyst — save chat as a document that feeds the coefficient */}
-            {selId && <KpiChat companyId={selId} onSaved={() => setDocsRefresh((n) => n + 1)} />}
+            {selId && <KpiChat companyId={selId} onSaved={() => setDocsRefresh((n) => n + 1)} onChanged={refreshStale} />}
 
             {/* Qualitative news (informs scores; aged out over time) */}
-            {selId && <KpiNews companyId={selId} />}
+            {selId && <KpiNews companyId={selId} onChanged={refreshStale} />}
+
+            {/* Pending-reanalyze banner (new docs, chat, thesis, news…) */}
+            {selId && stale && snap && !status && (
+                <div className="border-2 border-[#B8860B] bg-[#FFF8E6] px-3 py-2.5 mb-4 flex items-start justify-between gap-3" data-testid="kpi-stale-banner">
+                    <div className="text-sm text-[#7a5c00] flex items-start gap-2">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5 text-[#B8860B]" />
+                        <span>
+                            Hay cambios sin reflejar en el coeficiente{stale.reasons?.length ? ` (${stale.reasons.join(", ")})` : ""}. Reanaliza para actualizarlo.
+                        </span>
+                    </div>
+                    <button onClick={() => analyze("full")} disabled={loading} className="btn-primary !py-1 !px-2.5 text-xs inline-flex items-center gap-1.5 shrink-0 disabled:opacity-40" data-testid="kpi-stale-reanalyze">
+                        <RefreshCw size={13} /> Reanalizar
+                    </button>
+                </div>
+            )}
 
             {selId && loading && !status && (
                 <div className="flex items-center gap-2 text-[#4A4A4A] py-8 justify-center"><Loader2 className="animate-spin" size={18} /> Cargando…</div>

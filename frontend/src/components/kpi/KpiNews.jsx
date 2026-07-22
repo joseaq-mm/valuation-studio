@@ -11,7 +11,7 @@ const SENT_TIP = "Indicador de sentimiento: cómo afecta la noticia a la tesis. 
 
 // Qualitative news per company. INFORMS the scores (fed to the judge on Reanalyze),
 // ages out via 45-day decay (max 15), incorporates Radar news, has its own search.
-export default function KpiNews({ companyId }) {
+export default function KpiNews({ companyId, onChanged }) {
     const [news, setNews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searching, setSearching] = useState(false);
@@ -35,6 +35,7 @@ export default function KpiNews({ companyId }) {
             setNews(result?.news || []);
             setOpen(true);
             toast.success(`Noticias actualizadas (${result?.found ?? 0} encontradas)`);
+            if (result?.found) onChanged?.();
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Error buscando noticias");
         } finally { setSearching(false); }
