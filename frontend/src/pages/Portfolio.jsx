@@ -20,6 +20,7 @@ import { CompanyCard } from "@/components/CompanyCard";
 import { NextEarnings, nextEarningsInfo } from "@/components/NextEarnings";
 import { CardSort } from "@/components/CardSort";
 import { PortfolioDonut } from "@/components/PortfolioDonut";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 
 const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv", "score", "tam", "kpi"]);
@@ -121,9 +122,14 @@ export default function Portfolio() {
         toast.success(t("common.save"));
     };
 
-    const handleRemove = (ticker) => {
-        removePosition(ticker);
-        toast(t("common.delete"));
+    const [confirmDel, setConfirmDel] = useState(null);
+    const handleRemove = (ticker) => setConfirmDel(ticker);
+    const doRemove = () => {
+        const t = confirmDel;
+        if (!t) return;
+        removePosition(t);
+        setConfirmDel(null);
+        toast("Eliminada de Nivel 1");
     };
 
     const toggleAlert = (ticker, next) => {
@@ -459,6 +465,15 @@ export default function Portfolio() {
                     onSave={handleSave}
                 />
             )}
+            <ConfirmDialog
+                open={!!confirmDel}
+                title="¿Eliminar de Nivel 1?"
+                message={`Se eliminará ${confirmDel || ""} de tu cartera y el borrado se sincronizará en todos tus dispositivos.`}
+                confirmLabel="Eliminar"
+                onConfirm={doRemove}
+                onCancel={() => setConfirmDel(null)}
+                testid="portfolio-confirm-remove"
+            />
         </div>
     );
 }

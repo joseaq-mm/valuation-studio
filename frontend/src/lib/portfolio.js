@@ -34,7 +34,7 @@ export const upsertPosition = (pos) => {
     const list = _read();
     const t = pos.ticker.toUpperCase();
     const idx = list.findIndex(p => (p.ticker || "").toUpperCase() === t);
-    const next = { ...pos, ticker: t };
+    const next = { ...pos, ticker: t, saved_at: new Date().toISOString() };
     if (idx >= 0) list[idx] = { ...list[idx], ...next };
     else list.push(next);
     _clearTomb(t);  // re-added → clear any tombstone

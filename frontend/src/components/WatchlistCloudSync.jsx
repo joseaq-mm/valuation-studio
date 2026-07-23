@@ -49,11 +49,23 @@ export default function WatchlistCloudSync() {
                 cloudPortfolioPut(getPortfolio(), getPortfolioDeletions()).catch(() => { /* silent */ });
             }, 800);
         };
+        // If the user closes/backgrounds the tab before the debounce fires, flush now so
+        // pending changes (especially deletions) reach the cloud instead of being lost.
+        const flush = () => {
+            if (!initialised.current) return;
+            if (wlTimer.current) { clearTimeout(wlTimer.current); wlTimer.current = null; cloudWatchlistPut(getWatchlist(), getWatchlistDeletions()).catch(() => {}); }
+            if (pfTimer.current) { clearTimeout(pfTimer.current); pfTimer.current = null; cloudPortfolioPut(getPortfolio(), getPortfolioDeletions()).catch(() => {}); }
+        };
+        const onVis = () => { if (document.visibilityState === "hidden") flush(); };
         window.addEventListener("vs:watchlist-changed", onWl);
         window.addEventListener("vs:portfolio-changed", onPf);
+        window.addEventListener("pagehide", flush);
+        document.addEventListener("visibilitychange", onVis);
         return () => {
             window.removeEventListener("vs:watchlist-changed", onWl);
             window.removeEventListener("vs:portfolio-changed", onPf);
+            window.removeEventListener("pagehide", flush);
+            document.removeEventListener("visibilitychange", onVis);
             clearTimeout(wlTimer.current);
             clearTimeout(pfTimer.current);
         };

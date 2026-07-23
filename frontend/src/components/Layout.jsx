@@ -9,6 +9,7 @@ import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
 import BackButton from "./BackButton";
+import LoginNudge from "./LoginNudge";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -182,6 +183,7 @@ export default function Layout({ children }) {
             </header>
 
             <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+                <LoginNudge />
                 <BackButton />
                 {children}
             </main>

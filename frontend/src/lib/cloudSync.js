@@ -2,16 +2,25 @@ import { cloudWatchlistGet, cloudWatchlistPut, cloudPortfolioGet, cloudPortfolio
 import { getWatchlist, replaceWatchlist, getWatchlistDeletions, replaceWatchlistDeletions } from "@/lib/storage";
 import { getPortfolio, replacePortfolio, getPortfolioDeletions, replacePortfolioDeletions } from "@/lib/portfolio";
 
-// Tombstone-aware reconciliation between this device and the cloud.
-// - Merges tombstones (latest deletedAt per ticker wins).
-// - Unions entries by ticker (newest saved_at wins on conflict).
-// - An entry is dropped if it was deleted AFTER its last save (deletion propagates);
-//   if it was re-added after the deletion, it survives and the tombstone is cleared.
-// - Old tombstones (>60 days) are pruned to avoid unbounded growth.
+// Tombstone-aware + cloud-authoritative reconciliation between this device and the cloud.
+//
+// Two mechanisms make deletions propagate reliably across devices:
+//  1) Tombstones: a removal records { TICKER: deletedAtISO }; an entry is dropped when it
+//     was deleted at/after its last save. Re-adding later (newer saved_at) wins.
+//  2) Cloud-authoritative fallback: even if a tombstone never reached the cloud, a local-only
+//     entry (missing from the cloud) whose saved_at is <= our last successful sync means the
+//     cloud dropped it since → it was deleted elsewhere → drop it. Entries newer than the last
+//     sync are genuine offline additions → keep them.
 // ISO-8601 UTC strings compare correctly lexicographically.
 const DEL_TTL_MS = 60 * 86400000;
+const LAST_KEY = "vs.cloudsync.last";
 
-function reconcile(localEntries, localDel, cloudEntries, cloudDel) {
+const getLast = () => { try { return localStorage.getItem(LAST_KEY) || ""; } catch { return ""; } };
+const setLast = (iso) => { try { localStorage.setItem(LAST_KEY, iso); } catch { /* ignore */ } };
+
+function reconcile(localEntries, localDel, cloudEntries, cloudDel, lastSyncAt) {
+    const T = (e) => (e.ticker || "").toUpperCase();
+
     const del = { ...(localDel || {}) };
     for (const [tk, ts] of Object.entries(cloudDel || {})) {
         const k = (tk || "").toUpperCase();
@@ -19,20 +28,23 @@ function reconcile(localEntries, localDel, cloudEntries, cloudDel) {
         if (!del[k] || ts > del[k]) del[k] = ts;
     }
 
-    const byTicker = new Map();
-    for (const e of localEntries || []) byTicker.set((e.ticker || "").toUpperCase(), e);
-    for (const e of cloudEntries || []) {
-        const k = (e.ticker || "").toUpperCase();
-        const prev = byTicker.get(k);
-        if (!prev || (e.saved_at || "") >= (prev.saved_at || "")) byTicker.set(k, e);
-    }
+    const cloudBy = new Map((cloudEntries || []).map((e) => [T(e), e]));
+    const localBy = new Map((localEntries || []).map((e) => [T(e), e]));
+    const tickers = new Set([...cloudBy.keys(), ...localBy.keys()]);
 
     const entries = [];
-    for (const [k, e] of byTicker) {
+    for (const k of tickers) {
+        const c = cloudBy.get(k);
+        const l = localBy.get(k);
+        const chosen = (c && l) ? (((c.saved_at || "") >= (l.saved_at || "")) ? c : l) : (c || l);
+        const savedAt = chosen.saved_at || "";
         const d = del[k];
-        if (d && d >= (e.saved_at || "")) continue;   // deleted after (or at) last save → stays deleted
-        if (d) delete del[k];                          // re-added later → deletion no longer applies
-        entries.push(e);
+
+        if (d && d >= savedAt) continue;                 // deleted at/after last save → stays deleted
+        if (c) { entries.push(chosen); if (d) delete del[k]; continue; }  // present in cloud → keep (cloud is truth)
+        // local-only (cloud no longer has it):
+        if (lastSyncAt && savedAt && savedAt <= lastSyncAt) continue;   // existed at last sync, cloud dropped it → deleted elsewhere
+        entries.push(chosen);                             // genuine new local addition → keep
     }
 
     const cutoff = new Date(Date.now() - DEL_TTL_MS).toISOString();
@@ -41,12 +53,13 @@ function reconcile(localEntries, localDel, cloudEntries, cloudDel) {
     return { entries, deletions: del };
 }
 
-// Pull cloud → reconcile with local → save locally → push merged result back.
-// Used both on login and by the manual "sincronizar" button. Same behaviour as a page reload.
+// Pull cloud → reconcile with local → save locally → push aligned result back.
+// Used on login/reload and by the manual "sincronizar" button. Equivalent to a page reload.
 export async function runFullSync() {
+    const lastSyncAt = getLast();
     const [wlRes, pfRes] = await Promise.all([cloudWatchlistGet(), cloudPortfolioGet()]);
-    const wl = reconcile(getWatchlist(), getWatchlistDeletions(), wlRes.entries || [], wlRes.deletions || {});
-    const pf = reconcile(getPortfolio(), getPortfolioDeletions(), pfRes.positions || [], pfRes.deletions || {});
+    const wl = reconcile(getWatchlist(), getWatchlistDeletions(), wlRes.entries || [], wlRes.deletions || {}, lastSyncAt);
+    const pf = reconcile(getPortfolio(), getPortfolioDeletions(), pfRes.positions || [], pfRes.deletions || {}, lastSyncAt);
 
     replaceWatchlistDeletions(wl.deletions);
     replacePortfolioDeletions(pf.deletions);
@@ -57,5 +70,8 @@ export async function runFullSync() {
         cloudWatchlistPut(wl.entries, wl.deletions),
         cloudPortfolioPut(pf.entries, pf.deletions),
     ]);
+    setLast(new Date().toISOString());
     return { watchlist: wl.entries.length, portfolio: pf.entries.length };
 }
+
+export { reconcile };

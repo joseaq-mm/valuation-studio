@@ -20,6 +20,7 @@ import { CardSort } from "@/components/CardSort";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 import { Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv", "score", "tam", "kpi"]);
 const WL_SORT_OPTIONS = [
@@ -154,11 +155,16 @@ export default function Watchlist() {
         return () => window.removeEventListener("vs:watchlist-changed", onChange);
     }, []);
 
-    const handleRemove = (t) => {
+    const [confirmDel, setConfirmDel] = useState(null);
+    const handleRemove = (t) => setConfirmDel(t);
+    const doRemove = () => {
+        const t = confirmDel;
+        if (!t) return;
         const list = removeFromWatchlist(t);
         setEntries(list);
         setRows(rows.filter(r => r.entry.ticker !== t));
-        toast("Quitada");
+        setConfirmDel(null);
+        toast("Quitada de Nivel 2");
     };
 
     const activeAlertCount = entries.filter(e => e.alert_enabled).length;
@@ -368,6 +374,15 @@ export default function Watchlist() {
                     </table>
                 </div>
             )}
+            <ConfirmDialog
+                open={!!confirmDel}
+                title="¿Quitar de Nivel 2?"
+                message={`Se quitará ${confirmDel || ""} de tu lista de seguimiento y el borrado se sincronizará en todos tus dispositivos.`}
+                confirmLabel="Quitar"
+                onConfirm={doRemove}
+                onCancel={() => setConfirmDel(null)}
+                testid="watchlist-confirm-remove"
+            />
         </div>
     );
 }

@@ -4,6 +4,7 @@ import { useI18n } from "@/lib/i18n";
 import { LogIn, LogOut, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { runFullSync } from "@/lib/cloudSync";
+import HoverTip from "@/components/HoverTip";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 // Always derive the redirect URL from window.location.origin so the user lands
@@ -46,15 +47,16 @@ export default function AuthButton() {
                 <span className="text-xs font-mono text-[#4A4A4A] hidden sm:inline" title={user.email}>
                     {(user.name || user.email).split(" ")[0]}
                 </span>
-                <button
-                    onClick={handleSyncFromCloud}
-                    className="btn-ghost flex items-center gap-1 !py-1 !px-2 text-xs"
-                    title="Sincronizar con la nube (Nivel 1 y Nivel 2) — resuelve conflictos y borrados"
-                    data-testid="auth-sync"
-                    disabled={syncing}
-                >
-                    <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
-                </button>
+                <HoverTip text="Sincroniza tus empresas (Nivel 1 y Nivel 2) con tu cuenta en la nube: baja lo guardado en otros dispositivos, resuelve conflictos y aplica los borrados. Hace lo mismo que recargar la página; úsalo si algo se ha quedado desincronizado." maxWidth={280}>
+                    <button
+                        onClick={handleSyncFromCloud}
+                        className="btn-ghost flex items-center gap-1 !py-1 !px-2 text-xs"
+                        data-testid="auth-sync"
+                        disabled={syncing}
+                    >
+                        <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+                    </button>
+                </HoverTip>
                 <button
                     onClick={logout}
                     className="btn-ghost flex items-center gap-1 !py-1 !px-2 text-xs"
