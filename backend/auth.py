@@ -48,6 +48,7 @@ class WatchlistEntry(BaseModel):
 
 class WatchlistPayload(BaseModel):
     entries: List[WatchlistEntry]
+    deletions: Optional[Dict[str, str]] = None  # {ticker: deletedAtISO} — propagates removals across devices
 
 
 class PortfolioEntry(BaseModel):
@@ -69,6 +70,7 @@ class PortfolioEntry(BaseModel):
 
 class PortfolioPayload(BaseModel):
     positions: List[PortfolioEntry]
+    deletions: Optional[Dict[str, str]] = None  # {ticker: deletedAtISO} — propagates removals across devices
 
 
 class NotificationPreferences(BaseModel):
@@ -205,7 +207,7 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
     @router.get("/watchlist")
     async def get_watchlist(user: Dict[str, Any] = Depends(get_current_user)):
         doc = await db.user_watchlists.find_one({"user_id": user["user_id"]}, {"_id": 0})
-        return {"entries": (doc or {}).get("entries", [])}
+        return {"entries": (doc or {}).get("entries", []), "deletions": (doc or {}).get("deletions", {})}
 
     @router.put("/watchlist")
     async def put_watchlist(payload: WatchlistPayload, user: Dict[str, Any] = Depends(get_current_user)):
@@ -215,6 +217,7 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             {"$set": {
                 "user_id": user["user_id"],
                 "entries": entries,
+                "deletions": payload.deletions or {},
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }},
             upsert=True,
@@ -225,7 +228,7 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
     @router.get("/portfolio")
     async def get_portfolio(user: Dict[str, Any] = Depends(get_current_user)):
         doc = await db.user_portfolios.find_one({"user_id": user["user_id"]}, {"_id": 0})
-        return {"positions": (doc or {}).get("positions", [])}
+        return {"positions": (doc or {}).get("positions", []), "deletions": (doc or {}).get("deletions", {})}
 
     @router.put("/portfolio")
     async def put_portfolio(payload: PortfolioPayload, user: Dict[str, Any] = Depends(get_current_user)):
@@ -235,6 +238,7 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             {"$set": {
                 "user_id": user["user_id"],
                 "positions": positions,
+                "deletions": payload.deletions or {},
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }},
             upsert=True,

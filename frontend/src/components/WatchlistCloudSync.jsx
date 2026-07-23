@@ -1,20 +1,15 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { cloudWatchlistGet, cloudWatchlistPut, cloudPortfolioGet, cloudPortfolioPut } from "@/lib/api";
-import { getWatchlist, replaceWatchlist } from "@/lib/storage";
-import { getPortfolio, replacePortfolio } from "@/lib/portfolio";
+import { cloudWatchlistPut, cloudPortfolioPut } from "@/lib/api";
+import { getWatchlist, getWatchlistDeletions } from "@/lib/storage";
+import { getPortfolio, getPortfolioDeletions } from "@/lib/portfolio";
+import { runFullSync } from "@/lib/cloudSync";
 
 // Headless component: keeps localStorage watchlist + portfolio in sync with the
 // per-user cloud copies when the user is logged in.
-//   - On login: pull cloud → merge with local → push.
-//   - On any subsequent local change: debounce 800ms then push to cloud.
+//   - On login/reload: pull cloud → tombstone-aware reconcile → push (see runFullSync).
+//   - On any subsequent local change: debounce 800ms then push entries + deletions.
 //   - On logout: stop syncing (localStorage stays untouched).
-function mergeByTicker(local, cloud) {
-    const byTicker = new Map(local.map(e => [(e.ticker || "").toUpperCase(), e]));
-    for (const e of (cloud || [])) byTicker.set((e.ticker || "").toUpperCase(), e);
-    return Array.from(byTicker.values());
-}
-
 export default function WatchlistCloudSync() {
     const { user } = useAuth();
     const wlTimer = useRef(null);
@@ -29,20 +24,8 @@ export default function WatchlistCloudSync() {
         let cancelled = false;
         (async () => {
             try {
-                const [{ entries: cloudWl }, { positions: cloudPf }] = await Promise.all([
-                    cloudWatchlistGet(),
-                    cloudPortfolioGet(),
-                ]);
-                if (cancelled) return;
-                const mergedWl = mergeByTicker(getWatchlist(), cloudWl || []);
-                const mergedPf = mergeByTicker(getPortfolio(), cloudPf || []);
-                replaceWatchlist(mergedWl);
-                replacePortfolio(mergedPf);
-                await Promise.all([
-                    cloudWatchlistPut(mergedWl),
-                    cloudPortfolioPut(mergedPf),
-                ]);
-                initialised.current = true;
+                await runFullSync();
+                if (!cancelled) initialised.current = true;
             } catch {
                 /* silent — the sync button in the header lets the user retry */
             }
@@ -52,20 +35,18 @@ export default function WatchlistCloudSync() {
 
     useEffect(() => {
         if (!user) return;
-        const onWl = (e) => {
+        const onWl = () => {
             if (!initialised.current) return;
-            const next = e.detail || getWatchlist();
             clearTimeout(wlTimer.current);
             wlTimer.current = setTimeout(() => {
-                cloudWatchlistPut(next).catch(() => { /* silent */ });
+                cloudWatchlistPut(getWatchlist(), getWatchlistDeletions()).catch(() => { /* silent */ });
             }, 800);
         };
-        const onPf = (e) => {
+        const onPf = () => {
             if (!initialised.current) return;
-            const next = e.detail || getPortfolio();
             clearTimeout(pfTimer.current);
             pfTimer.current = setTimeout(() => {
-                cloudPortfolioPut(next).catch(() => { /* silent */ });
+                cloudPortfolioPut(getPortfolio(), getPortfolioDeletions()).catch(() => { /* silent */ });
             }, 800);
         };
         window.addEventListener("vs:watchlist-changed", onWl);

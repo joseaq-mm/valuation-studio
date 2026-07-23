@@ -3,8 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { LogIn, LogOut, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { cloudWatchlistGet, cloudWatchlistPut } from "@/lib/api";
-import { getWatchlist as getLocalWatchlist, replaceWatchlist } from "@/lib/storage";
+import { runFullSync } from "@/lib/cloudSync";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 // Always derive the redirect URL from window.location.origin so the user lands
@@ -19,22 +18,16 @@ export default function AuthButton() {
     const { t } = useI18n();
     const [syncing, setSyncing] = useState(false);
 
+    // Same full reconcile as a page reload: pull cloud, resolve conflicts/deletions
+    // (tombstone-aware) for Nivel 1 + Nivel 2, and push the aligned result back.
     const handleSyncFromCloud = async () => {
-        if (!user) return;
+        if (!user || syncing) return;
         setSyncing(true);
         try {
-            const { entries } = await cloudWatchlistGet();
-            // Merge: cloud wins for tickers it has; local-only tickers are preserved.
-            const local = getLocalWatchlist();
-            const byTicker = new Map(local.map(e => [e.ticker, e]));
-            for (const e of entries) byTicker.set(e.ticker, e);
-            const merged = Array.from(byTicker.values());
-            replaceWatchlist(merged);
-            // Push the merged result so cloud and local are aligned
-            await cloudWatchlistPut(merged);
-            toast.success(`Nivel 2 sincronizado (${merged.length} acciones).`);
+            const { watchlist, portfolio } = await runFullSync();
+            toast.success(`Sincronizado con la nube (Nivel 1: ${portfolio} · Nivel 2: ${watchlist}).`);
         } catch (e) {
-            toast.error("Error al sincronizar el Nivel 2.");
+            toast.error("Error al sincronizar con la nube. Revisa tu conexión e inténtalo de nuevo.");
         } finally {
             setSyncing(false);
         }
@@ -56,7 +49,7 @@ export default function AuthButton() {
                 <button
                     onClick={handleSyncFromCloud}
                     className="btn-ghost flex items-center gap-1 !py-1 !px-2 text-xs"
-                    title="Sincronizar Nivel 2 con la nube"
+                    title="Sincronizar con la nube (Nivel 1 y Nivel 2) — resuelve conflictos y borrados"
                     data-testid="auth-sync"
                     disabled={syncing}
                 >

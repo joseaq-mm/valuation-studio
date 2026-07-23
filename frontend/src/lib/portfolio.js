@@ -1,6 +1,7 @@
 // Portfolio (real positions) storage. Lives in localStorage for anonymous
 // users; WatchlistCloudSync mirrors this to the cloud when logged in.
 const KEY = "vs.portfolio.v1";
+const DEL_KEY = "vs.portfolio.deletions.v1";  // { TICKER: deletedAtISO } tombstones for cross-device deletions
 
 const _read = () => {
     try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch { return []; }
@@ -10,6 +11,15 @@ const _write = (list) => {
     localStorage.setItem(KEY, JSON.stringify(list));
     try { window.dispatchEvent(new CustomEvent("vs:portfolio-changed", { detail: list })); } catch { /* ignore */ }
 };
+
+const _readDel = () => {
+    try { return JSON.parse(localStorage.getItem(DEL_KEY) || "{}") || {}; } catch { return {}; }
+};
+const _writeDel = (map) => { localStorage.setItem(DEL_KEY, JSON.stringify(map || {})); };
+export const getPortfolioDeletions = () => _readDel();
+export const replacePortfolioDeletions = (map) => { _writeDel(map || {}); return map || {}; };
+
+const _clearTomb = (t) => { const d = _readDel(); if (d[t]) { delete d[t]; _writeDel(d); } };
 
 export const getPortfolio = () => _read();
 
@@ -27,6 +37,7 @@ export const upsertPosition = (pos) => {
     const next = { ...pos, ticker: t };
     if (idx >= 0) list[idx] = { ...list[idx], ...next };
     else list.push(next);
+    _clearTomb(t);  // re-added → clear any tombstone
     _write(list);
     return list;
 };
@@ -34,6 +45,9 @@ export const upsertPosition = (pos) => {
 export const removePosition = (ticker) => {
     const t = (ticker || "").toUpperCase();
     const list = _read().filter(p => (p.ticker || "").toUpperCase() !== t);
+    const del = _readDel();
+    del[t] = new Date().toISOString();  // tombstone so the deletion syncs to other devices
+    _writeDel(del);
     _write(list);
     return list;
 };
@@ -83,6 +97,7 @@ export const savePortfolioOverrides = (ticker, overrides) => {
             saved_at: new Date().toISOString(),
         };
     }
+    _clearTomb(t);
     _write(list);
     return list;
 };
