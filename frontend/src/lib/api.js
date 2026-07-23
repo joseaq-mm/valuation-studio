@@ -40,10 +40,12 @@ export const authLogout = () => api.post(`/auth/logout`).then(r => r.data);
 // ---------------- Cloud watchlist ----------------
 export const cloudWatchlistGet = () => api.get(`/auth/watchlist`).then(r => r.data);
 export const cloudWatchlistPut = (entries, deletions = {}) => api.put(`/auth/watchlist`, { entries, deletions }).then(r => r.data);
+export const cloudWatchlistDelete = (ticker) => api.post(`/auth/watchlist/delete`, { ticker }).then(r => r.data);
 
 // ---------------- Cloud portfolio ----------------
 export const cloudPortfolioGet = () => api.get(`/auth/portfolio`).then(r => r.data);
 export const cloudPortfolioPut = (positions, deletions = {}) => api.put(`/auth/portfolio`, { positions, deletions }).then(r => r.data);
+export const cloudPortfolioDelete = (ticker) => api.post(`/auth/portfolio/delete`, { ticker }).then(r => r.data);
 
 // ---------------- Notification prefs ----------------
 export const notifyGet = () => api.get(`/auth/notify`).then(r => r.data);

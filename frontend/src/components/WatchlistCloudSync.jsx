@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
-import { cloudWatchlistPut, cloudPortfolioPut } from "@/lib/api";
+import { cloudWatchlistPut, cloudPortfolioPut, cloudWatchlistDelete, cloudPortfolioDelete } from "@/lib/api";
 import { getWatchlist, getWatchlistDeletions } from "@/lib/storage";
 import { getPortfolio, getPortfolioDeletions } from "@/lib/portfolio";
 import { runFullSync } from "@/lib/cloudSync";
@@ -57,13 +57,21 @@ export default function WatchlistCloudSync() {
             if (pfTimer.current) { clearTimeout(pfTimer.current); pfTimer.current = null; cloudPortfolioPut(getPortfolio(), getPortfolioDeletions()).catch(() => {}); }
         };
         const onVis = () => { if (document.visibilityState === "hidden") flush(); };
+        // Authoritative, immediate deletion — hits the server directly so no stale client can
+        // resurrect it via a later full-list PUT.
+        const onWlDel = (e) => { if (initialised.current && e.detail) cloudWatchlistDelete(e.detail).catch(() => {}); };
+        const onPfDel = (e) => { if (initialised.current && e.detail) cloudPortfolioDelete(e.detail).catch(() => {}); };
         window.addEventListener("vs:watchlist-changed", onWl);
         window.addEventListener("vs:portfolio-changed", onPf);
+        window.addEventListener("vs:watchlist-deleted", onWlDel);
+        window.addEventListener("vs:portfolio-deleted", onPfDel);
         window.addEventListener("pagehide", flush);
         document.addEventListener("visibilitychange", onVis);
         return () => {
             window.removeEventListener("vs:watchlist-changed", onWl);
             window.removeEventListener("vs:portfolio-changed", onPf);
+            window.removeEventListener("vs:watchlist-deleted", onWlDel);
+            window.removeEventListener("vs:portfolio-deleted", onPfDel);
             window.removeEventListener("pagehide", flush);
             document.removeEventListener("visibilitychange", onVis);
             clearTimeout(wlTimer.current);

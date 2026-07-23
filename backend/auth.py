@@ -73,6 +73,10 @@ class PortfolioPayload(BaseModel):
     deletions: Optional[Dict[str, str]] = None  # {ticker: deletedAtISO} — propagates removals across devices
 
 
+class DeleteItem(BaseModel):
+    ticker: str
+
+
 class NotificationPreferences(BaseModel):
     enabled: bool = False
     cross_buy_zone: bool = True   # alert when ratio_compra crosses into cheap zone
@@ -204,6 +208,35 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
         return {"ok": True}
 
     # ---------------- Watchlist sync (per user) ----------------
+    def _merge_tombstones(existing_del: Dict[str, str], incoming_del: Dict[str, str]) -> Dict[str, str]:
+        merged = dict(existing_del or {})
+        for tk, ts in (incoming_del or {}).items():
+            k = (tk or "").upper()
+            if not k:
+                continue
+            if k not in merged or ts > merged[k]:
+                merged[k] = ts
+        return merged
+
+    def _apply_tombstones(items: list, merged_del: Dict[str, str]) -> list:
+        """Server-side enforcement: drop any item deleted at/after its last save, so a
+        stale client can never resurrect it. A newer saved_at (intentional re-add) wins
+        and clears its tombstone. Prunes tombstones older than 60 days."""
+        kept = []
+        for e in items:
+            k = (e.get("ticker") or "").upper()
+            d = merged_del.get(k)
+            sa = e.get("saved_at") or ""
+            if d and d >= sa:
+                continue                 # stays deleted
+            if d:
+                merged_del.pop(k, None)  # re-added after deletion → tombstone no longer applies
+            kept.append(e)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+        for k in [k for k, v in merged_del.items() if v < cutoff]:
+            merged_del.pop(k, None)
+        return kept
+
     @router.get("/watchlist")
     async def get_watchlist(user: Dict[str, Any] = Depends(get_current_user)):
         doc = await db.user_watchlists.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -212,14 +245,36 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
     @router.put("/watchlist")
     async def put_watchlist(payload: WatchlistPayload, user: Dict[str, Any] = Depends(get_current_user)):
         entries = [e.model_dump() for e in payload.entries]
+        existing = await db.user_watchlists.find_one({"user_id": user["user_id"]}, {"_id": 0, "deletions": 1})
+        merged_del = _merge_tombstones((existing or {}).get("deletions") or {}, payload.deletions or {})
+        kept = _apply_tombstones(entries, merged_del)
         await db.user_watchlists.update_one(
             {"user_id": user["user_id"]},
             {"$set": {
                 "user_id": user["user_id"],
-                "entries": entries,
-                "deletions": payload.deletions or {},
+                "entries": kept,
+                "deletions": merged_del,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }},
+            upsert=True,
+        )
+        return {"ok": True, "count": len(kept), "deletions": merged_del}
+
+    @router.post("/watchlist/delete")
+    async def delete_watchlist_item(payload: DeleteItem, user: Dict[str, Any] = Depends(get_current_user)):
+        """Authoritative removal: drops the ticker from stored entries AND records a
+        server-side tombstone, so no stale client can resurrect it via a later PUT."""
+        tk = (payload.ticker or "").upper().strip()
+        if not tk:
+            raise HTTPException(status_code=400, detail="ticker requerido")
+        doc = await db.user_watchlists.find_one({"user_id": user["user_id"]}, {"_id": 0})
+        entries = [e for e in (doc or {}).get("entries", []) if (e.get("ticker") or "").upper() != tk]
+        deletions = (doc or {}).get("deletions") or {}
+        deletions[tk] = datetime.now(timezone.utc).isoformat()
+        await db.user_watchlists.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"user_id": user["user_id"], "entries": entries, "deletions": deletions,
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True,
         )
         return {"ok": True, "count": len(entries)}
@@ -233,14 +288,34 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
     @router.put("/portfolio")
     async def put_portfolio(payload: PortfolioPayload, user: Dict[str, Any] = Depends(get_current_user)):
         positions = [p.model_dump() for p in payload.positions]
+        existing = await db.user_portfolios.find_one({"user_id": user["user_id"]}, {"_id": 0, "deletions": 1})
+        merged_del = _merge_tombstones((existing or {}).get("deletions") or {}, payload.deletions or {})
+        kept = _apply_tombstones(positions, merged_del)
         await db.user_portfolios.update_one(
             {"user_id": user["user_id"]},
             {"$set": {
                 "user_id": user["user_id"],
-                "positions": positions,
-                "deletions": payload.deletions or {},
+                "positions": kept,
+                "deletions": merged_del,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }},
+            upsert=True,
+        )
+        return {"ok": True, "count": len(kept), "deletions": merged_del}
+
+    @router.post("/portfolio/delete")
+    async def delete_portfolio_item(payload: DeleteItem, user: Dict[str, Any] = Depends(get_current_user)):
+        tk = (payload.ticker or "").upper().strip()
+        if not tk:
+            raise HTTPException(status_code=400, detail="ticker requerido")
+        doc = await db.user_portfolios.find_one({"user_id": user["user_id"]}, {"_id": 0})
+        positions = [p for p in (doc or {}).get("positions", []) if (p.get("ticker") or "").upper() != tk]
+        deletions = (doc or {}).get("deletions") or {}
+        deletions[tk] = datetime.now(timezone.utc).isoformat()
+        await db.user_portfolios.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"user_id": user["user_id"], "positions": positions, "deletions": deletions,
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True,
         )
         return {"ok": True, "count": len(positions)}

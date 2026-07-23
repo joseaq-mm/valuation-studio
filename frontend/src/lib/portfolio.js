@@ -49,6 +49,7 @@ export const removePosition = (ticker) => {
     del[t] = new Date().toISOString();  // tombstone so the deletion syncs to other devices
     _writeDel(del);
     _write(list);
+    try { window.dispatchEvent(new CustomEvent("vs:portfolio-deleted", { detail: t })); } catch { /* ignore */ }
     return list;
 };
 
