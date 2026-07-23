@@ -95,14 +95,17 @@ export default function Layout({ children }) {
                             </div>
                         </Link>
 
-                        <button
-                            className="md:hidden order-2 ml-auto border border-black bg-white p-2"
-                            onClick={() => setMenuOpen((o) => !o)}
-                            aria-label="Menú"
-                            data-testid="nav-mobile-toggle"
-                        >
-                            {menuOpen ? <X size={18} /> : <Menu size={18} />}
-                        </button>
+                        <div className="md:hidden order-2 ml-auto flex items-center gap-2">
+                            <AuthButton />
+                            <button
+                                className="border border-black bg-white p-2"
+                                onClick={() => setMenuOpen((o) => !o)}
+                                aria-label="Menú"
+                                data-testid="nav-mobile-toggle"
+                            >
+                                {menuOpen ? <X size={18} /> : <Menu size={18} />}
+                            </button>
+                        </div>
 
                         <div ref={boxRef} className="order-3 sm:order-2 w-full sm:w-auto sm:flex-1 relative">
                             <form onSubmit={handleSubmit} className="flex items-center border border-black bg-white" data-testid="search-form">
@@ -172,9 +175,6 @@ export default function Layout({ children }) {
                                 <LanguageToggle />
                                 <ThemeToggle />
                                 <CurrencySelector />
-                            </div>
-                            <div className="mt-2 pt-2 border-t border-black/10">
-                                <AuthButton />
                             </div>
                         </div>
                     )}
