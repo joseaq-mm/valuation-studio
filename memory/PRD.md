@@ -18,6 +18,7 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ FIX PWA — login de Google en app instalada (22 jul 2026):** en modo `display: standalone` + `apple-mobile-web-app-capable`, el login OAuth por redirección externa rompía en iOS (salta a Safari, la cookie de sesión queda en Safari y no en la app aislada → siempre anónimo). Solución: manifest `display: "browser"` + `display_override: ["minimal-ui","standalone"]` (Android/Chrome sigue siendo instalable con install-prompt vía minimal-ui; iOS abre el icono en contexto Safari que comparte cookies → login funciona). Eliminadas las metas `apple-mobile-web-app-capable` / `mobile-web-app-capable` / `status-bar-style`. `PWAInstallPrompt.isStandalone()` ahora también detecta minimal-ui. IMPORTANTE: quien ya instaló la versión antigua debe borrar el icono y volver a añadirlo (iOS cachea el manifest al instalar).
 - **✅ PWA — app instalable iOS + Android (Responsive Fase 3) (22 jul 2026, verificado por curl + screenshot):**
   - `public/manifest.json` (name/short_name, display standalone, start_url ".", scope "/", theme/background `#FDF1E6`, iconos 192/512 `any maskable` + 180 apple-touch + favicons) generados a partir de un icono de marca (salmón FT + monograma navy) con PIL.
   - `public/service-worker.js` network-first (nunca cachea `/api`, fallback offline a `/index.html`), registrado en `src/index.js` en `load`.

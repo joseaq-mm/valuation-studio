@@ -5,7 +5,9 @@ const DISMISS_KEY = "vs_pwa_dismissed_at";
 const DISMISS_DAYS = 14;
 
 const isStandalone = () =>
-  window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  window.matchMedia?.("(display-mode: standalone)").matches ||
+  window.matchMedia?.("(display-mode: minimal-ui)").matches ||
+  window.navigator.standalone === true;
 
 const isIOS = () =>
   /iphone|ipad|ipod/i.test(window.navigator.userAgent) && !window.MSStream;
