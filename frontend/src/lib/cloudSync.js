@@ -53,23 +53,44 @@ function reconcile(localEntries, localDel, cloudEntries, cloudDel, lastSyncAt) {
     return { entries, deletions: del };
 }
 
-// Pull cloud → reconcile with local → save locally → push aligned result back.
-// Used on login/reload and by the manual "sincronizar" button. Equivalent to a page reload.
+// Stable, order/field-noise-insensitive signature of a list, so polling only
+// touches the local cache (and re-renders the UI) when something actually changed.
+const _norm = (e) => ({
+    t: (e.ticker || "").toUpperCase(),
+    m: e.mode || "auto",
+    o: (e.overrides && Object.keys(e.overrides).length) ? e.overrides : null,
+    a: !!e.alert_enabled,
+    s: e.shares ?? null, bp: e.buy_price ?? null, bc: e.buy_currency ?? null, bd: e.buy_date ?? null, n: e.note ?? null,
+});
+const _sig = (list) => JSON.stringify((list || []).map(_norm).sort((x, y) => (x.t < y.t ? -1 : x.t > y.t ? 1 : 0)));
+
+// Pull cloud → reconcile with local → update local cache (only on real change) → push
+// back (only when the cloud differs). Runs on login and on the React Query polling loop,
+// so changes made on another device appear here automatically without a reload.
 export async function runFullSync() {
     const lastSyncAt = getLast();
     const [wlRes, pfRes] = await Promise.all([cloudWatchlistGet(), cloudPortfolioGet()]);
-    const wl = reconcile(getWatchlist(), getWatchlistDeletions(), wlRes.entries || [], wlRes.deletions || {}, lastSyncAt);
-    const pf = reconcile(getPortfolio(), getPortfolioDeletions(), pfRes.positions || [], pfRes.deletions || {}, lastSyncAt);
+    const localWl = getWatchlist(), localPf = getPortfolio();
+    const cloudWl = wlRes.entries || [], cloudPf = pfRes.positions || [];
+    const cloudWlDel = wlRes.deletions || {}, cloudPfDel = pfRes.deletions || {};
 
-    replaceWatchlistDeletions(wl.deletions);
+    const wl = reconcile(localWl, getWatchlistDeletions(), cloudWl, cloudWlDel, lastSyncAt);
+    const pf = reconcile(localPf, getPortfolioDeletions(), cloudPf, cloudPfDel, lastSyncAt);
+
+    replaceWatchlistDeletions(wl.deletions);   // silent (no UI event)
     replacePortfolioDeletions(pf.deletions);
-    replaceWatchlist(wl.entries);
-    replacePortfolio(pf.entries);
+    if (_sig(wl.entries) !== _sig(localWl)) replaceWatchlist(wl.entries);   // dispatches → UI refresh
+    if (_sig(pf.entries) !== _sig(localPf)) replacePortfolio(pf.entries);
 
-    await Promise.all([
-        cloudWatchlistPut(wl.entries, wl.deletions),
-        cloudPortfolioPut(pf.entries, pf.deletions),
-    ]);
+    const pushes = [];
+    if (_sig(wl.entries) !== _sig(cloudWl) || JSON.stringify(wl.deletions) !== JSON.stringify(cloudWlDel)) {
+        pushes.push(cloudWatchlistPut(wl.entries, wl.deletions));
+    }
+    if (_sig(pf.entries) !== _sig(cloudPf) || JSON.stringify(pf.deletions) !== JSON.stringify(cloudPfDel)) {
+        pushes.push(cloudPortfolioPut(pf.entries, pf.deletions));
+    }
+    if (pushes.length) await Promise.all(pushes);
+
     setLast(new Date().toISOString());
     return { watchlist: wl.entries.length, portfolio: pf.entries.length };
 }

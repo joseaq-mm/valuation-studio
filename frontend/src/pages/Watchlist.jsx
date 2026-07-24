@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getWatchlist, getWatchlistTickers, removeFromWatchlist, setWatchlistAlert, setAllWatchlistAlerts } from "@/lib/storage";
 import { compare, thesisVisualData } from "@/lib/api";
@@ -66,6 +66,8 @@ const applyEntryOverrides = (companyData, entry) => {
 export default function Watchlist() {
     const [entries, setEntries] = useState([]);
     const [rows, setRows] = useState([]);
+    const rowsRef = useRef([]);
+    useEffect(() => { rowsRef.current = rows; }, [rows]);
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [sort, setSort] = useState(null);
@@ -139,17 +141,23 @@ export default function Watchlist() {
             toast.warning(`Tu watchlist tiene ${es.length} tickers (límite recomendado: 100). El rendimiento puede verse afectado.`);
         }
         load(es);
-        // Stay in sync with localStorage updates (e.g. per-row alert toggle,
-        // master alert toggle, or adds from another page). We only refresh
-        // `entries` so the master bell + counter reflect the new state;
-        // `rows` keep their fresh Yahoo data and we just re-merge each entry.
+        // Stay in sync with cache updates (per-row alert toggle, adds/removes from another
+        // page, or changes pulled from the cloud on another device). When the SET of tickers
+        // changes (add/remove) we refetch the rows so the new list renders with data; when only
+        // an entry's fields change (e.g. alert) we just re-merge without a Yahoo refetch.
         const onChange = () => {
             const next = getWatchlist();
             setEntries(next);
-            setRows((prev) => prev.map(r => {
-                const updated = next.find(e => e.ticker === r.entry.ticker);
-                return updated ? { ...r, entry: updated } : r;
-            }));
+            const nextKey = next.map(e => e.ticker).sort().join(",");
+            const curKey = rowsRef.current.map(r => r.entry.ticker).sort().join(",");
+            if (nextKey !== curKey) {
+                load(next);
+            } else {
+                setRows((prev) => prev.map(r => {
+                    const updated = next.find(e => e.ticker === r.entry.ticker);
+                    return updated ? { ...r, entry: updated } : r;
+                }));
+            }
         };
         window.addEventListener("vs:watchlist-changed", onChange);
         return () => window.removeEventListener("vs:watchlist-changed", onChange);
