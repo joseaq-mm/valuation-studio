@@ -15,6 +15,7 @@ import Visual from "@/pages/Visual";
 import Kpis from "@/pages/Kpis";
 import Macro from "@/pages/Macro";
 import AuthCallback from "@/pages/AuthCallback";
+import GoogleCallback from "@/pages/GoogleCallback";
 import Instructions from "@/pages/Instructions";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
@@ -51,6 +52,7 @@ function AppRouter() {
                 <Route path="/macro" element={<Macro />} />
                 <Route path="/instrucciones" element={<Instructions />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/auth/google" element={<GoogleCallback />} />
             </Routes>
         </Layout>
     );

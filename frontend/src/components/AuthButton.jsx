@@ -5,14 +5,9 @@ import { LogIn, LogOut, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { runFullSync } from "@/lib/cloudSync";
 import HoverTip from "@/components/HoverTip";
+import { startGoogleLogin } from "@/lib/googleAuth";
 
-// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-// Always derive the redirect URL from window.location.origin so the user lands
-// back on the exact domain they came from (prod / preview / local).
-function startLogin() {
-    const redirectUrl = window.location.origin + "/auth/callback";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-}
+const startLogin = startGoogleLogin;
 
 export default function AuthButton() {
     const { user, loading, logout } = useAuth();

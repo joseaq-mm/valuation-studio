@@ -30,6 +30,11 @@ class SessionExchange(BaseModel):
     session_id: str
 
 
+class GoogleCode(BaseModel):
+    code: str
+    redirect_uri: str
+
+
 class UserOut(BaseModel):
     user_id: str
     email: str
@@ -190,6 +195,87 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
         return {
             "user": UserOut(**{k: user_doc.get(k) for k in ["user_id", "email", "name", "picture"]}).model_dump(),
         }
+
+    async def _finalize_login(email: str, name: Optional[str], picture: Optional[str], response: Response) -> Dict[str, Any]:
+        """Upsert the user, create a 7-day session and set the httpOnly cookie. Shared by
+        the Emergent and custom Google OAuth flows."""
+        existing = await db.users.find_one({"email": email}, {"_id": 0})
+        if existing:
+            user_id = existing["user_id"]
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "name": name or existing.get("name"),
+                    "picture": picture or existing.get("picture"),
+                    "last_login": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+        else:
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            await db.users.insert_one({
+                "user_id": user_id,
+                "email": email,
+                "name": name,
+                "picture": picture,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_login": datetime.now(timezone.utc).isoformat(),
+                "notify": NotificationPreferences().model_dump(),
+            })
+
+        session_token = uuid.uuid4().hex
+        await db.user_sessions.insert_one({
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": datetime.now(timezone.utc) + SESSION_DURATION,
+            "created_at": datetime.now(timezone.utc),
+        })
+        response.set_cookie(
+            key="session_token", value=session_token, httponly=True, secure=True,
+            samesite="none", max_age=int(SESSION_DURATION.total_seconds()), path="/",
+        )
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        return {"user": UserOut(**{k: user_doc.get(k) for k in ["user_id", "email", "name", "picture"]}).model_dump()}
+
+    @router.post("/google")
+    async def google_login(payload: GoogleCode, response: Response):
+        """Custom Google OAuth (Authorization Code flow) with our own Client ID/Secret.
+        Frontend redirects to Google with redirect_uri = <origin>/auth/google, receives the
+        code, and posts it here; we exchange it server-side (needs the secret) and open a session.
+        REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH"""
+        client_id = os.environ.get("GOOGLE_CLIENT_ID")
+        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            raise HTTPException(status_code=500, detail="Google OAuth no configurado en el servidor")
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                tok = await client.post("https://oauth2.googleapis.com/token", data={
+                    "code": payload.code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": payload.redirect_uri,
+                    "grant_type": "authorization_code",
+                })
+                if tok.status_code != 200:
+                    logger.warning(f"Google token exchange failed {tok.status_code}: {tok.text[:200]}")
+                    raise HTTPException(status_code=401, detail="No se pudo validar el código con Google")
+                access_token = tok.json().get("access_token")
+                if not access_token:
+                    raise HTTPException(status_code=401, detail="Google no devolvió token de acceso")
+                ui = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if ui.status_code != 200:
+                    raise HTTPException(status_code=401, detail="No se pudo obtener el perfil de Google")
+                data = ui.json()
+        except httpx.RequestError as e:
+            logger.error(f"Google OAuth request failed: {e}")
+            raise HTTPException(status_code=502, detail="Proveedor de autenticación inaccesible")
+
+        email = data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Google no devolvió email")
+        return await _finalize_login(email, data.get("name"), data.get("picture"), response)
 
     @router.get("/me")
     async def me(user: Dict[str, Any] = Depends(get_current_user)):

@@ -35,6 +35,7 @@ export const translateSummary = (ticker) =>
 // ---------------- Auth ----------------
 export const authMe = () => api.get(`/auth/me`).then(r => r.data);
 export const authSession = (session_id) => api.post(`/auth/session`, { session_id }).then(r => r.data);
+export const googleLogin = (code, redirect_uri) => api.post(`/auth/google`, { code, redirect_uri }).then(r => r.data);
 export const authLogout = () => api.post(`/auth/logout`).then(r => r.data);
 
 // ---------------- Cloud watchlist ----------------

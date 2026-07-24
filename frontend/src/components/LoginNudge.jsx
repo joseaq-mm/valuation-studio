@@ -1,15 +1,12 @@
 import React, { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { LogIn, X } from "lucide-react";
+import { startGoogleLogin } from "@/lib/googleAuth";
 
 const DISMISS_KEY = "vs_login_nudge_dismissed_at";
 const DISMISS_DAYS = 7;
 
-// Same redirect flow as AuthButton (never hardcode the URL — derive from origin).
-function startLogin() {
-    const redirectUrl = window.location.origin + "/auth/callback";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-}
+const startLogin = startGoogleLogin;
 
 // Slim, dismissible banner shown when the user is not logged in, nudging them to
 // sign in with Google so their saved companies sync across devices.
