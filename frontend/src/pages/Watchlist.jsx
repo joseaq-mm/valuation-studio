@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { getWatchlist, getWatchlistTickers, removeFromWatchlist, setWatchlistAlert, setAllWatchlistAlerts } from "@/lib/storage";
+import { getWatchlist, getWatchlistTickers, removeFromWatchlist, saveToWatchlist, setWatchlistAlert, setAllWatchlistAlerts } from "@/lib/storage";
 import { compare, thesisVisualData } from "@/lib/api";
 import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
@@ -18,8 +18,9 @@ import { CompanyCard } from "@/components/CompanyCard";
 import { NextEarnings, nextEarningsInfo } from "@/components/NextEarnings";
 import { CardSort } from "@/components/CardSort";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
-import { Trash2, ArrowRight } from "lucide-react";
+import { Trash2, ArrowRight, Plus } from "lucide-react";
 import { toast } from "sonner";
+import TickerAutocomplete from "@/components/TickerAutocomplete";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv", "score", "tam", "kpi"]);
@@ -164,6 +165,20 @@ export default function Watchlist() {
     }, []);
 
     const [confirmDel, setConfirmDel] = useState(null);
+    const [showAdd, setShowAdd] = useState(false);
+    const [addInput, setAddInput] = useState("");
+    const addTicker = (symbol) => {
+        const tk = (symbol || "").trim().toUpperCase();
+        if (!tk) return;
+        if (getWatchlist().some(e => e.ticker === tk)) {
+            toast.message(`${tk} ya está en Nivel 2`);
+            setShowAdd(false); setAddInput("");
+            return;
+        }
+        saveToWatchlist(tk);   // dispatches vs:watchlist-changed → list reloads with data
+        toast.success(`${tk} añadida a Nivel 2`);
+        setShowAdd(false); setAddInput("");
+    };
     const handleRemove = (t) => setConfirmDel(t);
     const doRemove = () => {
         const t = confirmDel;
@@ -200,7 +215,7 @@ export default function Watchlist() {
 
     return (
         <div data-testid="watchlist-page">
-            <div className="flex justify-between items-end mb-6">
+            <div className="flex justify-between items-end mb-6 gap-3 flex-wrap">
                 <div>
                     <div className="overline text-[#B32A22]">{t("watchlist.tag")}</div>
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("watchlist.title")}</h1>
@@ -211,8 +226,11 @@ export default function Watchlist() {
                         </div>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <ViewToggle view={view} onChange={changeView} testid="watchlist-view-toggle" />
+                    <button onClick={() => { setAddInput(""); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="watchlist-add-btn">
+                        <Plus size={14} /> Añadir
+                    </button>
                     <Link to="/compare" className="btn-ghost" data-testid="watchlist-to-compare">{t("nav.compare")} <ArrowRight size={12} className="inline ml-1" /></Link>
                 </div>
             </div>
@@ -380,6 +398,26 @@ export default function Watchlist() {
                             })}
                         </tbody>
                     </table>
+                </div>
+            )}
+            {showAdd && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(17,17,17,0.5)" }} data-testid="watchlist-add-dialog" onClick={() => { setShowAdd(false); setAddInput(""); }}>
+                    <div className="bg-white border border-black p-6 w-full max-w-md shadow-[6px_6px_0_0_rgba(17,17,17,0.15)]" onClick={(e) => e.stopPropagation()}>
+                        <h2 className="font-serif text-2xl mb-1">Añadir a Nivel 2</h2>
+                        <p className="text-sm text-[#4A4A4A] mb-4 leading-snug">Busca una acción por ticker o nombre y añádela a tu lista de seguimiento.</p>
+                        <TickerAutocomplete
+                            value={addInput}
+                            onChange={setAddInput}
+                            onPick={(r) => addTicker(r.symbol)}
+                            onEnter={() => addTicker(addInput)}
+                            placeholder="AAPL, SAN.MC, VOD.L…"
+                            testid="watchlist-add-input"
+                        />
+                        <div className="flex justify-end gap-2 mt-5">
+                            <button onClick={() => { setShowAdd(false); setAddInput(""); }} className="btn-ghost" data-testid="watchlist-add-cancel">Cancelar</button>
+                            <button onClick={() => addTicker(addInput)} className="btn-primary inline-flex items-center gap-1" data-testid="watchlist-add-confirm"><Plus size={14} /> Añadir</button>
+                        </div>
+                    </div>
                 </div>
             )}
             <ConfirmDialog
