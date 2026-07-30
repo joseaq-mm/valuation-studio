@@ -1,0 +1,19 @@
+{
+  "summary": "Bug fix verification for Nivel 1 (Portfolio) POC/POV/ratios missing on AMD/TSLA/SHOP/NVDA/CRWD. Verified backend GET /api/compare returns non-null poc, pov, ratio_compra_pct, ratio_venta_pct and empty missing_inputs for all 5 tickers. Verified in the UI that Compare (side-by-side) renders POC/POV/RC/RV correctly for the 5 tickers. Added the 5 tickers to Nivel 1 Portfolio via the 'Añadir posición' dialog with authenticated test user: all rows show R.C. and R.V. numeric values plus signals (CARA/BARATA/JUSTA), no '—' in ratio columns. Bug is confirmed FIXED end-to-end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Portfolio.jsx (~586 lines) mixes page, table, cards, PositionDialog and Kpi in one file; consider extracting PositionDialog for maintainability.",
+    "computeCustomRatios (customRatios.js) silently returns nulls when ANY of the 10 fields is missing; UI does not surface WHY (missing_inputs) — a small tooltip listing missing_inputs on '—' cells would help future debugging of the same class of bug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (compare endpoint, 5/5 tickers with complete custom_ratios)", "frontend": "100% (Compare + Portfolio render POC/POV/RC/RV for all 5)"},
+  "test_credentials": "session_token=test_profile_token_fixed_123 (renovada via seed_profile_test.py)",
+  "seed_data_creation": "Ran /app/backend/tests/seed_profile_test.py to refresh session. Added AMD/TSLA/SHOP/NVDA/CRWD to Nivel 1 during the test and REMOVED them at the end (portfolio restored to only AAPL).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verified R.C./R.V. values (Nivel 1, table view): AMD -2.3%/+11.7% (CARA/JUSTA), TSLA -44.0%/-43.3% (CARA/CARA), SHOP +212.7%/+261.8% (BARATA/BARATA), NVDA +474.4%/+851.3% (BARATA/BARATA), CRWD -29.1%/-30.7% (CARA/CARA). Compare page requires selecting tickers via autocomplete or preloading sessionStorage['vs:compare-state'] with {tickers:[..]} then clicking [data-testid=compare-load]; free text in input is not parsed.",
+  "rca of the issue": "yfinance sometimes returns partial `info` where shares_outstanding and market_cap are null. computeCustomRatios / compute_custom_ratios require all 10 fields; a single null null-ed poc/pov and ratios and the degraded payload was cached in MongoDB. Fix (already applied by main agent): (1) valuation.py fetch_fundamentals_sync fallbacks to fast_info / get_shares_full / market_cap heuristics; (2) server.py _payload_is_degraded prevents serving poisoned cache from /company/{ticker} and /compare; (3) 8 poisoned entries cleaned from cache. Verified live via /api/compare and both UI pages."
+}

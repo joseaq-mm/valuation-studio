@@ -189,6 +189,35 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
 
     shares = _safe_float(info.get("sharesOutstanding"))
     market_cap = _safe_float(info.get("marketCap"))
+
+    # Yahoo `info` is sometimes returned PARTIAL (e.g. AMD): sharesOutstanding and/or
+    # marketCap drop to None even though the data exists elsewhere. Since the POC/POV
+    # formula needs ALL fields, recover them from fast_info / share-count history /
+    # price so a single missing field doesn't break the whole valuation.
+    if shares is None or market_cap is None:
+        try:
+            fi = t.fast_info
+            if shares is None:
+                shares = _safe_float(getattr(fi, "shares", None))
+            if market_cap is None:
+                market_cap = _safe_float(getattr(fi, "market_cap", None))
+        except Exception:
+            pass
+
+    if shares is None:
+        shares = _safe_float(info.get("impliedSharesOutstanding")) or _safe_float(info.get("floatShares"))
+
+    if shares is None:
+        try:
+            sf = t.get_shares_full(start="2023-01-01")
+            if sf is not None and len(sf):
+                shares = _safe_float(sf.iloc[-1])
+        except Exception:
+            pass
+
+    if shares is None and market_cap and current_price:
+        shares = market_cap / current_price
+
     if market_cap is None and shares and current_price:
         market_cap = shares * current_price
 

@@ -80,6 +80,20 @@ class CalcInputs(BaseModel):
 
 # ---------------------- Routes ----------------------
 
+def _payload_is_degraded(p: dict) -> bool:
+    """Detects a transient/incomplete Yahoo response so we never serve a poisoned cache.
+    A real company always has a market cap; a healthy fetch also has balance-sheet
+    net_debt AND TTM revenue. POC/POV additionally requires shares + market_cap, which
+    Yahoo occasionally drops when returning a partial `info` (e.g. AMD)."""
+    if not p:
+        return True
+    ap = p.get("auto_projections", {}) or {}
+    ttm_rev = (ap.get("revenue_growth_breakdown") or {}).get("total_revenue_ttm")
+    classic_degraded = p.get("market_cap") is not None and p.get("net_debt") is None and ttm_rev is None
+    core_missing = p.get("shares_outstanding") is None or p.get("market_cap") is None
+    return classic_degraded or core_missing
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Valuation Studio API", "version": "1.0"}
@@ -92,14 +106,7 @@ async def get_company(ticker: str, refresh: bool = False):
         raise HTTPException(status_code=400, detail="ticker required")
 
     def _is_degraded(p: dict) -> bool:
-        # Detects a transient/incomplete Yahoo response: a real company always has a
-        # market cap; a healthy fetch also has balance-sheet net_debt AND TTM revenue.
-        # When those drop together it's almost certainly a bad fetch — never a real gap.
-        if not p:
-            return True
-        ap = p.get("auto_projections", {}) or {}
-        ttm_rev = (ap.get("revenue_growth_breakdown") or {}).get("total_revenue_ttm")
-        return p.get("market_cap") is not None and p.get("net_debt") is None and ttm_rev is None
+        return _payload_is_degraded(p)
 
     # Cache lookup
     cached = await db.fundamentals.find_one({"ticker": ticker}, {"_id": 0})
@@ -688,12 +695,18 @@ async def compare(tickers: str = Query(..., description="Comma-separated tickers
             if cached:
                 try:
                     as_of = datetime.fromisoformat(cached["data"]["as_of"])
-                    if datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
+                    recently_fetched = datetime.now(timezone.utc) - as_of < timedelta(hours=1)
+                    degraded = _payload_is_degraded(cached["data"])
+                    # Serve fresh cache, but never a stale poisoned payload (missing
+                    # shares/market_cap/net_debt) — refetch to heal it.
+                    if (not degraded or recently_fetched) and datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
                         results.append(cached["data"])
                         continue
                 except Exception:
                     pass
             payload = await run_in_threadpool(fetch_fundamentals_sync, s)
+            if _payload_is_degraded(payload):
+                payload = await run_in_threadpool(fetch_fundamentals_sync, s)
             ratios = compute_custom_ratios({
                 "revenue_2y": payload["auto_projections"]["revenue_2y"],
                 "fcf_2y": payload["auto_projections"]["fcf_2y"],
