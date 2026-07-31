@@ -124,7 +124,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
         <div className="border border-black bg-white p-5 mb-6" data-testid="company-qual-card">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                 <div className="overline text-[#B32A22]">{fromCompanyId ? "Tesis generadas desde este plan" : "Tesis cualitativa · tesis guardadas"}</div>
-                {!fromCompanyId && (
+                {!fromCompanyId && !profile?.plan_complete && (
                     <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
                         <Sparkles size={12} /> Buscar más tesis
                     </Link>
@@ -145,8 +145,8 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                         <React.Fragment key={r.thesis_id}>
                             <div className={`grid ${COLS} gap-x-4 items-center py-2.5 border-b border-black/10`} data-testid={`qual-row-${r.thesis_id}`}>
                                 <div className="min-w-0">
-                                    <Link to={`/thesis/${r.thesis_id}`} className="font-bold text-sm leading-tight hover:underline inline-flex items-center gap-1" data-testid={`qual-row-link-${r.thesis_id}`}>
-                                        <span className="truncate">{r.thesis_title}</span>
+                                    <Link to={`/thesis/${r.thesis_id}`} className="font-bold text-sm leading-tight hover:underline flex items-center gap-1 min-w-0" data-testid={`qual-row-link-${r.thesis_id}`}>
+                                        <span className="truncate min-w-0">{r.thesis_title}</span>
                                         <ArrowRight size={12} className="shrink-0" />
                                     </Link>
                                     <div className="flex items-center gap-2 mt-0.5">
@@ -232,8 +232,8 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                                 {others.map((r) => (
                                     <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2 border-b border-black/10 opacity-70`} data-testid={`qual-other-row-${r.thesis_id}`}>
                                         <div className="min-w-0">
-                                            <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline inline-flex items-center gap-1 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
-                                                <span className="truncate">{r.thesis_title}</span>
+                                            <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline flex items-center gap-1 min-w-0 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
+                                                <span className="truncate min-w-0">{r.thesis_title}</span>
                                                 <ArrowRight size={11} className="shrink-0" />
                                             </Link>
                                             {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}

@@ -1433,6 +1433,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         )
         plan_id = from_company or (rev_doc.get("id") if rev_doc else None)
 
+        # Whether this ticker's own company plan is fully planned AND fully developed
+        # (every non-merged driver developed). Used by the UI to hide the "Buscar más
+        # tesis" CTA once there's nothing left to plan/develop.
+        plan_complete = False
+        if plan_id:
+            plan_doc = await db.theses.find_one(
+                {"user_id": uid, "id": plan_id},
+                {"_id": 0, "trends": 1, "split_dev": 1},
+            )
+            if plan_doc:
+                plan_complete = company_is_complete(plan_doc)
+
         cur = db.theses.find(
             {"user_id": uid, "type": "trend", "companies.ticker": tk},
             {"_id": 0, "id": 1, "title": 1, "companies": 1, "value_chain": 1,
@@ -1489,6 +1501,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "avg_overall_score": avg_overall,
             "sum_tam_score": sum_tam,
             "reverse": reverse,
+            "plan_complete": plan_complete,
         }
 
     @router.get("/dashboard")
