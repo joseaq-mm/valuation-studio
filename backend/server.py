@@ -688,26 +688,30 @@ async def compare(tickers: str = Query(..., description="Comma-separated tickers
     syms = [s.strip().upper() for s in tickers.split(",") if s.strip()]
     if not syms or len(syms) > 100:
         raise HTTPException(status_code=400, detail="Provide 1 to 100 tickers")
-    results = []
+
+    # 1) Serve fresh cache; collect the tickers that need a live fetch.
+    cache_hits: Dict[str, Any] = {}
+    to_fetch: List[str] = []
     for s in syms:
+        cached = await db.fundamentals.find_one({"ticker": s}, {"_id": 0})
+        served = False
+        if cached:
+            try:
+                as_of = datetime.fromisoformat(cached["data"]["as_of"])
+                if datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
+                    cache_hits[s] = cached["data"]
+                    served = True
+            except Exception:
+                pass
+        if not served:
+            to_fetch.append(s)
+
+    # 2) Fetch the misses CONCURRENTLY so a cold comparison of several tickers
+    #    doesn't add up serially and trip the gateway timeout (was causing 502s).
+    async def _fetch_one(s: str):
         try:
-            cached = await db.fundamentals.find_one({"ticker": s}, {"_id": 0})
-            if cached:
-                try:
-                    as_of = datetime.fromisoformat(cached["data"]["as_of"])
-                    recently_fetched = datetime.now(timezone.utc) - as_of < timedelta(hours=1)
-                    degraded = _payload_is_degraded(cached["data"])
-                    # Serve fresh cache, but never a stale poisoned payload (missing
-                    # shares/market_cap/net_debt) — refetch to heal it.
-                    if (not degraded or recently_fetched) and datetime.now(timezone.utc) - as_of < timedelta(hours=CACHE_TTL_HOURS):
-                        results.append(cached["data"])
-                        continue
-                except Exception:
-                    pass
             payload = await run_in_threadpool(fetch_fundamentals_sync, s)
-            if _payload_is_degraded(payload):
-                payload = await run_in_threadpool(fetch_fundamentals_sync, s)
-            ratios = compute_custom_ratios({
+            payload["custom_ratios"] = compute_custom_ratios({
                 "revenue_2y": payload["auto_projections"]["revenue_2y"],
                 "fcf_2y": payload["auto_projections"]["fcf_2y"],
                 "shares_outstanding": payload["shares_outstanding"],
@@ -719,16 +723,20 @@ async def compare(tickers: str = Query(..., description="Comma-separated tickers
                 "fcf_cagr_4y": payload["auto_projections"]["fcf_cagr_4y"],
                 "current_price": payload["current_price"],
             })
-            payload["custom_ratios"] = ratios
             await db.fundamentals.update_one(
                 {"ticker": s},
                 {"$set": {"ticker": s, "data": payload, "updated_at": datetime.now(timezone.utc).isoformat()}},
                 upsert=True,
             )
-            results.append(payload)
+            return s, payload
         except Exception as e:
             logger.warning(f"compare failed {s}: {e}")
-            results.append({"ticker": s, "error": str(e)})
+            return s, {"ticker": s, "error": str(e)}
+
+    fetched = dict(await asyncio.gather(*[_fetch_one(s) for s in to_fetch])) if to_fetch else {}
+
+    # 3) Assemble in the original request order.
+    results = [cache_hits.get(s) or fetched.get(s) or {"ticker": s, "error": "no data"} for s in syms]
     return {"results": results}
 
 
