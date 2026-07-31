@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState, useRef, useLayoutEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Sparkles, ArrowRight, GitMerge, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -7,6 +7,106 @@ import { thesisCompanyProfile, thesisMergeThesis, thesisUnmergeThesis } from "@/
 import { ValueBox, scoreColor, tamColor, fmtTamScore } from "./ScoreBar";
 
 import HoverTip from "@/components/HoverTip";
+
+/**
+ * Thesis title that never overlaps the score columns: it truncates when there's
+ * not enough room. UX:
+ *  - Tap the arrow  → go to the thesis (single tap).
+ *  - Double-tap the title → go to the thesis.
+ *  - Single tap the title → if truncated, show a tooltip with the FULL title
+ *    (so it can be read at a glance without opening it). Desktop hover shows it too.
+ */
+function ThesisTitleLink({ to, title, bold = false, arrowSize = 12, colorClass = "", linkTestid, titleTestid }) {
+    const navigate = useNavigate();
+    const wrapRef = useRef(null);
+    const spanRef = useRef(null);
+    const tipRef = useRef(null);
+    const clickTimer = useRef(null);
+    const [truncated, setTruncated] = useState(false);
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+
+    const measure = () => {
+        const el = spanRef.current;
+        if (el) setTruncated(el.scrollWidth > el.clientWidth + 1);
+    };
+    useEffect(() => {
+        measure();
+        window.addEventListener("resize", measure);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure).catch(() => {});
+        const t = setTimeout(measure, 400);
+        return () => { window.removeEventListener("resize", measure); clearTimeout(t); };
+    }, [title]);
+
+    const show = () => {
+        if (!truncated || !spanRef.current) return;
+        const r = spanRef.current.getBoundingClientRect();
+        setPos({ top: r.bottom + 6, left: r.left });
+        setOpen(true);
+    };
+    const hide = () => setOpen(false);
+
+    useLayoutEffect(() => {
+        if (!open || !spanRef.current || !tipRef.current) return;
+        const wrap = spanRef.current.getBoundingClientRect();
+        const tip = tipRef.current.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight, margin = 8;
+        let left = wrap.left;
+        if (left + tip.width + margin > vw) left = Math.max(margin, vw - tip.width - margin);
+        if (left < margin) left = margin;
+        const above = wrap.bottom + tip.height + margin > vh && wrap.top - tip.height - margin > 0;
+        setPos({ top: above ? wrap.top - tip.height - 6 : wrap.bottom + 6, left });
+    }, [open]);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e) => { if (spanRef.current && !spanRef.current.contains(e.target)) hide(); };
+        document.addEventListener("mousedown", onDoc);
+        document.addEventListener("touchstart", onDoc);
+        return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("touchstart", onDoc); };
+    }, [open]);
+
+    const onTitleClick = () => {
+        if (clickTimer.current) return;
+        clickTimer.current = setTimeout(() => {
+            clickTimer.current = null;
+            if (truncated) setOpen(true);   // truncated → single tap reveals full title
+            else navigate(to);              // fully readable → single tap opens it
+        }, 240);
+    };
+    const onTitleDouble = () => {
+        if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; }
+        hide();
+        navigate(to);
+    };
+
+    return (
+        <div ref={wrapRef} className="flex items-center gap-1 min-w-0">
+            <span
+                ref={spanRef}
+                onClick={onTitleClick}
+                onDoubleClick={onTitleDouble}
+                onMouseEnter={show}
+                onMouseLeave={hide}
+                className={`truncate min-w-0 cursor-pointer hover:underline text-sm leading-tight ${bold ? "font-bold" : ""} ${colorClass}`}
+                data-testid={titleTestid}
+            >{title}</span>
+            <Link to={to} onClick={hide} aria-label="Ir a la tesis" className="shrink-0 inline-flex text-inherit" data-testid={linkTestid}>
+                <ArrowRight size={arrowSize} className="shrink-0" />
+            </Link>
+            {open && truncated && (
+                <div
+                    ref={tipRef}
+                    role="tooltip"
+                    style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 60, maxWidth: 340 }}
+                    className="bg-[#111111] text-white font-mono border border-black shadow-md text-xs leading-relaxed px-3 py-2"
+                >
+                    {title}
+                </div>
+            )}
+        </div>
+    );
+}
 
 /**
  * Bridges the qualitative Thesis Engine with the quantitative company dashboard.
@@ -145,10 +245,14 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                         <React.Fragment key={r.thesis_id}>
                             <div className={`grid ${COLS} gap-x-4 items-center py-2.5 border-b border-black/10`} data-testid={`qual-row-${r.thesis_id}`}>
                                 <div className="min-w-0">
-                                    <Link to={`/thesis/${r.thesis_id}`} className="font-bold text-sm leading-tight hover:underline flex items-center gap-1 min-w-0" data-testid={`qual-row-link-${r.thesis_id}`}>
-                                        <span className="truncate min-w-0">{r.thesis_title}</span>
-                                        <ArrowRight size={12} className="shrink-0" />
-                                    </Link>
+                                    <ThesisTitleLink
+                                        to={`/thesis/${r.thesis_id}`}
+                                        title={r.thesis_title}
+                                        bold
+                                        arrowSize={12}
+                                        linkTestid={`qual-row-link-${r.thesis_id}`}
+                                        titleTestid={`qual-row-title-${r.thesis_id}`}
+                                    />
                                     <div className="flex items-center gap-2 mt-0.5">
                                         {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}
                                         {canMerge && mergeFor !== r.thesis_id && (
@@ -232,10 +336,14 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                                 {others.map((r) => (
                                     <div key={r.thesis_id} className={`grid ${COLS} gap-x-4 items-center py-2 border-b border-black/10 opacity-70`} data-testid={`qual-other-row-${r.thesis_id}`}>
                                         <div className="min-w-0">
-                                            <Link to={`/thesis/${r.thesis_id}`} className="text-sm leading-tight hover:underline flex items-center gap-1 min-w-0 text-[#4A4A4A]" data-testid={`qual-other-link-${r.thesis_id}`}>
-                                                <span className="truncate min-w-0">{r.thesis_title}</span>
-                                                <ArrowRight size={11} className="shrink-0" />
-                                            </Link>
+                                            <ThesisTitleLink
+                                                to={`/thesis/${r.thesis_id}`}
+                                                title={r.thesis_title}
+                                                arrowSize={11}
+                                                colorClass="text-[#4A4A4A]"
+                                                linkTestid={`qual-other-link-${r.thesis_id}`}
+                                                titleTestid={`qual-other-title-${r.thesis_id}`}
+                                            />
                                             {r.value_chain_role && <div className="overline text-[#9CA3AF] truncate">{r.value_chain_role}</div>}
                                         </div>
                                         <div className="flex justify-center">
