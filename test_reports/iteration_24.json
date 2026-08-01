@@ -1,0 +1,16 @@
+{
+  "summary": "RETEST móvil portrait (393x852) para los 2 fixes HIGH de iteration_23. AMBOS ARREGLADOS. (1) /thesis tab bar: contenedor [data-testid=explore-views] ahora tiene scrollWidth=clientWidth=361 (envuelto en overflow-x-auto), y la página tiene scrollWidth=393, innerWidth=393 (overflow=0). Botón CONVERGENCIA sigue clicable. (2) /thesis/co_plan_ui header: [data-testid=thesis-result] box x=16 width=361 (right=377) totalmente dentro de 393. maxRightX de TODOS los descendientes = 377, ningún elemento se extiende más allá de x=393. Cabecera apila correctamente en flex-col en móvil. Regresión: TODAS las páginas (/, /company/AAPL, /compare, /portfolio, /watchlist, /thesis, /visual, /macro, /kpis, /thesis/co_plan_ui) con overflow=0 en portrait. /visual botón Ampliar abre [data-testid=visual-chart-fullscreen] y el botón close lo cierra correctamente.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "10/10 portrait pages overflow=0, 2/2 HIGH bugs de iter_23 resueltos, Visual fullscreen OK"},
+  "test_credentials": "session_token=test_profile_token_fixed_123",
+  "seed_data_creation": "Re-ejecutados seed_profile_test.py y seed_plan_test.py",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Portrait 393 overflow measurements: TODAS las 10 páginas = 0. Tabs /thesis envueltos en overflow-x-auto (data-testid=explore-views: scrollWidth=clientWidth=361). Header /thesis/co_plan_ui apila en flex-col: maxRightX descendientes = 377 < 393. Visual fullscreen intacto.",
+  "rca of the issue": "N/A - ambos fixes verificados exitosamente."
+}

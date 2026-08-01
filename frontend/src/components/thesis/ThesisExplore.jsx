@@ -222,6 +222,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
         <div data-testid="thesis-explore">
             {/* View switcher: left group (entities) + right group (completed-company scores) */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3" data-testid="explore-views">
+                <div className="min-w-0 max-w-full overflow-x-auto">
                 <div className="flex border border-black w-fit">
                     {leftViews.map((v, i) => (
                         v.id === "tendencias" ? (
@@ -246,8 +247,11 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                         )
                     ))}
                 </div>
+                </div>
+                <div className="min-w-0 max-w-full overflow-x-auto">
                 <div className="flex border border-black w-fit" data-testid="explore-views-right">
                     {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
+                </div>
                 </div>
             </div>
 

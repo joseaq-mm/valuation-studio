@@ -673,7 +673,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                             </Link>
                         )}
                     </div>
-                    <div className="flex items-start gap-5 shrink-0">
+                    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:gap-5 shrink-0 w-full sm:w-auto">
                         {!isTrend && (
                             <HoverTip
                                 text={"Relevancia temática global (0–100): cuán expuesta e impulsada está la empresa por el CONJUNTO de tesis en las que encaja.\n\nResume, en un solo número, el peso agregado de los temas estructurales en su tesis alcista."}
