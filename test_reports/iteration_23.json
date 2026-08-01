@@ -1,0 +1,29 @@
+{
+  "summary": "Responsive mobile/landscape testing after main-agent fixes (thesis card min-w-0/shrink-0, Visual Ampliar button + fullscreen overlay, Visual mobile px-0). Ran seeds seed_profile_test.py + seed_plan_test.py. Measured scrollWidth vs innerWidth on all requested pages in portrait (393x852) and landscape (852x393). VERIFIED FIXES: (a) NewThesisCard scores no longer overlap — score badge right-aligned inside card, name wraps to multiple lines, card width 361 within 393 viewport, no overflow on 3 thesis-trend cards of /thesis/co_plan_ui. (b) Visual 'Ampliar' works: [data-testid=visual-expand-chart] opens [data-testid=visual-chart-fullscreen] occupying full viewport (393x852 portrait AND 852x393 landscape), and [data-testid=visual-chart-fullscreen-close] closes it correctly. (c) Landscape pages /company/AAPL, /compare, /visual, /thesis/co_plan_ui all fit exactly (scrollWidth == innerWidth == 852, no overflow). REMAINING ISSUES: (1) /thesis portrait: tab bar 'MEGATENDENCIAS / TENDENCIAS / CONVERGENCIA' overflows 77px (scrollWidth=470, innerWidth=393). Culprit: <div class='flex border border-black w-fit'> containing buttons including [data-testid=explore-view-convergence]. (2) /thesis/co_plan_ui top header card ('EMPRESA -> TESIS · NVIDIA (plan test)'): label 'PROB. DE LA TESIS' + circle are positioned at x=340..480 while viewport is only 393 wide — the header is a horizontal flex row (score+label+circle) that does NOT stack on mobile, so the right block is visually clipped by overflow:hidden of the card. No page-level scroll overflow, but content is cut off on screen.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ThesisExplore tab bar", "issue": "Portrait 393px: tab bar 'MEGATENDENCIAS/TENDENCIAS/CONVERGENCIA' has w-fit and total width 454px, causing horizontal page overflow of 77px on /thesis. Needs to wrap, scroll horizontally inside a container, or shrink text on mobile.", "selector": "div.flex.border.border-black.w-fit (contains [data-testid=explore-view-convergence])", "priority": "HIGH"},
+      {"component": "Company-plan header card (ThesisResult header for co_plan_ui)", "issue": "Portrait 393px: header row (score 92 + 'RELEVANCIA TEMATICA GLOBAL' + probability circle + 'PROB. DE LA TESIS' label) does not wrap/stack on mobile — right block extends to x=480 and is visually clipped by the card. Needs flex-wrap or column layout below sm breakpoint.", "selector": "top card on /thesis/co_plan_ui (label 'PROB. DE LA TESIS')", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix /thesis explore tab bar overflow at <sm: remove w-fit or add overflow-x-auto wrapper, or wrap buttons / use flex-wrap, or shorten labels on mobile.",
+    "Fix /thesis/co_plan_ui top header card layout on mobile: wrap the (score + label) and (circle + 'PROB. DE LA TESIS') into a column stack (flex-col sm:flex-row) so the right block does not overflow/clip inside the card."
+  ],
+  "critical_code_review_comments": [
+    "Layout.jsx max-w-[1400px] px-4 sm:px-6 is fine; individual widget widths (w-fit tabs, header horizontal row in ThesisResult) are the actual overflow sources — audit for w-fit on primary flex bars.",
+    "Consider global CSS guard: `html, body { overflow-x: hidden }` OR `body > * { max-width: 100vw }` as safety net for narrow devices, but preferable to fix the two identified components."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "7/9 portrait pages OK, 4/4 landscape pages OK, thesis-trend card scores OK, Visual fullscreen OK; 2 remaining layout bugs"},
+  "test_credentials": "session_token=test_profile_token_fixed_123 (user test_profile_user_123)",
+  "seed_data_creation": "Re-ran seed_profile_test.py and seed_plan_test.py (created /thesis/co_plan_ui NVDA with 3 driver cards).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Portrait overflow measurements (px overflow, culprit): / 0, /company/AAPL 0, /compare 0, /portfolio 0, /watchlist 0, /thesis +77 (div.flex.border.border-black.w-fit tab bar), /visual 0, /macro 0, /kpis 0. Landscape (852x393): all 0 overflow. Visual expand button + fullscreen overlay + close all working in portrait & landscape. NewThesisCard fix verified on /thesis/co_plan_ui (3 thesis-trend cards, all width 361 < 393, score badge width 18px right-aligned, name wraps).",
+  "rca of the issue": "1) /thesis tab bar: class list 'flex border border-black w-fit' forces the container to be exactly as wide as its content (~454px) with no wrapping/scrolling. On <sm viewports this exceeds 393px and pushes the document scrollWidth. Fix: use 'w-full overflow-x-auto' wrapper or replace w-fit with flex-wrap. 2) co_plan_ui header: single horizontal flex row aligning score+label+circle in the plan card header, without a flex-wrap/breakpoint switch — on 393px the right subgroup escapes the visible card area (clipped by ancestor overflow:hidden, so it doesn't grow scrollWidth but appears cut off)."
+}

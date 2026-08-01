@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2 } from "lucide-react";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete } from "@/lib/api";
 import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
@@ -272,7 +272,18 @@ export default function Visual() {
     const [recording, setRecording] = useState(false);
     const [clipCount, setClipCount] = useState(0);
     const [libOpen, setLibOpen] = useState(false);
+    const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (mobile/landscape)
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
+
+    // Lock body scroll + allow ESC to close while the fullscreen chart is open.
+    useEffect(() => {
+        if (!chartFull) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e) => { if (e.key === "Escape") setChartFull(false); };
+        window.addEventListener("keydown", onKey);
+        return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+    }, [chartFull]);
 
     const enableTimeline = useCallback(async () => {
         if (tl) { setTlMode(true); return; }
@@ -665,8 +676,23 @@ export default function Visual() {
         );
     }
 
+    const chartNode = (
+        <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
+            <CartesianGrid stroke="#00000010" />
+            <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={tlMode ? tlDomains.x : xDomain} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+            <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={tlMode ? tlDomains.y : ["auto", "auto"]} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+            <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
+            <Tooltip content={<ScatterTooltip />} />
+            <ReferenceLine x={tlMode ? tlMedians.mx : medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${(tlMode ? tlMedians.mx : medianX).toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+            <ReferenceLine y={tlMode ? tlMedians.my : medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${(tlMode ? tlMedians.my : medianY) >= 0 ? "+" : ""}${(tlMode ? tlMedians.my : medianY).toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+            <QuadrantLabels />
+            {tlMode && tlTrail && <Customized component={(p) => <TrailLayer {...p} trails={tlTrails} />} />}
+            <Scatter data={tlMode ? tlStepRows : mapRows} shape={<Dot />} isAnimationActive={!tlMode} />
+        </ScatterChart>
+    );
+
     return (
-        <div className="max-w-7xl mx-auto px-6 py-8" data-testid="visual-page">
+        <div className="max-w-7xl mx-auto px-0 sm:px-6 py-6 sm:py-8" data-testid="visual-page">
             {/* Header */}
             <div className="flex items-end justify-between mb-6 border-b border-black/20 pb-3">
                 <div>
@@ -694,6 +720,15 @@ export default function Visual() {
             <div className="border border-black/20 p-4 mb-6 bg-white" data-testid="visual-map">
                 <div className="flex items-center justify-between mb-2">
                     <div className="overline text-[#4A4A4A]">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setChartFull(true)}
+                        className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5"
+                        data-testid="visual-expand-chart"
+                        title="Ampliar el gráfico a pantalla completa (ideal en móvil / horizontal)"
+                    >
+                        <Maximize2 size={12} /> Ampliar
+                    </button>
                     <button
                         onClick={() => (tlMode ? setTlMode(false) : enableTimeline())}
                         disabled={tlLoading}
@@ -704,21 +739,11 @@ export default function Visual() {
                         {tlMode ? "Salir de línea de tiempo" : "Línea de tiempo"}
                     </button>
                 </div>
+                </div>
                 {tlErr && <div className="text-xs text-[#B32A22] mb-2 font-mono" data-testid="visual-timeline-error">{tlErr}</div>}
                 <div ref={chartRef}>
                 <ResponsiveContainer width="100%" height={460}>
-                    <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
-                        <CartesianGrid stroke="#00000010" />
-                        <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={tlMode ? tlDomains.x : xDomain} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={tlMode ? tlDomains.y : ["auto", "auto"]} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-                        <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
-                        <Tooltip content={<ScatterTooltip />} />
-                        <ReferenceLine x={tlMode ? tlMedians.mx : medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${(tlMode ? tlMedians.mx : medianX).toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        <ReferenceLine y={tlMode ? tlMedians.my : medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${(tlMode ? tlMedians.my : medianY) >= 0 ? "+" : ""}${(tlMode ? tlMedians.my : medianY).toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-                        <QuadrantLabels />
-                        {tlMode && tlTrail && <Customized component={(p) => <TrailLayer {...p} trails={tlTrails} />} />}
-                        <Scatter data={tlMode ? tlStepRows : mapRows} shape={<Dot />} isAnimationActive={!tlMode} />
-                    </ScatterChart>
+                    {chartNode}
                 </ResponsiveContainer>
                 </div>
                 {tlMode && tl && (
@@ -926,6 +951,23 @@ export default function Visual() {
                 kind="timeline-clip"
                 title="Recorridos grabados"
             />
+
+            {chartFull && (
+                <div className="fixed inset-0 z-[70] bg-white flex flex-col" data-testid="visual-chart-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0">
+                        <div className="overline text-[#4A4A4A] truncate">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
+                        <button onClick={() => setChartFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 shrink-0" data-testid="visual-chart-fullscreen-close">
+                            <X size={14} /> Cerrar
+                        </button>
+                    </div>
+                    <div className="flex-1 min-h-0 p-1 sm:p-2">
+                        <ResponsiveContainer width="100%" height="100%">
+                            {chartNode}
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="text-[10px] text-[#7A7A7A] px-4 py-1 text-center shrink-0">Gira el móvil en horizontal para verlo más ancho · pulsa una burbuja para el detalle</div>
+                </div>
+            )}
         </div>
     );
 }

@@ -349,13 +349,13 @@ function NewThesisCard({ t, idx = 0, companyId, dev, onDevelop, onSetPlan, plann
 
     return (
         <div className="border border-black bg-white p-5 flex flex-col" data-testid={`thesis-trend-${(t.name || "").slice(0, 12)}`}>
-            <div className="flex items-start justify-between gap-4">
-                <div className="font-serif text-lg font-medium leading-tight flex items-center gap-2">
-                    <TrendingUp size={18} className="text-[#052049] shrink-0" />
-                    {t.name}
+            <div className="flex items-start justify-between gap-3">
+                <div className="font-serif text-lg font-medium leading-tight flex items-start gap-2 min-w-0">
+                    <TrendingUp size={18} className="text-[#052049] shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">{t.name}</span>
                 </div>
                 <HoverTip text={RELEVANCE_TIP} maxWidth={320}>
-                    <div className="cursor-help"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
+                    <div className="cursor-help shrink-0"><ScoreBadge value={t.relevance_score} label="Relevancia" /></div>
                 </HoverTip>
             </div>
             {(t.type === "actual" || t.type === "futura") && (
