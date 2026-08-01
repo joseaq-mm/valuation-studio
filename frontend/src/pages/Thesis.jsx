@@ -146,12 +146,18 @@ export default function Thesis() {
     // Prefill (?company) / auto-develop a proposed thesis (?trend&auto=1) from a deep
     // link. For develop links we DO NOT populate the search box — we run directly.
     const lastAutoRef = useRef(null);
+    const generatorRef = useRef(null);
     useEffect(() => {
         const co = searchParams.get("company");
         const tr = searchParams.get("trend");
         const auto = searchParams.get("auto");
         const explore = searchParams.get("explore");
-        if (co) { setMode("company"); setSubject(co); }
+        if (co) {
+            setMode("company"); setSubject(co); setResult(null); setPendingDup(null);
+            // Bring the (pre-filled) "Empresa → Tesis" search box front-and-center so the
+            // user lands directly on it — no need to scroll or search for it.
+            setTimeout(() => generatorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+        }
         else if (explore) {
             // Coming from the weekly Radar email: pre-fill the trend-explorer
             // search box WITHOUT auto-executing — user must click "Explorar tendencia".
@@ -576,7 +582,7 @@ export default function Thesis() {
                     <ModelPicker canSwitch={!!user} reloadSignal={genCount} />
 
                     {/* Generator */}
-                    <div className="border border-black bg-white p-5 mb-6" data-testid="thesis-generator">
+                    <div ref={generatorRef} className="border border-black bg-white p-5 mb-6" data-testid="thesis-generator">
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                             {/* Primary (left, black by default) */}
                             <button

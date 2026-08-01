@@ -208,11 +208,11 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
         return (
             <div className="border border-dashed border-black/40 bg-white p-4 mb-6 flex items-center justify-between gap-4 flex-wrap" data-testid="company-qual-empty">
                 <div className="flex items-center gap-2 text-sm text-[#4A4A4A]">
-                    <Sparkles size={16} className="text-[#052049]" />
-                    <span>Aún no tienes una tesis cualitativa de <strong>{ticker}</strong>.</span>
+                    <Sparkles size={16} className="text-[#052049] shrink-0" />
+                    <span>Esta empresa todavía no tiene <strong>tesis propias desarrolladas</strong>.</span>
                 </div>
                 <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="btn-primary flex items-center gap-1 shrink-0" data-testid="company-qual-generate">
-                    <Sparkles size={13} /> Generar tesis
+                    <Sparkles size={13} /> Generar plan
                 </Link>
             </div>
         );
@@ -225,9 +225,16 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                 <div className="overline text-[#B32A22]">{fromCompanyId ? "Tesis generadas desde este plan" : "Tesis cualitativa · tesis guardadas"}</div>
                 {!fromCompanyId && !profile?.plan_complete && (
-                    <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
-                        <Sparkles size={12} /> Buscar más tesis
-                    </Link>
+                    rows.length === 0 ? (
+                        <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1.5 max-w-full text-right" data-testid="company-qual-add">
+                            <Sparkles size={12} className="shrink-0" />
+                            <span>Esta empresa todavía no tiene tesis propias desarrolladas · <strong>Generar plan</strong></span>
+                        </Link>
+                    ) : (
+                        <Link to={`/thesis?company=${encodeURIComponent(ticker)}`} className="text-xs text-[#052049] hover:underline inline-flex items-center gap-1" data-testid="company-qual-add">
+                            <Sparkles size={12} /> Buscar más tesis
+                        </Link>
+                    )
                 )}
             </div>
 
