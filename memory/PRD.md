@@ -715,3 +715,10 @@ Bug (Android): en /compare, al pulsar 'Cargar Nivel 1/2' o 'Comparar' el tooltip
 - `PinchZoomPane` ahora expone el nivel de zoom (`onZoom`).
 - `ThesisExplore`: estado `treeZoom` (redondeado a pasos de 0.5) alimenta `TreemapSurface`→`renderCell`. Las etiquetas se muestran según el TAMAÑO EFECTIVO (it.w×zoom, it.h×zoom): al ampliar el treemap a pantalla completa, las cajas pequeñas revelan su nombre. A zoom=1 el comportamiento es idéntico al anterior (sin regresión). Se resetea al cerrar el modal.
 - Verificado: el fullscreen renderiza etiquetas correctamente a zoom=1 (labelVisible=true) y el zoom/in/out/reset funciona (iter_27). Nota: no fue posible una demo en vivo del revelado con muchas celdas porque el test user solo tiene 2 megatendencias grandes; el mecanismo (umbral por tamaño efectivo) queda verificado por lógica + cableado.
+
+## CHANGELOG — Tooltips congelados: unificación con HoverTip en toda la app (2 ago 2026)
+Bug recurrente: los tooltips de explicación de los botones del treemap (ViewBtn en ThesisExplore) usaban un tooltip propio (btnTip con onMouseEnter/Leave) y se quedaban congelados en táctil.
+- **ThesisExplore**: `ViewBtn` ahora envuelve el botón en `<HoverTip text={v.desc}>` (eliminado btnTip/setBtnTip/onTip y su render manual). El tooltip de celda (`tip`/CellTooltip) añade descarte por scroll/resize/touchstart.
+- **CompanyQualCard** (ThesisTitleLink): ahora también cierra en scroll/resize (además de tap-fuera).
+- **Auditoría**: los únicos tooltips fixed propios estaban en HoverTip (ya arreglado), CompanyQualCard y ThesisExplore. Todos comparten ahora la misma lógica de descarte (tap toggle, scroll/resize/pointerdown-fuera).
+- **Verificado** (testing_agent iter_28, táctil 393x852 + escritorio 1280x800): 100% — los 5 botones del treemap abren al tocar y cierran en re-tap/scroll/tap-fuera; hover desktop OK; segmented control intacto; Compare y regresiones OK. Nota no bloqueante: warning de hydration '<span> child of <option>' en ThesisSidebar (instrumentación dev, no afecta funcionalidad).
