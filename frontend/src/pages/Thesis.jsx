@@ -542,10 +542,10 @@ export default function Thesis() {
     const isTendencia = result?.type === "tendencia";
 
     return (
-        <div data-testid="thesis-page" style={{ overflowX: "clip" }}>
+        <div data-testid="thesis-page">
             <div className="grid lg:grid-cols-[1fr_340px] gap-6 items-start">
                 {/* Main column */}
-                <div className="order-2 lg:order-1 min-w-0">
+                <div className="order-2 lg:order-1 min-w-0" style={{ overflowX: "clip" }}>
                     {/* Hero */}
                     <div className="mb-5 flex items-start justify-between gap-4">
                         <div className="min-w-0">
@@ -823,7 +823,7 @@ export default function Thesis() {
                 </div>
 
                 {/* Sidebar */}
-                <div className="order-1 lg:order-2 min-w-0">
+                <div className="order-1 lg:order-2 min-w-0 lg:self-stretch">
                     {!user ? (
                         <aside className="border border-black bg-white p-4" data-testid="thesis-sidebar">
                             <div className="overline text-black mb-2">Tendencias y empresas</div>

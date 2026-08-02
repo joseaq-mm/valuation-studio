@@ -1,0 +1,58 @@
+{
+  "summary": "Verified all 5 requested items on the preview URL with mobile emulation (393x852, has_touch, is_mobile) and desktop (1280x800), using session cookie test_profile_token_fixed_123 and seeded plan for co_plan_ui. ALL PASS: (1) /thesis mobile has NO horizontal document overflow in company mode, explore mode, and in all 3 explore tabs (megatrends/tendencias/convergence), and with Radar semanal toggled: document.scrollWidth == window.innerWidth == 393 in every scan. (2) Treemap: [data-testid=explore-expand-treemap] opens [data-testid=explore-treemap-fullscreen]; pinch-zoom-in changes inner transform from scale(1) to scale(1.69) and pinch-zoom-reset returns to scale(1); pinch-zoom-out at scale 1 stays clamped at 1; fullscreen also present in landscape (852x393); [data-testid=explore-treemap-fullscreen-close] closes the overlay. (3) /visual: [data-testid=visual-expand-chart] opens [data-testid=visual-chart-fullscreen]; zoom-in → scale(1.69), reset → scale(1); landscape also renders. (4) Convergencia legend [data-testid=convergence-gold-legend] text is exactly 'Borde dorado en la empresa o empresas incluidas en más tendencias' (the old '2+ tendencias' wording is gone). (5) Desktop sticky sidebar: on /thesis at 1280x800, after window.scrollTo(0,700), [data-testid=thesis-sidebar].getBoundingClientRect().top = 16 with computed position 'sticky' — the previous iteration_26 regression is fully fixed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_evidence": {
+    "mobile_overflow": {
+      "company_default": {"docSW": 393, "winIW": 393, "ok": true},
+      "explore": {"docSW": 393, "winIW": 393, "ok": true},
+      "explore_view_megatrends": {"docSW": 393, "ok": true},
+      "explore_view_tendencias": {"docSW": 393, "ok": true},
+      "explore_view_convergence": {"docSW": 393, "ok": true},
+      "radar_semanal_toggled": {"docSW": 393, "ok": true}
+    },
+    "convergence_gold_legend_text": "Borde dorado en la empresa o empresas incluidas en más tendencias",
+    "treemap_fullscreen": {
+      "expand_btn_found": true,
+      "fullscreen_opened_portrait": true,
+      "fullscreen_present_landscape_852x393": true,
+      "close_btn_works": true,
+      "transform_initial": "translate(0px, 0px) scale(1)",
+      "transform_after_two_zoom_in_clicks": "translate(-135.585px, -264.615px) scale(1.69)",
+      "transform_after_reset": "translate(0px, 0px) scale(1)",
+      "transform_after_zoom_out_at_scale_1": "translate(0px, 0px) scale(1) (clamped, correct)"
+    },
+    "visual_fullscreen": {
+      "expand_btn_found": true,
+      "fullscreen_opened_portrait": true,
+      "fullscreen_present_landscape": true,
+      "transform_initial": "translate(0px, 0px) scale(1)",
+      "transform_after_two_zoom_in_clicks": "translate(-132.825px, -261.855px) scale(1.69)",
+      "transform_after_reset": "translate(0px, 0px) scale(1)"
+    },
+    "desktop_sticky_sidebar": {
+      "viewport": "1280x800",
+      "initial_top": 143.2,
+      "after_scrollTo_0_700": {"top": 16, "position": "sticky", "scrollY": 700},
+      "sticky_ok": true
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PinchZoomPane.jsx: the inner scaled div does not carry a data-testid (e.g. 'pinch-zoom-content'). Adding one would make automated verification of the transform trivial; today tests must scan children for a style containing 'scale('. Non-blocking.",
+    "PinchZoomPane.jsx: onWheel prevents default only when ctrlKey/metaKey is held, so pinch-to-zoom trackpad gestures work, but plain wheel over the fullscreen overlay will scroll the page underneath. Consider trapping wheel while overlay is open.",
+    "ThesisExplore.jsx / Visual.jsx: fullscreen overlays should ideally trap Escape to close and set inert/aria-modal on the underlying page for a11y (not blocking)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100% (5/5 requested checks pass)"},
+  "seed_data_creation": "Ran /app/backend/tests/seed_profile_test.py and /app/backend/tests/seed_plan_test.py (creates co_plan_ui / NVDA with splittable driver for test_profile_user_123).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All new features (pinch-zoom on Visual + Treemap fullscreen, updated convergencia legend text) and the mobile-overflow + desktop-sticky fixes are working. Treemap/Visual transform verification method: query the fullscreen root ([data-testid=explore-treemap-fullscreen] or [data-testid=visual-chart-fullscreen]) and scan descendant <div>s for inline style containing 'scale(' — that is the pinch-zoom content wrapper (no data-testid on it yet). Cookie: session_token=test_profile_token_fixed_123.",
+  "rca_of_the_issue": "N/A — no bugs found this iteration."
+}

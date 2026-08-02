@@ -1,7 +1,33 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check } from "lucide-react";
+import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check, Maximize2, X } from "lucide-react";
 import { squarify, relColor } from "@/lib/treemap";
+import PinchZoomPane from "@/components/PinchZoomPane";
+
+/** Measures its own box and lays out the treemap for that size (so it works
+ *  both inline at a fixed height and stretched full-screen). Renders each laid
+ *  cell through the `cell` render prop. */
+function TreemapSurface({ items, height, fill = false, cell, empty, className, testid }) {
+    const ref = useRef(null);
+    const [dim, setDim] = useState({ w: 760, h: typeof height === "number" ? height : 440 });
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const ro = new ResizeObserver((e) => {
+            const r = e[0].contentRect;
+            setDim({ w: r.width, h: fill ? r.height : (typeof height === "number" ? height : r.height) });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [fill, height]);
+    const laid = useMemo(() => squarify(items, dim.w, dim.h || 440), [items, dim.w, dim.h]);
+    return (
+        <div ref={ref} className={className} style={fill ? undefined : { height }} data-testid={testid}>
+            {laid.length === 0 ? empty : laid.map((it, i) => cell(it, i))}
+        </div>
+    );
+}
+
 
 // Left group = the "what's growing" entities; right group = the completed-company scores.
 const VIEWS = [
@@ -169,22 +195,22 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [tendMetric, setTendMetric] = useState("cagr");  // cagr | tam | media (solo vista Tendencias)
     const [tip, setTip] = useState(null);
     const [btnTip, setBtnTip] = useState(null);
-    const wrapRef = useRef(null);
-    const [w, setW] = useState(760);
+    const [treeFull, setTreeFull] = useState(false);
 
+    // Lock scroll + ESC while the treemap is expanded full-screen.
     useEffect(() => {
-        const el = wrapRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver((entries) => setW(entries[0].contentRect.width));
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
+        if (!treeFull) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e) => { if (e.key === "Escape") setTreeFull(false); };
+        window.addEventListener("keydown", onKey);
+        return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+    }, [treeFull]);
 
     const items = useMemo(() => buildItems(view, path, dash, minConv, tendMetric), [view, path, dash, minConv, tendMetric]);
     const metrics = items.map((it) => it.metric).filter((m) => m != null);
     const min = metrics.length ? Math.min(...metrics) : 0;
     const max = metrics.length ? Math.max(...metrics) : 1;
-    const laid = useMemo(() => squarify(items, w, H), [items, w]);
     const maxConvCount = useMemo(() => (dash?.convergence || []).reduce((m, c) => Math.max(m, c.count), 2), [dash]);
 
     const changeView = (id) => { setView(id); setPath([]); setTip(null); };
@@ -217,6 +243,66 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                 : view === "companies_score"
                     ? "El tamaño de cada empresa es proporcional a su score global medio (solo empresas completamente desarrolladas)."
                     : "El tamaño de cada empresa es proporcional a la suma de sus TAM Scores (solo empresas completamente desarrolladas).";
+
+    const emptyEl = (
+        <div className="absolute inset-0 flex items-center justify-center text-center text-sm text-[#4A4A4A] px-6" data-testid="explore-empty">
+            {view === "convergence"
+                ? "Aún no hay empresas que coincidan en varias tendencias. Crea más tendencias con «Tendencias → Empresas» para ver las convergencias."
+                : view.startsWith("companies")
+                    ? "Aún no hay empresas completamente desarrolladas. Planifica una empresa y genera todas sus tesis para verla aquí."
+                    : "Aún no hay tendencias. Usa «Tendencias → Empresas» para crear una y agrúpalas en megatendencias."}
+        </div>
+    );
+
+    const renderCell = (it, idx) => {
+        const big = it.w > 56 && it.h > 30;
+        const med = it.w > 38 && it.h > 20;
+        const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
+        return (
+            <div
+                key={it.id || it.ticker || idx}
+                role="button"
+                tabIndex={0}
+                onClick={() => onCell(it)}
+                onKeyDown={(e) => { if (e.key === "Enter") onCell(it); }}
+                onMouseEnter={(e) => setTip({ item: it, x: e.clientX, y: e.clientY })}
+                onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY }))}
+                onMouseLeave={() => setTip(null)}
+                className={`absolute text-left overflow-hidden hover:brightness-110 hover:z-10 transition-all cursor-pointer ${it.type === "convergence" && it.count >= 2 ? "border-2 border-[#D4AF37]" : "border border-[#FDF1E6]"}`}
+                style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
+                data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
+            >
+                <div className="p-1.5 h-full flex flex-col justify-between text-[#FDF1E6]" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}>
+                    {med && (
+                        <div className={`font-semibold leading-tight ${big ? "text-sm" : "text-[11px]"} line-clamp-3 pr-4`}>
+                            {it.name}
+                        </div>
+                    )}
+                    {big && (
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                            <span className="truncate opacity-90">{it.sub}</span>
+                            {it.badge != null && <span className="font-mono font-bold shrink-0">{it.badge}</span>}
+                        </div>
+                    )}
+                </div>
+                {it.type === "convergence" && it.analyzed && it.w > 30 && it.h > 22 && (
+                    <span className="absolute top-1 right-1 bg-[#1E7D45] text-white rounded-full p-0.5" title="Ya tiene tesis de empresa desarrollada" data-testid={`convergence-analyzed-${it.ticker}`}>
+                        <Check size={10} />
+                    </span>
+                )}
+                {it.type === "folder" && onDeleteFolder && it.w > 44 && it.h > 28 && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteFolder(it); }}
+                        title="Eliminar megatendencia"
+                        className="absolute top-1 right-1 p-1 bg-black/25 hover:bg-black/55 text-[#FDF1E6] transition-colors"
+                        data-testid={`explore-delete-folder-${it.id}`}
+                    >
+                        <Trash2 size={11} />
+                    </button>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div data-testid="thesis-explore">
@@ -287,7 +373,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     {view === "convergence" && (
                         <span className="flex items-center gap-1" data-testid="convergence-gold-legend">
                             <span className="inline-block w-3 h-3 border-2 border-[#D4AF37] bg-transparent" />
-                            Borde dorado = aparece en 2+ tendencias (líder, competidor o disruptor)
+                            Borde dorado en la empresa o empresas incluidas en más tendencias
                         </span>
                     )}
                     <span className="flex items-center gap-1.5">
@@ -299,65 +385,23 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
             </div>
 
             {/* Treemap */}
-            <div ref={wrapRef} className="relative w-full border border-black bg-[#FDF1E6] overflow-hidden" style={{ height: H }} data-testid="explore-treemap">
-                {laid.length === 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center text-center text-sm text-[#4A4A4A] px-6" data-testid="explore-empty">
-                        {view === "convergence"
-                            ? "Aún no hay empresas que coincidan en varias tendencias. Crea más tendencias con «Tendencias → Empresas» para ver las convergencias."
-                            : view.startsWith("companies")
-                                ? "Aún no hay empresas completamente desarrolladas. Planifica una empresa y genera todas sus tesis para verla aquí."
-                                : "Aún no hay tendencias. Usa «Tendencias → Empresas» para crear una y agrúpalas en megatendencias."}
-                    </div>
-                )}
-                {laid.map((it, idx) => {
-                    const big = it.w > 56 && it.h > 30;
-                    const med = it.w > 38 && it.h > 20;
-                    const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
-                    return (
-                        <div
-                            key={it.id || it.ticker || idx}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => onCell(it)}
-                            onKeyDown={(e) => { if (e.key === "Enter") onCell(it); }}
-                            onMouseEnter={(e) => setTip({ item: it, x: e.clientX, y: e.clientY })}
-                            onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY }))}
-                            onMouseLeave={() => setTip(null)}
-                            className={`absolute text-left overflow-hidden hover:brightness-110 hover:z-10 transition-all cursor-pointer ${it.type === "convergence" && it.count >= 2 ? "border-2 border-[#D4AF37]" : "border border-[#FDF1E6]"}`}
-                            style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
-                            data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
-                        >
-                            <div className="p-1.5 h-full flex flex-col justify-between text-[#FDF1E6]" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}>
-                                {med && (
-                                    <div className={`font-semibold leading-tight ${big ? "text-sm" : "text-[11px]"} line-clamp-3 pr-4`}>
-                                        {it.name}
-                                    </div>
-                                )}
-                                {big && (
-                                    <div className="flex items-center justify-between gap-1 text-[10px]">
-                                        <span className="truncate opacity-90">{it.sub}</span>
-                                        {it.badge != null && <span className="font-mono font-bold shrink-0">{it.badge}</span>}
-                                    </div>
-                                )}
-                            </div>
-                            {it.type === "convergence" && it.analyzed && it.w > 30 && it.h > 22 && (
-                                <span className="absolute top-1 right-1 bg-[#1E7D45] text-white rounded-full p-0.5" title="Ya tiene tesis de empresa desarrollada" data-testid={`convergence-analyzed-${it.ticker}`}>
-                                    <Check size={10} />
-                                </span>
-                            )}
-                            {it.type === "folder" && onDeleteFolder && it.w > 44 && it.h > 28 && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onDeleteFolder(it); }}
-                                    title="Eliminar megatendencia"
-                                    className="absolute top-1 right-1 p-1 bg-black/25 hover:bg-black/55 text-[#FDF1E6] transition-colors"
-                                    data-testid={`explore-delete-folder-${it.id}`}
-                                >
-                                    <Trash2 size={11} />
-                                </button>
-                            )}
-                        </div>
-                    );
-                })}
+            <div className="relative">
+                <button
+                    onClick={() => setTreeFull(true)}
+                    className="absolute top-2 right-2 z-10 overline text-xs px-3 py-1.5 border border-black bg-white/90 hover:bg-black hover:text-white transition flex items-center gap-1.5 shadow"
+                    data-testid="explore-expand-treemap"
+                    title="Ampliar el mapa a pantalla completa (pellizca para hacer zoom)"
+                >
+                    <Maximize2 size={12} /> Ampliar
+                </button>
+                <TreemapSurface
+                    items={items}
+                    height={H}
+                    cell={renderCell}
+                    empty={emptyEl}
+                    className="relative w-full border border-black bg-[#FDF1E6] overflow-hidden"
+                    testid="explore-treemap"
+                />
             </div>
             <p className="text-sm text-[#1a1a1a] font-medium mt-3 leading-relaxed" data-testid="explore-caption">
                 {caption} El color va de verde (alto) a rojo (bajo).
@@ -371,6 +415,30 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     data-testid="explore-view-tooltip"
                 >
                     {btnTip.text}
+                </div>
+            )}
+
+            {treeFull && (
+                <div className="fixed inset-0 z-[70] bg-[#FDF1E6] flex flex-col" data-testid="explore-treemap-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0 bg-white">
+                        <div className="overline text-black truncate">{viewLabel}{path.length ? ` · ${path[path.length - 1].name}` : ""}</div>
+                        <button onClick={() => setTreeFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 shrink-0" data-testid="explore-treemap-fullscreen-close">
+                            <X size={14} /> Cerrar
+                        </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                        <PinchZoomPane className="w-full h-full">
+                            <TreemapSurface
+                                items={items}
+                                fill
+                                cell={renderCell}
+                                empty={emptyEl}
+                                className="relative w-full h-full bg-[#FDF1E6] overflow-hidden"
+                                testid="explore-treemap-full"
+                            />
+                        </PinchZoomPane>
+                    </div>
+                    <div className="text-[10px] text-[#7A7A7A] px-4 py-1 text-center shrink-0 bg-white">Pellizca para hacer zoom · arrastra para desplazar · doble toque para restablecer · gira el móvil para más ancho</div>
                 </div>
             )}
         </div>

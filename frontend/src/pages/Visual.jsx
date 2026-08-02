@@ -9,6 +9,7 @@ import { ExportLibrary } from "@/components/ExportLibrary";
 import { getPortfolio } from "@/lib/portfolio";
 import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
+import PinchZoomPane from "@/components/PinchZoomPane";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { signalFor } from "@/lib/thresholds";
 import { toast } from "sonner";
@@ -961,11 +962,13 @@ export default function Visual() {
                         </button>
                     </div>
                     <div className="flex-1 min-h-0 p-1 sm:p-2">
-                        <ResponsiveContainer width="100%" height="100%">
-                            {chartNode}
-                        </ResponsiveContainer>
+                        <PinchZoomPane className="w-full h-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                {chartNode}
+                            </ResponsiveContainer>
+                        </PinchZoomPane>
                     </div>
-                    <div className="text-[10px] text-[#7A7A7A] px-4 py-1 text-center shrink-0">Gira el móvil en horizontal para verlo más ancho · pulsa una burbuja para el detalle</div>
+                    <div className="text-[10px] text-[#7A7A7A] px-4 py-1 text-center shrink-0">Pellizca para hacer zoom · arrastra para desplazar · doble toque para restablecer · gira el móvil para más ancho</div>
                 </div>
             )}
         </div>
