@@ -1,0 +1,45 @@
+{
+  "summary": "Frontend-only test on /visual (mobile touch context + desktop). Auto-horizontal (rotate) behavior works correctly in all cases. Filter 'Nivel' control still has a real UI overflow: the 'Nivel 2' button escapes its container on narrow portrait viewports (390x844 and 360x740), although it does NOT overlap the numeric 'Score min' field because of the grid gap.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Visual.jsx filter-level (Nivel buttons)",
+        "issue": "The three Nivel buttons are NOT equirepartidos and the third button ('Nivel 2') overflows the parent cell horizontally. Measured widths at 390x844 portrait: Ambas=43px, Nivel 1=58px, Nivel 2=58px (sum=159 > container 154). filter-level-n2 right edge = 193 vs container right = 187 (6px overflow). At 360x740: n2 right=193 vs container right=172 (21px overflow). Root cause: buttons use `flex-1 whitespace-nowrap` but flex items have default `min-width: auto`, so `whitespace-nowrap` prevents shrinking below content width and flex-1 cannot equalize. Fix: add `min-w-0` (and probably `truncate` or shorter labels) to the button className, e.g. `min-w-0 basis-0 flex-1 ...`. Note: despite the overflow, no visual overlap with filter-score occurs because the next grid column starts after `gap-4` (at 360, gap only just avoids overlap: n2 right=193 vs filter-score left=188 = 5px encroach into grid gap, but filter-score box does not intersect vertically at same y-range in the current layout).",
+        "selector": "[data-testid=\"filter-level-n2\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/visual filters mobile", "issues": ["Nivel button widths not equal (flex-1 not effective due to missing min-w-0); third button visually escapes its cell on portrait <=390px"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/seed_profile_test.py"],
+  "action_items": [
+    "Fix filter-level buttons in /app/frontend/src/pages/Visual.jsx around line 884: add `min-w-0` to the button className so `flex-1` can actually equalize widths and prevent horizontal overflow of the container on narrow mobile widths (<=390px). Optionally add `basis-0` or shorten labels ('N1'/'N2') for narrow screens."
+  ],
+  "critical_code_review_comments": [
+    "Visual.jsx ~L884: `flex-1 ... whitespace-nowrap` without `min-w-0` is a common Tailwind pitfall — flex children default to min-width:auto and won't shrink below content size, breaking equal partitioning.",
+    "Visual.jsx ~L284: auto-horizontal effect correctly uses resize+orientationchange with `pointer:coarse` + short-side<=560 heuristic. Verified working end-to-end via Playwright rotation simulation."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "80%"},
+  "test_credentials": "Cookie session_token=test_profile_token_fixed_123 (seeded via seed_profile_test.py)",
+  "seed_data_creation": "Ran /app/backend/tests/seed_profile_test.py once (idempotent seed).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Auto-horizontal (rotate) already works: PASS on 390x844 portrait (closed), 844x390 landscape (auto-opened with data-testid=visual-chart-fullscreen), rotate back to portrait (auto-closed), plus desktop 1280x800 and 1200x500 no-touch both correctly do NOT auto-open (pointer:coarse guard works). Remaining bug: Nivel buttons overflow container on <=390px portrait; fix by adding min-w-0 to button className. Re-measure filter-level-both/n1/n2 bounding boxes and container after fix.",
+  "test_results_detail": {
+    "auto_horizontal_mobile_portrait_390x844_closed": "PASS",
+    "auto_horizontal_mobile_rotate_to_landscape_844x390_opens": "PASS",
+    "auto_horizontal_mobile_rotate_back_to_portrait_closes": "PASS",
+    "desktop_1280x800_no_autoopen": "PASS",
+    "desktop_1200x500_no_touch_no_autoopen": "PASS",
+    "filter_level_no_overlap_with_filter_score_390": "PASS (bbox no overlap)",
+    "filter_level_no_overlap_with_filter_score_360": "PASS (bbox no overlap, 5px into grid gap)",
+    "filter_level_buttons_inside_container_390": "FAIL (n2 overflows by 6px)",
+    "filter_level_buttons_inside_container_360": "FAIL (n2 overflows by 21px)",
+    "filter_level_buttons_equirepartidos": "FAIL (widths 43/58/58 instead of equal)"
+  }
+}

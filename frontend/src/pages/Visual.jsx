@@ -274,19 +274,26 @@ export default function Visual() {
     const [clipCount, setClipCount] = useState(0);
     const [libOpen, setLibOpen] = useState(false);
     const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (mobile/landscape)
-    const [autoLandscape, setAutoLandscape] = useState(false);
+    const autoRef = useRef(false);
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
 
     // On a PHONE in landscape, auto-open the wide full-screen chart so the X axis
     // spans the whole width and the bubbles stop looking crowded; rotate back to
-    // portrait to auto-close it. (Never triggers on desktop/tablet — tall viewports.)
+    // portrait to auto-close it. Robust to browsers that don't fire matchMedia
+    // 'change' (uses resize + orientationchange, short-side + coarse-pointer heuristic).
     useEffect(() => {
-        if (typeof window === "undefined" || !window.matchMedia) return;
-        const mq = window.matchMedia("(orientation: landscape) and (max-height: 600px)");
-        const handler = (e) => { setAutoLandscape(e.matches); setChartFull(e.matches); };
-        handler(mq);
-        mq.addEventListener ? mq.addEventListener("change", handler) : mq.addListener(handler);
-        return () => { mq.removeEventListener ? mq.removeEventListener("change", handler) : mq.removeListener(handler); };
+        if (typeof window === "undefined") return;
+        const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+        const check = () => {
+            const w = window.innerWidth, h = window.innerHeight;
+            const shouldOpen = coarse && w > h && Math.min(w, h) <= 560;
+            if (shouldOpen) { autoRef.current = true; setChartFull(true); }
+            else if (autoRef.current) { autoRef.current = false; setChartFull(false); }
+        };
+        check();
+        window.addEventListener("resize", check);
+        window.addEventListener("orientationchange", check);
+        return () => { window.removeEventListener("resize", check); window.removeEventListener("orientationchange", check); };
     }, []);
 
     // Lock body scroll + allow ESC to close while the fullscreen chart is open.
@@ -864,7 +871,7 @@ export default function Visual() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="flex flex-col gap-1" data-testid="filter-level">
                         <label className="overline text-[#4A4A4A]">Nivel</label>
-                        <div className="flex border border-black/30 divide-x divide-black/20 w-fit">
+                        <div className="flex border border-black/30 divide-x divide-black/20 w-full">
                             {[
                                 { k: "both", label: "Ambas" },
                                 { k: "n1", label: "Nivel 1" },
@@ -874,7 +881,7 @@ export default function Visual() {
                                     key={o.k}
                                     type="button"
                                     onClick={() => setFilters({ ...filters, level: o.k })}
-                                    className={`text-xs font-mono px-3 py-1.5 transition-colors ${filters.level === o.k ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F1E9D9]"}`}
+                                    className={`flex-1 text-center text-[11px] font-mono px-1 py-1.5 whitespace-nowrap transition-colors ${filters.level === o.k ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F1E9D9]"}`}
                                     data-testid={`filter-level-${o.k}`}
                                 >
                                     {o.label}
