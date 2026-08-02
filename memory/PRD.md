@@ -710,3 +710,8 @@ Bug (Android): en /compare, al pulsar 'Cargar Nivel 1/2' o 'Comparar' el tooltip
 - **Fix desborde móvil /thesis**: causa raíz = barra de pestañas w-fit; resuelto con wrapper `overflow-x-auto` + `min-w-0` en columnas + `overflowX:'clip'` en la columna principal (no en la raíz, para no romper sticky).
 - **Fix regresión sticky** del sidebar en escritorio: wrapper del sidebar con `lg:self-stretch` (le da altura de grid para que el `lg:sticky` tenga recorrido).
 - **Verificado** (testing_agent iter_27, móvil 393x852 + landscape 852x393 + desktop 1280x800): 5/5 OK — overflow móvil 0 en todos los modos, treemap y Visual fullscreen con zoom (scale 1→1.69→reset), texto convergencia correcto, sticky top=16 tras scroll. Sin issues.
+
+## CHANGELOG — Treemap: revelar etiquetas al hacer zoom (2 ago 2026)
+- `PinchZoomPane` ahora expone el nivel de zoom (`onZoom`).
+- `ThesisExplore`: estado `treeZoom` (redondeado a pasos de 0.5) alimenta `TreemapSurface`→`renderCell`. Las etiquetas se muestran según el TAMAÑO EFECTIVO (it.w×zoom, it.h×zoom): al ampliar el treemap a pantalla completa, las cajas pequeñas revelan su nombre. A zoom=1 el comportamiento es idéntico al anterior (sin regresión). Se resetea al cerrar el modal.
+- Verificado: el fullscreen renderiza etiquetas correctamente a zoom=1 (labelVisible=true) y el zoom/in/out/reset funciona (iter_27). Nota: no fue posible una demo en vivo del revelado con muchas celdas porque el test user solo tiene 2 megatendencias grandes; el mecanismo (umbral por tamaño efectivo) queda verificado por lógica + cableado.

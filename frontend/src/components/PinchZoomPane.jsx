@@ -15,7 +15,7 @@ const MIN = 1;
 const MAX = 6;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-export default function PinchZoomPane({ children, className = "" }) {
+export default function PinchZoomPane({ children, className = "", onZoom }) {
     const wrapRef = useRef(null);
     const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
     const tRef = useRef(t);
@@ -26,8 +26,9 @@ export default function PinchZoomPane({ children, className = "" }) {
 
     const apply = (next) => {
         const scale = clamp(next.scale, MIN, MAX);
-        if (scale <= MIN + 0.001) { setT({ scale: 1, x: 0, y: 0 }); return; }
+        if (scale <= MIN + 0.001) { setT({ scale: 1, x: 0, y: 0 }); onZoom?.(1); return; }
         setT({ scale, x: next.x, y: next.y });
+        onZoom?.(scale);
     };
 
     const zoomAt = useCallback((factor, cx, cy) => {
@@ -40,7 +41,7 @@ export default function PinchZoomPane({ children, className = "" }) {
         apply({ scale, x: px - (px - cur.x) * k, y: py - (py - cur.y) * k });
     }, []);
 
-    const reset = () => setT({ scale: 1, x: 0, y: 0 });
+    const reset = () => { setT({ scale: 1, x: 0, y: 0 }); onZoom?.(1); };
 
     const onPointerDown = (e) => {
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });

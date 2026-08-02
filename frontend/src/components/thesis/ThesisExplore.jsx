@@ -7,7 +7,7 @@ import PinchZoomPane from "@/components/PinchZoomPane";
 /** Measures its own box and lays out the treemap for that size (so it works
  *  both inline at a fixed height and stretched full-screen). Renders each laid
  *  cell through the `cell` render prop. */
-function TreemapSurface({ items, height, fill = false, cell, empty, className, testid }) {
+function TreemapSurface({ items, height, fill = false, cell, empty, className, testid, zoom = 1 }) {
     const ref = useRef(null);
     const [dim, setDim] = useState({ w: 760, h: typeof height === "number" ? height : 440 });
     useEffect(() => {
@@ -23,7 +23,7 @@ function TreemapSurface({ items, height, fill = false, cell, empty, className, t
     const laid = useMemo(() => squarify(items, dim.w, dim.h || 440), [items, dim.w, dim.h]);
     return (
         <div ref={ref} className={className} style={fill ? undefined : { height }} data-testid={testid}>
-            {laid.length === 0 ? empty : laid.map((it, i) => cell(it, i))}
+            {laid.length === 0 ? empty : laid.map((it, i) => cell(it, i, zoom))}
         </div>
     );
 }
@@ -196,10 +196,11 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [tip, setTip] = useState(null);
     const [btnTip, setBtnTip] = useState(null);
     const [treeFull, setTreeFull] = useState(false);
+    const [treeZoom, setTreeZoom] = useState(1);
 
     // Lock scroll + ESC while the treemap is expanded full-screen.
     useEffect(() => {
-        if (!treeFull) return;
+        if (!treeFull) { setTreeZoom(1); return; }
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         const onKey = (e) => { if (e.key === "Escape") setTreeFull(false); };
@@ -254,9 +255,12 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
         </div>
     );
 
-    const renderCell = (it, idx) => {
-        const big = it.w > 56 && it.h > 30;
-        const med = it.w > 38 && it.h > 20;
+    const renderCell = (it, idx, zoom = 1) => {
+        // Reveal labels based on the EFFECTIVE on-screen size (layout size × zoom),
+        // so zooming into a dense treemap surfaces the small cells' names.
+        const ew = it.w * zoom, eh = it.h * zoom;
+        const big = ew > 56 && eh > 30;
+        const med = ew > 38 && eh > 20;
         const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
         return (
             <div
@@ -427,10 +431,11 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                         </button>
                     </div>
                     <div className="flex-1 min-h-0">
-                        <PinchZoomPane className="w-full h-full">
+                        <PinchZoomPane className="w-full h-full" onZoom={(s) => setTreeZoom(Math.round(s * 2) / 2)}>
                             <TreemapSurface
                                 items={items}
                                 fill
+                                zoom={treeZoom}
                                 cell={renderCell}
                                 empty={emptyEl}
                                 className="relative w-full h-full bg-[#FDF1E6] overflow-hidden"
