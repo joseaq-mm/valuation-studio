@@ -273,27 +273,27 @@ export default function Visual() {
     const [recording, setRecording] = useState(false);
     const [clipCount, setClipCount] = useState(0);
     const [libOpen, setLibOpen] = useState(false);
-    const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (mobile/landscape)
-    const autoRef = useRef(false);
+    const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (manual "Ampliar")
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
 
-    // On a PHONE in landscape, auto-open the wide full-screen chart so the X axis
-    // spans the whole width and the bubbles stop looking crowded; rotate back to
-    // portrait to auto-close it. Robust to browsers that don't fire matchMedia
-    // 'change' (uses resize + orientationchange, short-side + coarse-pointer heuristic).
+    // Responsive chart height: on a phone in landscape, fill most of the viewport
+    // height so the wide bubble chart actually uses the extra width/height; portrait
+    // and desktop keep a comfortable fixed height. We DON'T force rotation or any
+    // modal — Recharts <ResponsiveContainer> re-renders on width change (ResizeObserver)
+    // and this recompute keeps the height sane when the device rotates.
+    const [chartH, setChartH] = useState(460);
     useEffect(() => {
         if (typeof window === "undefined") return;
         const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-        const check = () => {
+        const recompute = () => {
             const w = window.innerWidth, h = window.innerHeight;
-            const shouldOpen = coarse && w > h && Math.min(w, h) <= 560;
-            if (shouldOpen) { autoRef.current = true; setChartFull(true); }
-            else if (autoRef.current) { autoRef.current = false; setChartFull(false); }
+            const landscapePhone = coarse && w > h && Math.min(w, h) <= 560;
+            setChartH(landscapePhone ? Math.max(240, Math.round(h * 0.78)) : 460);
         };
-        check();
-        window.addEventListener("resize", check);
-        window.addEventListener("orientationchange", check);
-        return () => { window.removeEventListener("resize", check); window.removeEventListener("orientationchange", check); };
+        recompute();
+        window.addEventListener("resize", recompute);
+        window.addEventListener("orientationchange", recompute);
+        return () => { window.removeEventListener("resize", recompute); window.removeEventListener("orientationchange", recompute); };
     }, []);
 
     // Lock body scroll + allow ESC to close while the fullscreen chart is open.
@@ -762,8 +762,8 @@ export default function Visual() {
                 </div>
                 </div>
                 {tlErr && <div className="text-xs text-[#B32A22] mb-2 font-mono" data-testid="visual-timeline-error">{tlErr}</div>}
-                <div ref={chartRef}>
-                <ResponsiveContainer width="100%" height={460}>
+                <div ref={chartRef} className="w-full">
+                <ResponsiveContainer width="100%" height={chartH}>
                     {chartNode}
                 </ResponsiveContainer>
                 </div>
