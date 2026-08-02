@@ -63,7 +63,14 @@ function ThesisTitleLink({ to, title, bold = false, arrowSize = 12, colorClass =
         const onDoc = (e) => { if (spanRef.current && !spanRef.current.contains(e.target)) hide(); };
         document.addEventListener("mousedown", onDoc);
         document.addEventListener("touchstart", onDoc);
-        return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("touchstart", onDoc); };
+        window.addEventListener("scroll", hide, true);
+        window.addEventListener("resize", hide);
+        return () => {
+            document.removeEventListener("mousedown", onDoc);
+            document.removeEventListener("touchstart", onDoc);
+            window.removeEventListener("scroll", hide, true);
+            window.removeEventListener("resize", hide);
+        };
     }, [open]);
 
     const onTitleClick = () => {

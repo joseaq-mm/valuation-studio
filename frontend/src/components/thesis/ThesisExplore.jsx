@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check, Maximize2, X } from "lucide-react";
 import { squarify, relColor } from "@/lib/treemap";
 import PinchZoomPane from "@/components/PinchZoomPane";
+import HoverTip from "@/components/HoverTip";
 
 /** Measures its own box and lays out the treemap for that size (so it works
  *  both inline at a fixed height and stretched full-screen). Renders each laid
@@ -119,21 +120,21 @@ function buildItems(view, path, dash, minConv, tendMetric) {
 
 const CAT_LABEL = { leader: "Líder", competitor: "Competidor", disruptor: "Disruptor" };
 
-/** View-switcher button (module-level so it isn't remounted on every parent re-render —
- *  that was leaving the tooltip "stuck"). Tooltip is anchored under the button, set on
- *  enter and cleared on leave. */
-function ViewBtn({ v, i, active, onSelect, onTip }) {
+/** View-switcher button. Its explanation now uses the shared HoverTip so it
+ *  behaves on touch (tap to show, tap again / scroll / tap-outside to dismiss)
+ *  instead of freezing on screen. */
+function ViewBtn({ v, i, active, onSelect }) {
     const Icon = v.icon;
     return (
-        <button
-            onClick={onSelect}
-            onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); onTip({ text: v.desc, x: r.left, y: r.bottom }); }}
-            onMouseLeave={() => onTip(null)}
-            className={`px-3 py-2 text-xs uppercase tracking-[0.1em] font-semibold flex items-center gap-1.5 transition-colors ${i > 0 ? "border-l border-black" : ""} ${active ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
-            data-testid={`explore-view-${v.id}`}
-        >
-            <Icon size={13} /> {v.label}
-        </button>
+        <HoverTip text={v.desc} maxWidth={300}>
+            <button
+                onClick={onSelect}
+                className={`px-3 py-2 text-xs uppercase tracking-[0.1em] font-semibold flex items-center gap-1.5 transition-colors ${i > 0 ? "border-l border-black" : ""} ${active ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F5E4D4]"}`}
+                data-testid={`explore-view-${v.id}`}
+            >
+                <Icon size={13} /> {v.label}
+            </button>
+        </HoverTip>
     );
 }
 
@@ -194,7 +195,6 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [minConv, setMinConv] = useState(2);
     const [tendMetric, setTendMetric] = useState("cagr");  // cagr | tam | media (solo vista Tendencias)
     const [tip, setTip] = useState(null);
-    const [btnTip, setBtnTip] = useState(null);
     const [treeFull, setTreeFull] = useState(false);
     const [treeZoom, setTreeZoom] = useState(1);
 
@@ -207,6 +207,21 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
         window.addEventListener("keydown", onKey);
         return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
     }, [treeFull]);
+
+    // The cell tooltip follows the cursor (desktop). On touch it could otherwise
+    // linger; dismiss it on scroll/resize/touch so it never stays frozen.
+    useEffect(() => {
+        if (!tip) return;
+        const clear = () => setTip(null);
+        window.addEventListener("scroll", clear, true);
+        window.addEventListener("resize", clear);
+        window.addEventListener("touchstart", clear, { passive: true });
+        return () => {
+            window.removeEventListener("scroll", clear, true);
+            window.removeEventListener("resize", clear);
+            window.removeEventListener("touchstart", clear);
+        };
+    }, [tip]);
 
     const items = useMemo(() => buildItems(view, path, dash, minConv, tendMetric), [view, path, dash, minConv, tendMetric]);
     const metrics = items.map((it) => it.metric).filter((m) => m != null);
@@ -317,7 +332,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     {leftViews.map((v, i) => (
                         v.id === "tendencias" ? (
                             <div key={v.id} className={`flex items-stretch ${i > 0 ? "border-l border-black" : ""}`}>
-                                <ViewBtn v={v} i={0} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />
+                                <ViewBtn v={v} i={0} active={view === v.id} onSelect={() => changeView(v.id)} />
                                 {view === "tendencias" && (
                                     <select
                                         value={tendMetric}
@@ -333,14 +348,14 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                                 )}
                             </div>
                         ) : (
-                            <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />
+                            <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} />
                         )
                     ))}
                 </div>
                 </div>
                 <div className="min-w-0 max-w-full overflow-x-auto">
                 <div className="flex border border-black w-fit" data-testid="explore-views-right">
-                    {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} onTip={setBtnTip} />)}
+                    {rightViews.map((v, i) => <ViewBtn key={v.id} v={v} i={i} active={view === v.id} onSelect={() => changeView(v.id)} />)}
                 </div>
                 </div>
             </div>
@@ -411,16 +426,6 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                 {caption} El color va de verde (alto) a rojo (bajo).
             </p>
             {tip && <CellTooltip item={tip.item} x={tip.x} y={tip.y} />}
-            {btnTip && (
-                <div
-                    role="tooltip"
-                    style={{ position: "fixed", top: btnTip.y + 8, left: Math.min(btnTip.x, (typeof window !== "undefined" ? window.innerWidth : 1920) - 312), width: 300, zIndex: 60, pointerEvents: "none" }}
-                    className="bg-[#111111] text-white border border-black shadow-lg px-3 py-2 text-xs leading-relaxed"
-                    data-testid="explore-view-tooltip"
-                >
-                    {btnTip.text}
-                </div>
-            )}
 
             {treeFull && (
                 <div className="fixed inset-0 z-[70] bg-[#FDF1E6] flex flex-col" data-testid="explore-treemap-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>

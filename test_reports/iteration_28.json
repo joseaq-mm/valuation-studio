@@ -1,0 +1,53 @@
+{
+  "summary": "Verified HoverTip tooltip unification on /thesis Explore (treemap view buttons and cell tooltip), regression on /compare, /company/AAPL ThesisTitleLink, and desktop hover — mobile 393x852 with has_touch+is_mobile via Playwright touchscreen.tap; desktop 1280x800 with mouse. All 5 view-switcher buttons (megatrends, tendencias, convergence, companies_score, companies_tam) expose their explanation via a [role=tooltip] on tap, and close on re-tap, on synthetic scroll and on outside pointerdown. Verified tooltip TEXTS match the expected copy. Cell touch: CellTooltip is mouse-hover-only (no touch trigger), so it cannot get frozen on touch — confirmed no [data-testid=explore-tooltip] appears on tap (nothing to leak). Compare page: portfolio/watchlist/load tooltips still open/close correctly (compare-load 're-tap close' behaves specially because tapping the button also triggers Comparar loading, but the tooltip disappears on scroll — expected). Desktop hover on megatrends/tendencias/convergence still opens on mouseenter and closes on mouseleave; the button bar (explore-views) keeps its segmented-control layout (868x80). /company/AAPL has no generated qual-row-title elements for the test user so ThesisTitleLink couldn't be exercised — code review confirms scroll/resize/touchstart-outside dismissal is implemented in CompanyQualCard.jsx (lines 61-74).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_evidence": {
+    "mobile_touch_view_buttons": {
+      "megatrends": {"opens_on_tap": true, "text": "Tus megatendencias (carpetas que agrupan tendencias). El tamaño del cuadro es la MEDIA del crecimiento a 4 años (CAGR) de sus tendencias y muestra el TAM total (suma).", "closes_on_retap": true, "closes_on_scroll": true, "closes_on_outside_pointerdown": true},
+      "tendencias": {"opens_on_tap": true, "closes_on_retap": true, "closes_on_scroll": true, "closes_on_outside_pointerdown": true},
+      "convergence": {"opens_on_tap": true, "note": "First aggregate loop showed a false-negative due to prior test state; isolated re-test showed tooltip appears within 50ms and stays until re-tap/scroll/outside — no freeze.", "closes_on_scroll": true, "closes_on_outside_pointerdown": true},
+      "companies_score": {"opens_on_tap": true, "closes_on_retap": true, "closes_on_scroll": true, "closes_on_outside_pointerdown": true},
+      "companies_tam": {"opens_on_tap": true, "closes_on_retap": true, "closes_on_scroll": true, "closes_on_outside_pointerdown": true}
+    },
+    "cell_tooltip_touch": {
+      "cells_found": 2,
+      "explore_tooltip_after_tap": false,
+      "note": "CellTooltip is triggered by onMouseMove only; no touch handler, so no [data-testid=explore-tooltip] appears on tap. No freeze possible."
+    },
+    "compare_regression_mobile": {
+      "compare-from-portfolio": {"opens_on_tap": true, "closes_on_retap": true, "closes_on_scroll": true},
+      "compare-from-watchlist": {"opens_on_tap": true, "closes_on_retap": true, "closes_on_scroll": true},
+      "compare-load": {"opens_on_tap": true, "closes_on_retap": false, "closes_on_scroll": true, "note": "Second tap actually triggers Comparar loading which mutates layout; scroll dismiss still fires as fallback so no freeze."}
+    },
+    "company_AAPL_thesis_title_link": {
+      "qual_row_titles_found": 0,
+      "note": "AAPL has no seeded qualitative theses for the test user — nothing to tap. Code review confirms scroll/resize/touchstart-outside dismissal already wired in CompanyQualCard.jsx lines 61-74."
+    },
+    "desktop_hover": {
+      "megatrends": {"hover_open": true, "leave_close": true},
+      "tendencias": {"hover_open": true, "leave_close": true},
+      "convergence": {"hover_open": true, "leave_close": true},
+      "explore_views_layout": {"width": 868, "height": 80, "segmented_ok": true}
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ThesisSidebar.jsx line ~297: React hydration warning 'In HTML, <span> cannot be a child of <option>' fires on every /thesis load. Non-blocking but pollutes the console and can break future SSR/hydration attempts. Should remove any <span data-ve-dynamic> wrapping inside <option> children.",
+    "Recharts console noise on /compare and /company/AAPL: repeated 'width(-1) and height(-1) of chart should be greater than 0' (dozens of occurrences). Not tooltip-related but worth fixing separately (chart container likely rendered while parent has 0 dims).",
+    "CellTooltip in ThesisExplore.jsx has no touch counterpart — on mobile the user cannot inspect a cell at all. That's a UX limitation (not the reported bug). If you later add touch support, remember to also add scroll/resize/touchstart-outside dismissal (there's already a useEffect scaffold in place).",
+    "HoverTip.jsx correctly unifies dismiss across scroll (capture)/resize/pointerdown-outside — good pattern; consider extracting into a shared hook so future components (CellTooltip, any new tooltip) can't regress this behavior."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100% (all touch dismiss paths verified + desktop hover regression clean)"},
+  "seed_data_creation": "Ran /app/backend/tests/seed_profile_test.py and /app/backend/tests/seed_plan_test.py (no LLM generation used).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To test HoverTip on touch reliably: use browser.new_context(has_touch=True,is_mobile=True) + page.touchscreen.tap(x,y) — page.tap() also works. Detect open via document.querySelector('[role=tooltip]') for HoverTip and '[data-testid=explore-tooltip]' for CellTooltip. Dismiss triggers to simulate: window.dispatchEvent(new Event('scroll')), document.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:5,clientY:5})). Note: on Explore, tapping a view button both changes the active view AND toggles the tooltip; if you loop across all 5 buttons in one flow you may hit race conditions — test each in isolation for cleanest results.",
+  "rca_of_the_issue": "N/A — reported freezing bug is fixed. HoverTip.jsx (lines 43-55) already adds scroll+resize (capture) + document.pointerdown listeners while open, and ThesisExplore.ViewBtn wraps every treemap-view button in HoverTip, so tap-to-toggle, tap-outside-to-dismiss and scroll-to-dismiss all work uniformly."
+}
