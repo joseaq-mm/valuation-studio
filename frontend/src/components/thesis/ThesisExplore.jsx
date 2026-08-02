@@ -272,11 +272,16 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
 
     const renderCell = (it, idx, zoom = 1) => {
         // Reveal labels based on the EFFECTIVE on-screen size (layout size × zoom),
-        // so zooming into a dense treemap surfaces the small cells' names.
+        // so zooming into a dense treemap surfaces the small cells' data.
         const ew = it.w * zoom, eh = it.h * zoom;
         const big = ew > 56 && eh > 30;
         const med = ew > 38 && eh > 20;
         const bg = it.metric != null ? relColor(it.metric, min, max) : "#9CA3AF";
+        // Counter-scale the text layer by 1/zoom so labels keep a constant, readable
+        // size instead of ballooning as you zoom in.
+        const contentStyle = zoom > 1
+            ? { width: it.w * zoom, height: it.h * zoom, transform: `scale(${1 / zoom})`, transformOrigin: "top left", textShadow: "0 1px 2px rgba(0,0,0,0.35)" }
+            : { width: it.w, height: it.h, textShadow: "0 1px 2px rgba(0,0,0,0.35)" };
         return (
             <div
                 key={it.id || it.ticker || idx}
@@ -291,7 +296,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                 style={{ left: it.x, top: it.y, width: it.w, height: it.h, background: bg }}
                 data-testid={`explore-cell-${it.type}-${it.id || it.ticker || idx}`}
             >
-                <div className="p-1.5 h-full flex flex-col justify-between text-[#FDF1E6]" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}>
+                <div className="p-1.5 flex flex-col justify-between text-[#FDF1E6]" style={contentStyle}>
                     {med && (
                         <div className={`font-semibold leading-tight ${big ? "text-sm" : "text-[11px]"} line-clamp-3 pr-4`}>
                             {it.name}
@@ -436,7 +441,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                         </button>
                     </div>
                     <div className="flex-1 min-h-0">
-                        <PinchZoomPane className="w-full h-full" onZoom={(s) => setTreeZoom(Math.round(s * 2) / 2)}>
+                        <PinchZoomPane className="w-full h-full" onZoom={(s) => setTreeZoom(Math.round(s * 4) / 4)}>
                             <TreemapSurface
                                 items={items}
                                 fill

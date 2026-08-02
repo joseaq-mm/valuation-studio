@@ -722,3 +722,8 @@ Bug recurrente: los tooltips de explicación de los botones del treemap (ViewBtn
 - **CompanyQualCard** (ThesisTitleLink): ahora también cierra en scroll/resize (además de tap-fuera).
 - **Auditoría**: los únicos tooltips fixed propios estaban en HoverTip (ya arreglado), CompanyQualCard y ThesisExplore. Todos comparten ahora la misma lógica de descarte (tap toggle, scroll/resize/pointerdown-fuera).
 - **Verificado** (testing_agent iter_28, táctil 393x852 + escritorio 1280x800): 100% — los 5 botones del treemap abren al tocar y cierran en re-tap/scroll/tap-fuera; hover desktop OK; segmented control intacto; Compare y regresiones OK. Nota no bloqueante: warning de hydration '<span> child of <option>' en ThesisSidebar (instrumentación dev, no afecta funcionalidad).
+
+## CHANGELOG — Treemap ampliado: revelado de celdas pequeñas + texto a tamaño constante (2 ago 2026)
+- `renderCell` en ThesisExplore ahora contraescala la capa de texto por 1/zoom (width/height × zoom + transform scale(1/zoom), origen top-left) → las etiquetas mantienen tamaño LEGIBLE CONSTANTE al hacer zoom en lugar de agrandarse desproporcionadamente.
+- El revelado de etiquetas sigue por tamaño EFECTIVO (it.w×zoom, it.h×zoom): al acercarte a zonas densas, las celdas pequeñas que estaban sin datos muestran su nombre/valor. Paso de zoom afinado a 0.25.
+- Verificado (seed temporal de 72 tendencias, luego eliminado): a pantalla completa las 72 celdas se etiquetan; con zoom el texto se mantiene en ~18px on-screen (constante) y las celdas pequeñas revelan datos. Funciona con pinch y con botones lupa +/−/reset.
