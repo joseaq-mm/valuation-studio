@@ -881,7 +881,7 @@ export default function Visual() {
                                     key={o.k}
                                     type="button"
                                     onClick={() => setFilters({ ...filters, level: o.k })}
-                                    className={`flex-1 text-center text-[11px] font-mono px-1 py-1.5 whitespace-nowrap transition-colors ${filters.level === o.k ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F1E9D9]"}`}
+                                    className={`min-w-0 basis-0 flex-1 text-center text-[11px] font-mono px-1 py-1.5 whitespace-nowrap transition-colors ${filters.level === o.k ? "bg-black text-[#FDF1E6]" : "bg-white text-black hover:bg-[#F1E9D9]"}`}
                                     data-testid={`filter-level-${o.k}`}
                                 >
                                     {o.label}
