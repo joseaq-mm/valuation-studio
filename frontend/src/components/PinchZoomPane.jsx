@@ -101,7 +101,7 @@ export default function PinchZoomPane({ children, className = "" }) {
                 onPointerCancel={endPointer}
                 onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); } }}
             >
-                <div style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`, transformOrigin: "0 0", width: "100%", height: "100%" }}>
+                <div style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`, transformOrigin: "0 0", width: "100%", height: "100%" }} data-testid="pinch-zoom-content">
                     {children}
                 </div>
             </div>

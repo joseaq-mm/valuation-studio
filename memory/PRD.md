@@ -701,3 +701,12 @@ Bug (Android): en /compare, al pulsar 'Cargar Nivel 1/2' o 'Comparar' el tooltip
 - **Causa**: `HoverTip` solo mostraba en hover/focus y no escuchaba scroll ni tap-fuera; en táctil el estado "hover" persiste tras el tap → tooltip pegado.
 - **Fix** (`HoverTip.jsx`, global): (1) rastrear `pointerType` en `onPointerDown`; (2) hover (pointerEnter/Leave) solo si es ratón; (3) en táctil, `onClick` togglea (re-tap cierra); (4) mientras está abierto, listeners de `scroll`/`resize` (capture) y `pointerdown` fuera → ocultan. Escritorio conserva hover.
 - **Verificado** (testing_agent iter_25, emulación touch + ratón): tap abre, re-tap cierra, scroll cierra, tap-fuera cierra, hover desktop OK. 100%.
+
+## CHANGELOG — Zoom táctil (Visual + treemaps) + treemap ampliable + texto Convergencia + fix sticky (2 ago 2026)
+- **Nuevo** `components/PinchZoomPane.jsx`: zoom táctil reutilizable (pinch 2 dedos, arrastre 1 dedo con zoom>1, doble-toque reset, botones +/−/reset, rueda con Ctrl). Escala vía CSS transform (nítido en SVG y treemap).
+- **Visual**: el gráfico ampliado a pantalla completa ahora tiene zoom táctil (envuelto en PinchZoomPane).
+- **Treemaps (ThesisExplore)**: nuevo `<TreemapSurface>` (mide su caja y hace squarify) → botón 'Ampliar' (`explore-expand-treemap`) que abre el treemap a pantalla completa (`explore-treemap-fullscreen`) con zoom táctil, igual que los gráficos.
+- **Convergencia**: leyenda del borde dorado ahora dice "Borde dorado en la empresa o empresas incluidas en más tendencias".
+- **Fix desborde móvil /thesis**: causa raíz = barra de pestañas w-fit; resuelto con wrapper `overflow-x-auto` + `min-w-0` en columnas + `overflowX:'clip'` en la columna principal (no en la raíz, para no romper sticky).
+- **Fix regresión sticky** del sidebar en escritorio: wrapper del sidebar con `lg:self-stretch` (le da altura de grid para que el `lg:sticky` tenga recorrido).
+- **Verificado** (testing_agent iter_27, móvil 393x852 + landscape 852x393 + desktop 1280x800): 5/5 OK — overflow móvil 0 en todos los modos, treemap y Visual fullscreen con zoom (scale 1→1.69→reset), texto convergencia correcto, sticky top=16 tras scroll. Sin issues.
