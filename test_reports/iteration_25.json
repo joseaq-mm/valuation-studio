@@ -1,0 +1,22 @@
+{
+  "summary": "Verified HoverTip.jsx fix on /compare for the 3 buttons (Cargar Nivel 1, Cargar Nivel 2, Comparar). Emulated touch via PointerEvent dispatch with pointerType='touch' at mobile viewport 393x852, and mouse hover at desktop 1280x800. All acceptance criteria pass: tap toggles tooltip open/closed, scroll dismisses (verified with a dispatched scroll event since the page had no scroll room), outside tap dismisses, and desktop hover/leave still works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "HoverTip.jsx: scroll dismiss uses window 'scroll' listener with capture=true — works only when the browser actually fires scroll events. On very short pages (like /compare at 393x852 where docHeight == winHeight) window.scrollBy is a no-op and does NOT emit scroll, so scroll-dismiss won't trigger. In real-world Android usage this is fine because touch scroll gestures either produce scroll events OR they don't scroll at all (nothing to close on). Outside-tap listener covers the residual case. No change required, but worth noting.",
+    "Recurring recharts console warning: 'width(-1) and height(-1) of chart should be greater than 0' fires many times on /compare — noise, but indicates a chart container is mounted with 0 dimensions (probably a hidden or pre-render state). Not tooltip-related; consider fixing separately."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing session cookie test_profile_token_fixed_123.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HoverTip fix verified. Touch behavior in this environment must be simulated by dispatching PointerEvent with pointerType='touch' because page.tap() alone doesn't set pointerType on the underlying pointer events unless the context is created with has_touch=true (the automation tool page is shared with default context). scroll dismiss must be tested either on a scrollable page OR by dispatching a synthetic 'scroll' event on window.",
+  "rca of the issue": "Reported bug: tooltips on /compare stayed stuck on Android after tapping. RCA: previous HoverTip only opened on hover/click and never listened to scroll/outside-tap/re-tap, so on touch devices where 'hover' state persists after tap, the fixed-positioned tooltip lingered. Fix in HoverTip.jsx: (1) track pointerType via onPointerDown; (2) hover handlers only fire when pointerType==='mouse'; (3) onClick toggles open when pointerType!=='mouse'; (4) while open, add scroll/resize (capture) and document pointerdown listeners to hide when scrolling or tapping outside the wrapper. All 3 dismiss mechanisms (re-tap, scroll, outside-tap) verified programmatically."
+}
