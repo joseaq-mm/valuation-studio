@@ -727,3 +727,7 @@ Bug recurrente: los tooltips de explicación de los botones del treemap (ViewBtn
 - `renderCell` en ThesisExplore ahora contraescala la capa de texto por 1/zoom (width/height × zoom + transform scale(1/zoom), origen top-left) → las etiquetas mantienen tamaño LEGIBLE CONSTANTE al hacer zoom en lugar de agrandarse desproporcionadamente.
 - El revelado de etiquetas sigue por tamaño EFECTIVO (it.w×zoom, it.h×zoom): al acercarte a zonas densas, las celdas pequeñas que estaban sin datos muestran su nombre/valor. Paso de zoom afinado a 0.25.
 - Verificado (seed temporal de 72 tendencias, luego eliminado): a pantalla completa las 72 celdas se etiquetan; con zoom el texto se mantiene en ~18px on-screen (constante) y las celdas pequeñas revelan datos. Funciona con pinch y con botones lupa +/−/reset.
+
+## CHANGELOG — Visual: auto-landscape del gráfico al girar el móvil (2 ago 2026)
+- `Visual.jsx`: nuevo efecto con matchMedia '(orientation: landscape) and (max-height: 600px)' → en un TELÉFONO en horizontal abre automáticamente el overlay ancho del gráfico (visual-chart-fullscreen), estirando el eje X para que las burbujas no se amontonen; al volver a vertical se cierra solo. No se activa en desktop/tablet (viewports altos).
+- Verificado (screenshot + matchMedia): portrait 390x844 → no abre; landscape 844x390 → abre ancho con eje X completo + zoom; vuelta a portrait → cierra.

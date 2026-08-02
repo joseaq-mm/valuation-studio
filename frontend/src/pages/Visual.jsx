@@ -274,7 +274,20 @@ export default function Visual() {
     const [clipCount, setClipCount] = useState(0);
     const [libOpen, setLibOpen] = useState(false);
     const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (mobile/landscape)
+    const [autoLandscape, setAutoLandscape] = useState(false);
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
+
+    // On a PHONE in landscape, auto-open the wide full-screen chart so the X axis
+    // spans the whole width and the bubbles stop looking crowded; rotate back to
+    // portrait to auto-close it. (Never triggers on desktop/tablet — tall viewports.)
+    useEffect(() => {
+        if (typeof window === "undefined" || !window.matchMedia) return;
+        const mq = window.matchMedia("(orientation: landscape) and (max-height: 600px)");
+        const handler = (e) => { setAutoLandscape(e.matches); setChartFull(e.matches); };
+        handler(mq);
+        mq.addEventListener ? mq.addEventListener("change", handler) : mq.addListener(handler);
+        return () => { mq.removeEventListener ? mq.removeEventListener("change", handler) : mq.removeListener(handler); };
+    }, []);
 
     // Lock body scroll + allow ESC to close while the fullscreen chart is open.
     useEffect(() => {
