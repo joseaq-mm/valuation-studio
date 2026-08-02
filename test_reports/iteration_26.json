@@ -1,0 +1,59 @@
+{
+  "summary": "Mobile emulation (393x852) on /thesis + /thesis/co_plan_ui: NO horizontal document scroll in any mode (company, explore, treemap, all explore-view tabs, radar toggled). document.scrollWidth == window.innerWidth == 393 in every scan. Detail /thesis/co_plan_ui: 0 overflowing descendants. Desktop (1280x800) regression: sticky sidebar is BROKEN — the aside[data-testid=thesis-sidebar] still has position:sticky computed, but after scrollTo(0,600) its bounding top went from 143 to -456 (should have stuck near top:16). Root cause is almost certainly the overflowX:'clip' inline style added to the [data-testid=thesis-page] root: overflow:clip on an ancestor establishes a containment context that prevents descendant position:sticky from anchoring to the viewport (same behavior as overflow:hidden on an ancestor).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ThesisSidebar (desktop sticky)",
+        "issue": "aside[data-testid=thesis-sidebar] with lg:sticky lg:top-4 no longer sticks on desktop. Before scroll top=143, after window.scrollTo(0,600) top=-456 (scrolls away with page). Computed position is 'sticky' but has no effect. Regression caused by overflowX:'clip' inline style on the [data-testid=thesis-page] root wrapper (Thesis.jsx line 545). overflow-x:clip on an ancestor creates a scroll containment context that disables descendant position:sticky vs. the viewport (browsers treat clip/hidden ancestors as the nearest scroll container).",
+        "selector": "[data-testid=thesis-sidebar]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "diagnostic_scan_results": {
+    "mobile_thesis_default_company_mode": {
+      "docSW": 393, "winIW": 393,
+      "overflowing_descendants": [
+        {"tag": "DIV", "cls": "min-w-0 max-w-full overflow-x-auto", "sw": 454, "cw": 361, "note": "Intentional horizontal scroller wrapping the explore-view tabs (Megatendencias/Tendencias/Convergencia). Its own overflow-x-auto is by design; does not affect document scroll."},
+        {"tag": "DIV", "cls": "flex border border-black w-fit", "sw": 452, "right": 470, "note": "The tabs bar inside the above scroller — this is what makes the scroller needed (contained, expected)."},
+        {"tag": "BUTTON", "data-testid": "explore-view-convergence", "right": 469, "note": "Last tab, sits inside the horizontal scroller — expected."}
+      ]
+    },
+    "mobile_thesis_explore_mode": "Same 3 elements as company mode; docSW=393. Treemap w-full overflow-hidden works correctly.",
+    "mobile_explore_tab_megatrends": "Same 3 elements. docSW=393.",
+    "mobile_explore_tab_convergence": {"docSW": 393, "note": "Only 1 element flagged (the parent overflow-x-auto scroller). No real overflow."},
+    "mobile_radar_toggled": {
+      "docSW": 393,
+      "extra_overflowing": [
+        {"tag": "OL", "right": 409, "note": "Toast/sonner container extends ~16px past viewport; does not propagate to document scrollWidth (likely fixed-positioned)."},
+        {"tag": "DIV", "sw": 19, "cw": 16, "note": "Tiny inner scroller, negligible."}
+      ]
+    },
+    "mobile_thesis_detail_co_plan_ui": {"docSW": 393, "winIW": 393, "overflowing_descendants_count": 0, "note": "Clean, zero overflowing descendants — perfect."}
+  },
+  "root_cause_confirmation": "The user-reported horizontal overflow on /thesis is now effectively eliminated at the document level thanks to overflowX:'clip' on thesis-page. The remaining descendants that report scrollWidth>clientWidth on mobile are all inside a deliberate overflow-x-auto wrapper around the explore-view tabs (MEGATENDENCIAS/TENDENCIAS/CONVERGENCIA), which is intended UX (allows swiping the tab strip). The underlying element that was making the whole page overflow before was almost certainly this same tabs bar (div.flex.border.border-black.w-fit, natural width ~452px) which used to bubble up before the scroller wrapper / min-w-0 / clip fixes were added. HOWEVER: the clip on the root has broken desktop sticky on the sidebar.",
+  "recommended_fixes_for_main_agent": [
+    "Replace overflowX:'clip' on [data-testid=thesis-page] with a scope that doesn't break sticky. Options: (a) apply overflow-x:clip only on <body> or only on a wrapper that is NOT an ancestor of the sticky element — e.g. wrap only the <main> column, not the whole grid; (b) leave root as overflow-x:visible and rely on the min-w-0 fixes + the explicit overflow-x-auto around the tabs bar (which is already the true culprit); (c) use overflow-clip-margin or set overflow-x:clip only at mobile breakpoint with a media query so lg:+ keeps overflow visible and sticky works.",
+    "Preferred: make root overflow visible and instead ensure the explore-tabs wrapper (div.min-w-0.max-w-full.overflow-x-auto) is the only horizontal scroller. Because docSW==393 came from that wrapper working, the clip may no longer be necessary."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "Fix desktop sticky regression on ThesisSidebar caused by overflowX:'clip' on thesis-page root. See recommended_fixes_for_main_agent.",
+    "Optional: also apply overflow-x-clip / min-w-0 on the OL toast container root so it doesn't visually extend past the viewport when Radar toggle shows a toast (cosmetic, does not cause page scroll)."
+  ],
+  "critical_code_review_comments": [
+    "Thesis.jsx: overflowX:'clip' on the root grid container is a viable last-resort clamp but disables position:sticky in descendants. Prefer scoping horizontal clipping to a container that is NOT an ancestor of the sticky aside.",
+    "There are two aside[data-testid=thesis-sidebar] elements (Thesis.jsx L828 for logged-out, ThesisSidebar.jsx L204 for logged-in). Only the logged-in one has lg:sticky lg:top-4 — acceptable, but the logged-out one loses sticky behavior silently.",
+    "The explore-view tab strip uses w-fit inside overflow-x-auto — good pattern; keep this and remove root-level clip."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "mobile-overflow 100% fixed; desktop sticky 0% (regressed)"},
+  "seed_data_creation": "Ran /app/backend/tests/seed_profile_test.py and seed_plan_test.py (created /thesis/co_plan_ui for test_profile_user_123).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mobile overflow issue on /thesis is resolved at document level. Focus next iteration on verifying desktop sticky sidebar behavior after main agent removes/scopes the overflowX:'clip'. Use cookie session_token=test_profile_token_fixed_123, viewport 1280x800, scroll to y=600 and confirm [data-testid=thesis-sidebar] getBoundingClientRect().top stays near 16 (top-4).",
+  "rca_of_the_issue": "Mobile horizontal scroll RCA: the explore-view tab strip (div.flex.border.border-black.w-fit containing MEGATENDENCIAS/TENDENCIAS/CONVERGENCIA buttons) has a natural width ~452px which exceeded the 393px viewport and was propagating to the document. Fix chain applied by main agent (min-w-0 on grid children + overflow-x-auto wrapper around the tabs + overflowX:'clip' on root) all contribute; the tabs wrapper is the key structural fix. Reproduction on real device would require Explore mode being visible. Detail page /thesis/co_plan_ui had no overflow. Desktop sticky regression RCA: overflow:clip on the [data-testid=thesis-page] ancestor establishes containment that disables descendant position:sticky."
+}
