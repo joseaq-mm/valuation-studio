@@ -695,3 +695,9 @@ Reporte (Android/Chrome): ancho no encaja en móvil, scores descolocados al gene
 - **Visual — ampliar gráfico** (`Visual.jsx`): botón `visual-expand-chart` ('Ampliar') abre overlay a pantalla completa (`visual-chart-fullscreen`, cerrar con `visual-chart-fullscreen-close`, ESC y lock de scroll) con el gráfico al 100% del viewport → resuelve estrechez y aprovecha landscape. Padding móvil reducido (`px-0 sm:px-6`). `chartNode` reutilizado inline y en el modal.
 - **Barra de pestañas** (`ThesisExplore.jsx`): grupos `w-fit` (MEGATENDENCIAS/TENDENCIAS/CONVERGENCIA) envueltos en `min-w-0 max-w-full overflow-x-auto` → elimina el desborde de 77px en `/thesis`.
 - **Verificado** (testing_agent iter_23 + iter_24, emulación Android 393x852 y landscape 852x393): las 10 páginas con overflow horizontal = 0 en vertical; 4/4 páginas sin romperse en landscape; scores dentro de tarjeta; Visual fullscreen OK en vertical y horizontal.
+
+## CHANGELOG — Fix tooltips "pegados" en móvil (HoverTip) (1 ago 2026)
+Bug (Android): en /compare, al pulsar 'Cargar Nivel 1/2' o 'Comparar' el tooltip aparecía pero se quedaba fijo (posición `fixed`) y no se iba al scrollear/mover.
+- **Causa**: `HoverTip` solo mostraba en hover/focus y no escuchaba scroll ni tap-fuera; en táctil el estado "hover" persiste tras el tap → tooltip pegado.
+- **Fix** (`HoverTip.jsx`, global): (1) rastrear `pointerType` en `onPointerDown`; (2) hover (pointerEnter/Leave) solo si es ratón; (3) en táctil, `onClick` togglea (re-tap cierra); (4) mientras está abierto, listeners de `scroll`/`resize` (capture) y `pointerdown` fuera → ocultan. Escritorio conserva hover.
+- **Verificado** (testing_agent iter_25, emulación touch + ratón): tap abre, re-tap cierra, scroll cierra, tap-fuera cierra, hover desktop OK. 100%.
