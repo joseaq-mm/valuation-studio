@@ -25,6 +25,24 @@ export default function Layout({ children }) {
 
     useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
+    // Mobile rotation zoom bug workaround: after opening/closing a full-screen `fixed`
+    // overlay (e.g. an enlarged chart) in landscape, some Android/Chromium browsers keep
+    // the old (wide) layout-viewport width when rotating back to portrait, so the whole
+    // page renders zoomed-out in the left half. On orientationchange we briefly append
+    // `maximum-scale=1` to the viewport meta to force the browser to recompute the layout
+    // width/scale, then restore it so pinch-zoom stays available.
+    useEffect(() => {
+        const vp = document.querySelector('meta[name="viewport"]');
+        if (!vp) return;
+        const base = vp.getAttribute("content");
+        const onOrient = () => {
+            vp.setAttribute("content", base + ", maximum-scale=1");
+            setTimeout(() => vp.setAttribute("content", base), 350);
+        };
+        window.addEventListener("orientationchange", onOrient);
+        return () => window.removeEventListener("orientationchange", onOrient);
+    }, []);
+
     // Collapse the header into the single-row hamburger layout when width is small
     // OR the device is in landscape with little height (phones/foldables held sideways),
     // so rows 2 & 3 don't eat the scarce vertical space in landscape.
