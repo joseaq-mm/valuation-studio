@@ -2827,8 +2827,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         transcript = "\n\n".join(parts)
         title = (req.title or "").strip()
         if not title:
-            base = " ".join(first_user.split())[:60]
-            title = f"Conversación KPI · {base}" if base else "Conversación KPI"
+            q = " ".join(first_user.split())
+            limit = 55
+            if len(q) > limit:
+                q = q[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:—-·") + "…"
+            ticker = (conv.get("ticker") or "").strip()
+            prefix = f"Chat KPIs · {ticker} · " if ticker else "Chat KPIs · "
+            title = (prefix + q) if q else (f"Chat KPIs · {ticker}" if ticker else "Chat KPIs")
         fid = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         rec = {

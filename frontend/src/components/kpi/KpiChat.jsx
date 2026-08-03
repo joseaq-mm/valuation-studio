@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronDown, Send, Save, Loader2, Sparkles, Lightbulb, ArrowRight, X, Check, History, RefreshCw, FileText, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, ChevronDown, Send, Save, Loader2, Sparkles, Lightbulb, ArrowRight, X, Check, History, RefreshCw, FileText, Pencil, Trash2, Eraser } from "lucide-react";
 import { kpiChat, kpiChatSave, kpiChatProposeThesis, kpiChatAddThesis, kpiChatLast, kpiChatReplace } from "@/lib/api";
 import HoverTip from "@/components/HoverTip";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -97,6 +97,15 @@ export default function KpiChat({ companyId, onSaved, onChanged }) {
         } finally {
             setLoadingLast(false);
         }
+    };
+
+    // ── Borrar chat (empezar de cero) ────────────────────────────────────
+    const clearChat = () => {
+        if (busy || messages.length === 0) return;
+        sessionRef.current = newSession(companyId);
+        setMessages([]); setInput(""); setSavedOnce(false);
+        setAiSuggest(false); setProposal(null); setAdded(null); setDupNotice(null); setEditIdx(-1);
+        toast.success("Chat vaciado. Empieza de cero. (Tu chat guardado sigue en 'Mostrar último chat'.)");
     };
 
     // ── Guardar chat (sobrescribe la conversación) ───────────────────────
@@ -254,6 +263,8 @@ export default function KpiChat({ companyId, onSaved, onChanged }) {
                     <div className="flex items-center gap-2 flex-wrap mb-3" data-testid="kpi-chat-toolbar">
                         <ToolBtn tip="Recupera tu última conversación guardada con esta empresa para releerla o reutilizarla." onClick={showLast} disabled={busy}
                             icon={loadingLast ? <Loader2 size={13} className="animate-spin" /> : <History size={13} />} label="Mostrar último chat" testid="kpi-chat-show-last" />
+                        <ToolBtn tip="Vacía el chat actual para empezar de cero. Tu conversación guardada sigue disponible en 'Mostrar último chat'." onClick={clearChat} disabled={busy || !hasMsgs}
+                            icon={<Eraser size={13} />} label="Borrar chat" testid="kpi-chat-clear" />
                         <ToolBtn tip="Sobrescribe la conversación guardada con lo que ves ahora (para recuperarla luego con 'Mostrar último chat')." onClick={saveChat} disabled={busy || !hasMsgs}
                             icon={savingChat ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} label="Guardar chat" testid="kpi-chat-save-chat" />
                         <ToolBtn tip="Relanza tus mismas preguntas con los datos actuales y actualiza las respuestas. Puede tardar y consumir saldo de IA." onClick={() => setRefreshAsk(true)} disabled={busy || !canRefresh}
