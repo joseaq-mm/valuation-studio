@@ -884,10 +884,10 @@ export default function Visual() {
                 <table className="w-full text-sm font-mono">
                     <thead className="bg-black text-white">
                         <tr>
-                            <th className="p-2 text-left w-[40px] sticky left-0 z-30 bg-black">
+                            <th className="p-2 text-left w-[29px] sticky left-0 z-30 bg-black">
                                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="cursor-pointer" data-testid="visual-toggle-all" />
                             </th>
-                            <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="sticky left-[40px] z-30 bg-black" />
+                            <SortableTh label="Ticker" k="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="sticky left-[29px] z-30 bg-black" />
                             <SortableTh label="Nombre" k="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="left" className="font-sans" />
                             <SortableTh label="Tesis" k="thesis_updated_at" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Días desde la última actualización de la tesis. En rojo si la empresa ha publicado resultados posteriores a esa fecha (conviene reanalizar)." />
                             <SortableTh label={<span className="flex flex-col leading-tight items-end"><span>Ant.</span><span>result.</span></span>} k="last_earnings_date" sortKey={sortKey} sortDir={sortDir} onSort={onSort} tip="Fecha de los últimos resultados publicados (Yahoo Finance)." />
@@ -910,8 +910,8 @@ export default function Visual() {
                             const incomplete = r.ratio_compra_pct == null || r.avg_overall_score == null;
                             return (
                                 <tr key={r.ticker} className={`border-t border-black/10 ${incomplete ? "text-[#9ca3af]" : "hover:bg-[#FAF6EE]"}`} data-testid={`visual-row-${r.ticker}`}>
-                                    <td className="p-2 w-[40px] sticky left-0 z-20 bg-white"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
-                                    <td className="p-2 font-semibold sticky left-[40px] z-20 bg-white border-r border-black/10"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
+                                    <td className="p-2 w-[29px] sticky left-0 z-20 bg-white"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
+                                    <td className="p-2 font-semibold sticky left-[29px] z-20 bg-white border-r border-black/10"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
                                     <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5"><span>{r.name}</span><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
                                     <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><LastEarningsBadge date={r.last_earnings_date} testid={`visual-last-earnings-${r.ticker}`} /></td>
