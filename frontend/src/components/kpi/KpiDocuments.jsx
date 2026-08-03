@@ -1,86 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { FileText, Image as ImageIcon, FileType, FileType2, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, RotateCw, ChevronDown } from "lucide-react";
+import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, RotateCw } from "lucide-react";
 import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileRetry, kpiFileExport } from "@/lib/api";
+import FormatDownloadMenu from "@/components/FormatDownloadMenu";
 import { toast } from "sonner";
 
-const FMT_META = {
-    pdf: { label: "PDF", Icon: FileType },
-    docx: { label: "Word", Icon: FileType2 },
-    jpg: { label: "JPG", Icon: ImageIcon },
-};
 // Which output formats a document can be exported to, plus the default (its native format).
 const formatsFor = (f) => {
     const ct = (f.content_type || "");
     if (ct.startsWith("image/")) return { avail: ["jpg", "pdf", "docx"], def: "jpg" };
     return { avail: ["pdf", "docx"], def: "pdf" }; // pdf & text docs
 };
-
-function filenameFromDisposition(disp, fallback) {
-    if (!disp) return fallback;
-    const m = /filename\*=UTF-8''([^;]+)/i.exec(disp);
-    if (m) { try { return decodeURIComponent(m[1]); } catch { return fallback; } }
-    const m2 = /filename="?([^";]+)"?/i.exec(disp);
-    return m2 ? m2[1] : fallback;
-}
-
-// Split button: main icon downloads in the currently-selected format; the caret opens
-// a menu to switch format (which also downloads and updates the icon).
-function FileDownloadMenu({ f, companyId }) {
-    const { avail, def } = formatsFor(f);
-    const [fmt, setFmt] = useState(def);
-    const [open, setOpen] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const ref = useRef(null);
-
-    useEffect(() => {
-        if (!open) return;
-        const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener("mousedown", onDoc);
-        return () => document.removeEventListener("mousedown", onDoc);
-    }, [open]);
-
-    const doDownload = async (which) => {
-        setBusy(true);
-        try {
-            const res = await kpiFileExport(companyId, f.id, which);
-            const name = f.display_name || f.original_filename || "documento";
-            const fname = filenameFromDisposition(res.headers?.["content-disposition"], `${name}.${which}`);
-            const url = URL.createObjectURL(res.data);
-            const a = document.createElement("a");
-            a.href = url; a.download = fname;
-            document.body.appendChild(a); a.click(); a.remove();
-            URL.revokeObjectURL(url);
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || "No se pudo descargar en ese formato");
-        } finally { setBusy(false); }
-    };
-
-    const pick = (which) => { setFmt(which); setOpen(false); doDownload(which); };
-    const { Icon, label } = FMT_META[fmt];
-
-    return (
-        <div className="relative shrink-0 flex items-center" ref={ref} data-testid={`kpi-file-download-menu-${f.id}`}>
-            <button onClick={() => doDownload(fmt)} disabled={busy} className="text-[#4A4A4A] hover:bg-black/5 p-1 disabled:opacity-50" title={`Descargar en ${label}`} data-testid={`kpi-file-download-${f.id}`}>
-                {busy ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
-            </button>
-            <button onClick={() => setOpen((v) => !v)} disabled={busy} className="text-[#9A9A9A] hover:bg-black/5 hover:text-[#4A4A4A] -ml-0.5 p-0.5 disabled:opacity-50" title="Elegir formato" data-testid={`kpi-file-download-caret-${f.id}`}>
-                <ChevronDown size={13} />
-            </button>
-            {open && (
-                <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-black/20 shadow-lg min-w-[120px]" data-testid={`kpi-file-format-menu-${f.id}`}>
-                    {avail.map((w) => {
-                        const M = FMT_META[w];
-                        return (
-                            <button key={w} onClick={() => pick(w)} className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-[#F4F6FA] ${w === fmt ? "font-semibold text-[#052049]" : "text-[#4A4A4A]"}`} data-testid={`kpi-file-format-${w}-${f.id}`}>
-                                <M.Icon size={13} /> {M.label}{w === fmt && <Check size={12} className="ml-auto" />}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
 
 const fileIcon = (f) => {
     if (f.kind === "transcript") return ClipboardPaste;
@@ -321,15 +250,28 @@ export default function KpiDocuments({ companyId, refreshKey, onChanged }) {
                                     )}
                                 </div>
                                 {!isEd && f.downloadable && (
-                                    <FileDownloadMenu f={f} companyId={companyId} />
+                                    <FormatDownloadMenu
+                                        size="sm"
+                                        formats={formatsFor(f).avail}
+                                        defaultFmt={formatsFor(f).def}
+                                        fetcher={(fmt) => kpiFileExport(companyId, f.id, fmt)}
+                                        fallbackName={f.display_name || f.original_filename || "documento"}
+                                        testids={{
+                                            menu: `kpi-file-download-menu-${f.id}`,
+                                            btn: `kpi-file-download-${f.id}`,
+                                            caret: `kpi-file-download-caret-${f.id}`,
+                                            optMenu: `kpi-file-format-menu-${f.id}`,
+                                            opt: (fmt) => `kpi-file-format-${fmt}-${f.id}`,
+                                        }}
+                                    />
                                 )}
                                 {!isEd && (
-                                    <button onClick={() => startEdit(f)} className="text-[#4A4A4A] hover:bg-black/5 p-1 shrink-0" title="Renombrar / describir" data-testid={`kpi-file-edit-${f.id}`}>
-                                        <Pencil size={13} />
+                                    <button onClick={() => startEdit(f)} className="text-[#4A4A4A] hover:bg-black/5 p-1.5 shrink-0" title="Renombrar / describir" data-testid={`kpi-file-edit-${f.id}`}>
+                                        <Pencil size={16} />
                                     </button>
                                 )}
-                                <button onClick={() => remove(f)} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-1 shrink-0" title="Borrar" data-testid={`kpi-file-delete-${f.id}`}>
-                                    <Trash2 size={14} />
+                                <button onClick={() => remove(f)} className="text-[#B32A22] hover:bg-[#B32A22]/10 p-1.5 shrink-0" title="Borrar" data-testid={`kpi-file-delete-${f.id}`}>
+                                    <Trash2 size={16} />
                                 </button>
                             </li>
                         );
