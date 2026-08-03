@@ -11,7 +11,8 @@ export default function PageExportButton() {
         try {
             const html2pdf = (await import("html2pdf.js")).default;
             const el = document.querySelector("main") || document.body;
-            const slug = (document.title || "pagina").toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "pagina";
+            const path = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "");
+            const slug = (path || "inicio").replace(/[^\w]+/g, "-").slice(0, 50);
             await html2pdf().set({
                 margin: [8, 8, 8, 8],
                 filename: `valuation-studio-${slug}.pdf`,
