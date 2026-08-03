@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, Plus, X } from "lucide-react";
+import { Trash2, Plus, X, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { compare, thesisVisualData } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
@@ -77,6 +77,9 @@ export default function Portfolio() {
     const [sort, setSort] = useState(null);
     const [view, setView] = useState(() => localStorage.getItem("vs:portfolio-view") || "table");
     const changeView = (v) => { setView(v); localStorage.setItem("vs:portfolio-view", v); };
+    const [hideMoney, setHideMoney] = useState(() => localStorage.getItem("vs:portfolio-hide-money") === "1");
+    const toggleHideMoney = () => setHideMoney((v) => { const n = !v; localStorage.setItem("vs:portfolio-hide-money", n ? "1" : "0"); return n; });
+    const moneyCls = hideMoney ? "blur-sm select-none" : "";
     useThresholds();
 
     // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
@@ -228,7 +231,20 @@ export default function Portfolio() {
         <div data-testid="portfolio-page">
             <div className="flex justify-between items-end mb-6 gap-3 flex-wrap">
                 <div>
-                    <div className="overline text-[#B32A22]">{t("portfolio.tag")}</div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span className="overline text-[#B32A22]">{t("portfolio.tag")}</span>
+                        {positions.length > 0 && (
+                            <button
+                                onClick={toggleHideMoney}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-mono border border-black px-2 py-0.5 hover:bg-black hover:text-white transition-colors"
+                                data-testid="portfolio-hide-toggle"
+                                title={hideMoney ? "Mostrar cartera" : "Ocultar cartera"}
+                            >
+                                {hideMoney ? <EyeOff size={13} /> : <Eye size={13} />}
+                                {hideMoney ? "Mostrar cartera" : "Ocultar cartera"}
+                            </button>
+                        )}
+                    </div>
                     <h1 className="font-serif text-4xl sm:text-5xl tracking-tight">{t("portfolio.title")}</h1>
                     {positions.length > 0 && (
                         <div className="text-xs text-[#4A4A4A] font-mono mt-1" data-testid="portfolio-count">
@@ -254,14 +270,6 @@ export default function Portfolio() {
 
             {positions.length > 0 && <AlertInfoBanner context="portfolio" />}
 
-            {completeCount > 0 && view !== "cards" && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                    <Kpi label={t("portfolio.total_invested")} value={fmtPrice(totInvested, totalsCur)} testid="kpi-invested" />
-                    <Kpi label={t("portfolio.total_now")} value={fmtPrice(totNow, totalsCur)} testid="kpi-now" />
-                    <Kpi label={t("portfolio.total_pl")} value={fmtPrice(totalPl, totalsCur)} color={totalPl >= 0 ? "var(--cheap)" : "var(--crimson)"} testid="kpi-pl" />
-                    <Kpi label={`${t("portfolio.col_pl_pct")} ${anyError ? "(parcial)" : ""}`} value={totalPlPct == null ? "—" : fmtPctSigned(totalPlPct)} color={(totalPlPct || 0) >= 0 ? "var(--cheap)" : "var(--crimson)"} testid="kpi-pl-pct" />
-                </div>
-            )}
             {trackedOnly > 0 && (
                 <div className="text-xs font-mono text-[#4A4A4A] mb-4" data-testid="portfolio-tracked-only-note">
                     {trackedOnly} {trackedOnly === 1 ? "posición sin datos" : "posiciones sin datos"} de acciones/precio (sólo seguimiento). Edita la fila para completar.
@@ -323,7 +331,7 @@ export default function Portfolio() {
                         );
                     })}
                 </div>
-                <PortfolioDonut items={holdings} currency={donutCur} testid="portfolio-donut" />
+                <PortfolioDonut items={holdings} currency={donutCur} totals={{ invested: totInvested, now: totNow, pl: totalPl, plPct: totalPlPct }} blur={hideMoney} testid="portfolio-donut" />
                 </>
             ) : (
                 <>
@@ -419,11 +427,11 @@ export default function Portfolio() {
                                             {r.name && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{r.name}</div>}
                                             {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5 italic">{p.note}</div>}
                                         </td>
-                                        <td className="px-2 py-2 text-right font-mono">{hasShares ? fmtNum(p.shares) : "—"}</td>
-                                        <td className="px-2 py-2 text-right font-mono">{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
-                                        <td className="px-2 py-2 text-right font-mono">{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
-                                        <td className="px-2 py-2 text-right font-mono">{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
-                                        <td className="px-2 py-2 text-right font-mono" style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{hasShares ? fmtNum(p.shares) : "—"}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`} style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
@@ -454,7 +462,7 @@ export default function Portfolio() {
                         </tbody>
                     </table>
                 </div>
-                <PortfolioDonut items={holdings} currency={donutCur} testid="portfolio-donut-table" />
+                <PortfolioDonut items={holdings} currency={donutCur} totals={{ invested: totInvested, now: totNow, pl: totalPl, plPct: totalPlPct }} blur={hideMoney} testid="portfolio-donut-table" />
                 </>
             )}
 
