@@ -18,6 +18,10 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Visual: 3 ajustes UI (3 ago 2026, verificado screenshots+medidas):**
+  1. **Controles de zoom reordenados** (`PinchZoomPane.jsx`): orden arriba→abajo `reset (↺) · + · −` (el "volver" encima de la lupa +). Leyenda "Pellizca para hacer zoom…" pegada al eje X (`pb-0` en el contenedor + `py-0.5 -mt-1` en la leyenda) → más superficie para las burbujas en el modal a pantalla completa.
+  2. **Filtro "Nivel" ensanchado** (`Visual.jsx`): la caja pasa a `col-span-2` (≈567px en desktop, ancho completo en móvil) para que "Ambas/Nivel 1/Nivel 2" quepan sin salirse; el resto de campos (Score min, etc.) ceden ese ancho.
+  3. **Tabla con 2 primeras columnas fijas** (`Visual.jsx`): casilla (`sticky left-0`) y Ticker (`sticky left-[40px]`, `border-r`) congeladas con `z-30`(header)/`z-20`(body) y fondo opaco; el resto de columnas hace scroll horizontal. Verificado a 390px: x de casilla/Ticker constante al desplazar.
 - **✅ Refactor de rendimiento (3 ago 2026, testing_agent iteration_31 100% · 7/7 pytest + frontend):** sin romper login ni sync.
   1. **25 índices MongoDB al arranque** (`server.py` `_ensure_indexes`, no-únicos + try/except por índice, idempotentes) en los campos calientes: `user_sessions.session_token` (se consulta en CADA request → mayor ganancia), `users`, `theses` (compuestos `user_id+id`, `user_id+type`, `user_id+folder_id`, `user_id+type+companies.ticker`), `fundamentals.ticker`, `user_watchlists/user_portfolios.user_id`, `qual_snapshots`, `thesis_jobs`, `kpi_files`, `translations`, etc. Antes NO había ningún índice (full scans).
   2. **Contenedor del gráfico Visual con unidades relativas CSS** (`Visual.jsx` ~L745): `h-[60vh] min-h-[300px] max-h-[460px] landscape:max-md:h-[85vh]` + `ResponsiveContainer height="100%"`. Eliminado el efecto JS `chartH` (resize/orientationchange) — ahora responde al instante por CSS (verificado: ancho 324→714 al ensanchar sin recargar).

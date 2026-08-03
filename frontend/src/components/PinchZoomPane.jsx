@@ -107,9 +107,9 @@ export default function PinchZoomPane({ children, className = "", onZoom }) {
                 </div>
             </div>
             <div className="absolute bottom-3 right-3 flex flex-col gap-1.5 z-10" data-testid="pinch-zoom-controls">
+                <button onClick={reset} disabled={!zoomed} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow disabled:opacity-40" title="Restablecer" data-testid="pinch-zoom-reset"><RotateCcw size={16} /></button>
                 <button onClick={() => zoomAt(1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Acercar" data-testid="pinch-zoom-in"><ZoomIn size={16} /></button>
                 <button onClick={() => zoomAt(1 / 1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Alejar" data-testid="pinch-zoom-out"><ZoomOut size={16} /></button>
-                <button onClick={reset} disabled={!zoomed} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow disabled:opacity-40" title="Restablecer" data-testid="pinch-zoom-reset"><RotateCcw size={16} /></button>
             </div>
         </div>
     );
