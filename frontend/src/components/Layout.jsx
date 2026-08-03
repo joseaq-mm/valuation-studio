@@ -25,6 +25,22 @@ export default function Layout({ children }) {
 
     useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
+    // Collapse the header into the single-row hamburger layout when width is small
+    // OR the device is in landscape with little height (phones/foldables held sideways),
+    // so rows 2 & 3 don't eat the scarce vertical space in landscape.
+    const [compact, setCompact] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const check = () => {
+            const w = window.innerWidth, h = window.innerHeight;
+            setCompact(w < 768 || (w > h && h <= 600));
+        };
+        check();
+        window.addEventListener("resize", check);
+        window.addEventListener("orientationchange", check);
+        return () => { window.removeEventListener("resize", check); window.removeEventListener("orientationchange", check); };
+    }, []);
+
     useEffect(() => {
         if (!query.trim()) { setResults([]); return; }
         if (timer.current) clearTimeout(timer.current);
@@ -96,7 +112,8 @@ export default function Layout({ children }) {
                             </div>
                         </Link>
 
-                        <div className="md:hidden order-2 ml-auto flex items-center gap-2">
+                        {compact && (
+                        <div className="order-2 ml-auto flex items-center gap-2">
                             <AuthButton />
                             <button
                                 className="border border-black bg-white p-2"
@@ -107,6 +124,7 @@ export default function Layout({ children }) {
                                 {menuOpen ? <X size={18} /> : <Menu size={18} />}
                             </button>
                         </div>
+                        )}
 
                         <div ref={boxRef} className="order-3 sm:order-2 w-full sm:w-auto sm:flex-1 relative">
                             <form onSubmit={handleSubmit} className="flex items-center border border-black bg-white" data-testid="search-form">
@@ -141,13 +159,16 @@ export default function Layout({ children }) {
                             )}
                         </div>
 
-                        <div className="shrink-0 order-4 hidden md:block">
+                        {!compact && (
+                        <div className="shrink-0 order-4">
                             <AuthButton />
                         </div>
+                        )}
                     </div>
 
                     {/* Row 2 (desktop): Nav links · Utility toggles */}
-                    <div className="py-2 hidden md:flex items-center justify-between gap-4 flex-wrap">
+                    {!compact && (
+                    <div className="py-2 flex items-center justify-between gap-4 flex-wrap">
                         <nav className="flex items-center gap-1 flex-wrap">
                             {links.map((l) => (
                                 <Link key={l.to} to={l.to} className={navClass(l.to)} data-testid={`nav-link-${l.testid}`}>{l.label}</Link>
@@ -161,10 +182,11 @@ export default function Layout({ children }) {
                             <CurrencySelector />
                         </div>
                     </div>
+                    )}
 
                     {/* Mobile menu (drawer) */}
-                    {menuOpen && (
-                        <div className="md:hidden py-2 border-t border-black/10" data-testid="nav-mobile-menu">
+                    {compact && menuOpen && (
+                        <div className="py-2 border-t border-black/10" data-testid="nav-mobile-menu">
                             <nav className="flex flex-col">
                                 {links.map((l) => (
                                     <Link key={l.to} to={l.to} className={navClassMobile(l.to)} data-testid={`nav-mlink-${l.testid}`}>{l.label}</Link>
