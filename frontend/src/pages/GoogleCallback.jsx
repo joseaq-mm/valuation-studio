@@ -28,7 +28,16 @@ export default function GoogleCallback() {
         }
         (async () => {
             try {
-                await googleLogin(code, redirectUri);
+                const res = await googleLogin(code, redirectUri);
+                const token = res && res.session_token;
+                // If we're a popup opened from the iframe, relay the token to the opener
+                // (the app inside the preview) so it authenticates via Bearer, then close.
+                if (token && window.opener && window.opener !== window) {
+                    try { window.opener.postMessage({ type: "vs:google-login", token }, window.location.origin); } catch { /* ignore */ }
+                    window.close();
+                    return;
+                }
+                if (token) { try { localStorage.setItem("vs:token", token); } catch { /* ignore */ } }
                 await refresh();
                 try { localStorage.setItem("vs:auth-changed", String(Date.now())); } catch { /* ignore */ }
                 toast.success("Sesión iniciada");

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authMe, authLogout } from "./api";
+import { toast } from "sonner";
 
 const AuthContext = createContext({
     user: null,
@@ -32,19 +33,33 @@ export function AuthProvider({ children }) {
 
     useEffect(() => { refresh(); }, [refresh]);
 
-    // Cross-tab session sync: when Google login completes in another tab (needed
-    // because Google OAuth can't run inside the preview iframe), that tab writes
-    // `vs:auth-changed` to localStorage; we re-check the session here.
+    // Cross-context session sync: the top-level login popup relays the session token
+    // via postMessage (works even when third-party cookies are blocked in the iframe).
+    // We also listen to `storage`/`focus` as a best-effort fallback for full-tab logins.
     useEffect(() => {
+        const onMessage = (e) => {
+            if (e.origin !== window.location.origin) return;
+            if (e.data && e.data.type === "vs:google-login" && e.data.token) {
+                try { localStorage.setItem("vs:token", e.data.token); } catch { /* ignore */ }
+                refresh();
+                toast.success("Sesión iniciada");
+            }
+        };
         const onStorage = (e) => { if (e.key === "vs:auth-changed") refresh(); };
         const onFocus = () => { if (!user) refresh(); };
+        window.addEventListener("message", onMessage);
         window.addEventListener("storage", onStorage);
         window.addEventListener("focus", onFocus);
-        return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("focus", onFocus); };
+        return () => {
+            window.removeEventListener("message", onMessage);
+            window.removeEventListener("storage", onStorage);
+            window.removeEventListener("focus", onFocus);
+        };
     }, [refresh, user]);
 
     const logout = useCallback(async () => {
         try { await authLogout(); } catch { /* ignore */ }
+        try { localStorage.removeItem("vs:token"); } catch { /* ignore */ }
         setUser(null);
     }, []);
 

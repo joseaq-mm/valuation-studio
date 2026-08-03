@@ -7,6 +7,18 @@ export const API = `${BACKEND_URL}/api`;
 // with every request once the user has logged in.
 export const api = axios.create({ baseURL: API, timeout: 30000, withCredentials: true });
 
+// When running inside the preview iframe, third-party cookies can be blocked, so the
+// login popup relays the session_token here (localStorage 'vs:token') and we send it as
+// a Bearer token. The backend accepts either the cookie or this header.
+export const TOKEN_KEY = "vs:token";
+api.interceptors.request.use((config) => {
+    try {
+        const t = localStorage.getItem(TOKEN_KEY);
+        if (t) config.headers.Authorization = `Bearer ${t}`;
+    } catch { /* ignore */ }
+    return config;
+});
+
 export const getCompany = (ticker, refresh = false) =>
     api.get(`/company/${encodeURIComponent(ticker)}`, { params: { refresh } }).then(r => r.data);
 

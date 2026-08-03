@@ -234,7 +234,14 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             samesite="none", max_age=int(SESSION_DURATION.total_seconds()), path="/",
         )
         user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-        return {"user": UserOut(**{k: user_doc.get(k) for k in ["user_id", "email", "name", "picture"]}).model_dump()}
+        # We also return session_token in the body (in addition to the httpOnly cookie)
+        # so a top-level login popup can relay it to the app running inside the preview
+        # iframe, which stores it and authenticates via `Authorization: Bearer` — this
+        # bypasses third-party-cookie blocking/partitioning inside the iframe.
+        return {
+            "user": UserOut(**{k: user_doc.get(k) for k in ["user_id", "email", "name", "picture"]}).model_dump(),
+            "session_token": session_token,
+        }
 
     @router.post("/google")
     async def google_login(payload: GoogleCode, response: Response):

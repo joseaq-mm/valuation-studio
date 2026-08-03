@@ -5,8 +5,8 @@
 
 // Google refuses to render its consent screen inside an <iframe> (X-Frame-Options /
 // 403 disallowed_useragent). The Emergent preview shows the app inside an iframe, so
-// when we detect we're framed we open the login in a NEW top-level tab where Google
-// works normally; otherwise we redirect in place.
+// when we're framed we open the login in a top-level POPUP (keeping window.opener so
+// the popup can relay the session token back to the iframe) instead of redirecting.
 function inIframe() {
     try { return window.self !== window.top; } catch { return true; }
 }
@@ -26,8 +26,12 @@ export function startGoogleLogin() {
     const url = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
 
     if (inIframe()) {
-        // Open at top level in a new tab (Google won't render inside the preview iframe).
-        const win = window.open(url, "_blank", "noopener,noreferrer");
+        // Popup at top level (Google won't render inside the preview iframe). We DON'T pass
+        // noopener because the popup must keep window.opener to postMessage the token back.
+        const w = 480, h = 640;
+        const y = window.top ? window.top.outerHeight / 2 + window.top.screenY - h / 2 : 100;
+        const x = window.top ? window.top.outerWidth / 2 + window.top.screenX - w / 2 : 100;
+        const win = window.open(url, "vs_google_login", `width=${w},height=${h},left=${x},top=${y}`);
         if (!win) {
             // Popup blocked → break out of the iframe by navigating the top window.
             try { window.top.location.href = url; } catch { window.location.href = url; }
