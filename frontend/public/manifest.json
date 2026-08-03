@@ -13,7 +13,7 @@
   "scope": "/",
   "display": "browser",
   "display_override": ["minimal-ui", "standalone"],
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "theme_color": "#FDF1E6",
   "background_color": "#FDF1E6",
   "lang": "es",
