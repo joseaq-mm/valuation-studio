@@ -5,6 +5,7 @@ import { ExternalLink, ArrowRight, TrendingUp, AlertTriangle, Loader2, ShieldAle
 import { ScoreBar, ScoreBadge, ValueBox, tamColor, scoreColor, fmtTamScore } from "./ScoreBar";
 import ProbabilityCircle from "./ProbabilityCircle";
 import CompanyQualCard from "./CompanyQualCard";
+import ThesisDownloadButtons from "./ThesisDownloadButtons";
 import HoverTip from "@/components/HoverTip";
 import { thesisMerge, thesisUnmerge, thesisSetPlan } from "@/lib/api";
 
@@ -689,6 +690,7 @@ export default function ThesisResult({ thesis, canGenerateContra = false, onGene
                     </div>
                 </div>
                 {thesis.summary && <p className="text-base mt-4 leading-relaxed text-[#1a1a1a]">{thesis.summary}</p>}
+                {thesis.id && <ThesisDownloadButtons thesisId={thesis.id} title={thesis.title} className="mt-4 flex-wrap" />}
             </div>
 
             {!isTrend && thesis.no_changes && (

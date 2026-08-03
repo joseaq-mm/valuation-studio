@@ -158,6 +158,90 @@ def kpi_doc_blocks(title, text):
     return blocks
 
 
+def _coef_label(c):
+    try:
+        c = float(c)
+    except (TypeError, ValueError):
+        return "Sin datos"
+    if c >= 1.05:
+        return "Validándose"
+    if c <= 0.95:
+        return "Deteriorándose"
+    return "Neutral"
+
+
+def _num(v, dec=2):
+    try:
+        return f"{float(v):.{dec}f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def kpi_snapshot_blocks(company_name, snap):
+    """Blocks for a company's operational-KPI validation snapshot (coefficient,
+    per-driver verdicts, the KPI table and the sources)."""
+    snap = snap or {}
+    name = _txt(company_name) or "Empresa"
+    blocks = [{"h1": f"Validación de KPIs · {name}"}]
+
+    coef = snap.get("coef_global")
+    meta = [("Coeficiente global", f"{_num(coef)} ({_coef_label(coef)})")]
+    if snap.get("signal_global") is not None:
+        meta.append(("Señal agregada (S)", _num(snap.get("signal_global"))))
+    if snap.get("period"):
+        meta.append(("Periodo", _txt(snap.get("period"))))
+    if snap.get("generated_at"):
+        meta.append(("Analizado", _txt(snap.get("generated_at"))[:10]))
+    meta.append(("Tipo", "Validación operativa (Nivel 2)"))
+    blocks.append({"kv": meta})
+
+    if _txt(snap.get("note")):
+        blocks.append({"p": _txt(snap.get("note"))})
+
+    drivers = snap.get("drivers") or []
+    if drivers:
+        blocks.append({"h2": "Coeficiente por driver"})
+        rows = [["Driver", "Coeficiente", "Nº KPIs", "Veredicto"]]
+        for d in drivers:
+            rows.append([
+                _txt(d.get("name")),
+                f"{_num(d.get('coef'))} ({_coef_label(d.get('coef'))})",
+                str(d.get("n_kpis") if d.get("n_kpis") is not None else "—"),
+                _txt(d.get("verdict")),
+            ])
+        blocks.append({"table": {"headers": rows[0], "rows": rows[1:], "wrap_last": True}})
+
+    kpis = snap.get("kpis") or []
+    if kpis:
+        blocks.append({"h2": "KPIs operativos"})
+        rows = [["KPI", "Actual", "Anterior", "YoY", "Señal", "Peso", "Driver"]]
+        for k in kpis:
+            rows.append([
+                _txt(k.get("name")),
+                _txt(k.get("value_current")) or "—",
+                _txt(k.get("value_prior")) or "—",
+                _txt(k.get("yoy_change")) or "—",
+                _num(k.get("signal")) if k.get("signal") is not None else "—",
+                _num(k.get("weight")) if k.get("weight") is not None else "—",
+                _txt(k.get("driver")),
+            ])
+        blocks.append({"table": {"headers": rows[0], "rows": rows[1:]}})
+        for k in kpis:
+            if _txt(k.get("rationale")):
+                blocks.append({"p": f"{_txt(k.get('name'))}: {_txt(k.get('rationale'))}"})
+
+    _append_sources(blocks, snap.get("sources"))
+    return blocks
+
+
+def kpi_snapshot_pdf(company_name, snap):
+    return render_pdf(kpi_snapshot_blocks(company_name, snap), f"KPIs {company_name}")
+
+
+def kpi_snapshot_docx(company_name, snap):
+    return render_docx(kpi_snapshot_blocks(company_name, snap), f"KPIs {company_name}")
+
+
 # ── Renderers ─────────────────────────────────────────────────────────────────
 def render_pdf(blocks, doc_title=""):
     buf = io.BytesIO()

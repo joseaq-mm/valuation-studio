@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch } from "@/lib/api";
+import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap, TrendingUp, TrendingDown, Minus, FileText, FileType2 } from "lucide-react";
+import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch, kpiExport } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
 import KpiChat from "@/components/kpi/KpiChat";
@@ -203,6 +203,26 @@ export default function Kpis() {
     const rows = editing ? draft : (snap?.kpis || []);
     const selCompany = companies.find((c) => c.id === selId);
 
+    const [kpiDl, setKpiDl] = useState(null); // "pdf" | "docx" | null
+    const downloadKpis = async (fmt) => {
+        if (!selId) return;
+        setKpiDl(fmt);
+        try {
+            const res = await kpiExport(selId, fmt);
+            let fname = `KPIs ${selCompany?.ticker || "empresa"}.${fmt}`;
+            const disp = res.headers?.["content-disposition"];
+            const m = disp && /filename\*=UTF-8''([^;]+)/i.exec(disp);
+            if (m) { try { fname = decodeURIComponent(m[1]); } catch { /* keep fallback */ } }
+            const url = window.URL.createObjectURL(res.data);
+            const a = document.createElement("a");
+            a.href = url; a.download = fname;
+            document.body.appendChild(a); a.click(); a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "No se pudo descargar el documento KPI");
+        } finally { setKpiDl(null); }
+    };
+
     const doSearch = async () => {
         const q = query.trim();
         if (!q || searching) return;
@@ -398,6 +418,17 @@ export default function Kpis() {
                                     </HoverTip>
                                     <HoverTip text="Reconstrucción completa desde cero: vuelve a buscar fuentes, descarga y re-parsea documentos, refresca noticias y recalcula todo. Más lento y con más coste; úsalo para cambios grandes (p. ej. tras resultados).">
                                         <button onClick={() => analyze("full")} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
+                                    </HoverTip>
+                                    <span className="w-px h-5 bg-black/15 mx-0.5" aria-hidden />
+                                    <HoverTip text="Descarga esta validación de KPIs (coeficiente, drivers y tabla) en PDF.">
+                                        <button onClick={() => downloadKpis("pdf")} disabled={!!kpiDl} className="btn-ghost inline-flex items-center gap-1.5 disabled:opacity-50" data-testid="kpi-download-pdf">
+                                            {kpiDl === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} PDF
+                                        </button>
+                                    </HoverTip>
+                                    <HoverTip text="Descarga esta validación de KPIs en Word (.docx, compatible con Google Docs).">
+                                        <button onClick={() => downloadKpis("docx")} disabled={!!kpiDl} className="btn-ghost inline-flex items-center gap-1.5 disabled:opacity-50" data-testid="kpi-download-docx">
+                                            {kpiDl === "docx" ? <Loader2 size={13} className="animate-spin" /> : <FileType2 size={13} />} Word
+                                        </button>
                                     </HoverTip>
                                 </>
                             )}

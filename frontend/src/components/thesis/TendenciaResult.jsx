@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Sparkles, Bookmark, X, Flame, ExternalLink, TrendingUp, Layers } from "lucide-react";
 import HoverTip from "@/components/HoverTip";
+import ThesisDownloadButtons from "./ThesisDownloadButtons";
 
 const _norm = (s) => (s || "").trim().toLowerCase();
 
@@ -185,6 +186,7 @@ export default function TendenciaResult({ tendencia, onDevelopCompany, onSave, o
                     >
                         <X size={13} /> Descartar
                     </button>
+                    {tendencia.id && <ThesisDownloadButtons thesisId={tendencia.id} title={tendencia.title} className="flex-wrap" />}
                 </div>
             </div>
 

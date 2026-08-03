@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check, Maximize2, X } from "lucide-react";
+import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check, Maximize2, X, Download, Loader2 } from "lucide-react";
 import { squarify, relColor } from "@/lib/treemap";
+import { downloadHtmlJpg } from "@/lib/chartExport";
 import PinchZoomPane from "@/components/PinchZoomPane";
 import HoverTip from "@/components/HoverTip";
+import { toast } from "sonner";
 
 /** Measures its own box and lays out the treemap for that size (so it works
  *  both inline at a fixed height and stretched full-screen). Renders each laid
@@ -197,6 +199,16 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
     const [tip, setTip] = useState(null);
     const [treeFull, setTreeFull] = useState(false);
     const [treeZoom, setTreeZoom] = useState(1);
+    const treeFullRef = useRef(null);
+    const [jpgBusy, setJpgBusy] = useState(false);
+    const downloadTreeJpg = async () => {
+        setJpgBusy(true);
+        try {
+            const el = treeFullRef.current?.querySelector("[data-testid='explore-treemap-full']") || treeFullRef.current;
+            await downloadHtmlJpg(el, "mapa-tesis-valuation-studio");
+        } catch { toast.error("No se pudo exportar el mapa"); }
+        finally { setJpgBusy(false); }
+    };
 
     // Lock scroll + ESC while the treemap is expanded full-screen.
     useEffect(() => {
@@ -436,11 +448,16 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                 <div className="fixed inset-0 z-[70] bg-[#FDF1E6] flex flex-col" data-testid="explore-treemap-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0 bg-white">
                         <div className="overline text-black truncate">{viewLabel}{path.length ? ` · ${path[path.length - 1].name}` : ""}</div>
-                        <button onClick={() => setTreeFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 shrink-0" data-testid="explore-treemap-fullscreen-close">
-                            <X size={14} /> Cerrar
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={downloadTreeJpg} disabled={jpgBusy} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-50" data-testid="explore-treemap-download-jpg">
+                                {jpgBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} JPG
+                            </button>
+                            <button onClick={() => setTreeFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5" data-testid="explore-treemap-fullscreen-close">
+                                <X size={14} /> Cerrar
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex-1 min-h-0">
+                    <div ref={treeFullRef} className="flex-1 min-h-0">
                         <PinchZoomPane className="w-full h-full" onZoom={(s) => setTreeZoom(Math.round(s * 4) / 4)}>
                             <TreemapSurface
                                 items={items}

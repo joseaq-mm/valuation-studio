@@ -126,6 +126,10 @@ export const thesisSetModel = (preset) =>
     api.put(`/thesis/models`, { preset }).then(r => r.data);
 export const thesisGenerateContra = (id) =>
     api.post(`/thesis/${id}/contra`).then(r => startAndPoll(r.data));
+// Download a saved thesis (company/tendencia) as PDF or Word (.docx). Returns the
+// raw axios response (blob) so the caller can read Content-Disposition for the name.
+export const thesisExport = (id, fmt) =>
+    api.get(`/thesis/${id}/export/${fmt}`, { responseType: "blob", timeout: 120000 });
 export const thesisList = () => api.get(`/thesis/list`).then(r => r.data);
 export const thesisGet = (id) => api.get(`/thesis/${id}`).then(r => r.data);
 export const thesisDelete = (id) => api.delete(`/thesis/${id}`).then(r => r.data);
@@ -264,6 +268,11 @@ export const macroIndicators = (refresh = false) =>
     api.get(`/macro/indicators`, { params: { refresh } }).then(r => r.data);
 export const kpiFileDownload = (companyId, fileId) =>
     api.get(`/thesis/${companyId}/kpis/files/${fileId}/download`, { responseType: "blob", timeout: 180000 });
+
+// Download the company KPI validation snapshot as PDF / Word (.docx). Returns the
+// raw axios response (blob) so the caller can read Content-Disposition for the name.
+export const kpiExport = (companyId, fmt) =>
+    api.get(`/thesis/${companyId}/kpis/export/${fmt}`, { responseType: "blob", timeout: 120000 });
 
 // KPI qualitative news (inform scores; aged out over time)
 export const kpiNewsList = (companyId) =>

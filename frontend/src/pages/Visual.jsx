@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X } from "lucide-react";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete } from "@/lib/api";
+import { downloadSvgJpg } from "@/lib/chartExport";
 import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
 import { ExportLibrary } from "@/components/ExportLibrary";
 import { getPortfolio } from "@/lib/portfolio";
@@ -274,6 +275,14 @@ export default function Visual() {
     const [clipCount, setClipCount] = useState(0);
     const [libOpen, setLibOpen] = useState(false);
     const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (manual "Ampliar")
+    const fullChartRef = useRef(null);
+    const [jpgBusy, setJpgBusy] = useState(false);
+    const downloadJpg = useCallback(async () => {
+        setJpgBusy(true);
+        try { await downloadSvgJpg(fullChartRef.current, "cuadrante-valuation-studio"); }
+        catch { const { toast } = await import("sonner"); toast.error("No se pudo exportar el gráfico"); }
+        finally { setJpgBusy(false); }
+    }, []);
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
 
     // Lock body scroll + allow ESC to close while the fullscreen chart is open.
@@ -957,11 +966,16 @@ export default function Visual() {
                 <div className="fixed inset-0 z-[70] bg-white flex flex-col" data-testid="visual-chart-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0">
                         <div className="overline text-[#4A4A4A] truncate">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
-                        <button onClick={() => setChartFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 shrink-0" data-testid="visual-chart-fullscreen-close">
-                            <X size={14} /> Cerrar
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={downloadJpg} disabled={jpgBusy} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-50" data-testid="visual-chart-download-jpg">
+                                {jpgBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} JPG
+                            </button>
+                            <button onClick={() => setChartFull(false)} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5" data-testid="visual-chart-fullscreen-close">
+                                <X size={14} /> Cerrar
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex-1 min-h-0 px-1 sm:px-2 pt-1 sm:pt-2 pb-0">
+                    <div ref={fullChartRef} className="flex-1 min-h-0 px-1 sm:px-2 pt-1 sm:pt-2 pb-0">
                         <PinchZoomPane className="w-full h-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 {chartNode}

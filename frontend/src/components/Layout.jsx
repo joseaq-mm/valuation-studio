@@ -10,6 +10,7 @@ import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
 import BackButton from "./BackButton";
 import LoginNudge from "./LoginNudge";
+import PageExportButton from "./PageExportButton";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -195,6 +196,7 @@ export default function Layout({ children }) {
                         <div className="flex items-center gap-1 flex-wrap">
                             <HelpChat />
                             <ThresholdsDialog />
+                            <PageExportButton />
                             <LanguageToggle />
                             <ThemeToggle />
                             <CurrencySelector />
@@ -213,6 +215,7 @@ export default function Layout({ children }) {
                             <div className="flex items-center gap-1 flex-wrap mt-2 pt-2 border-t border-black/10">
                                 <HelpChat />
                                 <ThresholdsDialog />
+                                <PageExportButton />
                                 <LanguageToggle />
                                 <ThemeToggle />
                                 <CurrencySelector />

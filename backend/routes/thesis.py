@@ -2797,6 +2797,34 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return Response(content=data, media_type=media,
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
 
+    @router.get("/{company_id}/kpis/export/{fmt}")
+    async def export_kpis(company_id: str, fmt: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Download a company's operational-KPI validation snapshot as PDF or Word (.docx)."""
+        if fmt not in ("pdf", "docx"):
+            raise HTTPException(status_code=400, detail="Formato no soportado")
+        doc = await db.theses.find_one(
+            {"id": company_id, "user_id": user["user_id"], "type": "company"},
+            {"_id": 0, "company": 1, "kpi_snapshot": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        snap = doc.get("kpi_snapshot")
+        if not snap or not (snap.get("kpis") or snap.get("drivers")):
+            raise HTTPException(status_code=400, detail="Aún no hay KPIs analizados para descargar")
+        from services.doc_export import kpi_snapshot_pdf, kpi_snapshot_docx, safe_filename
+        from urllib.parse import quote
+        company = doc.get("company") or {}
+        name = company.get("name") or company.get("ticker") or "empresa"
+        title = f"KPIs {name}"
+        if fmt == "pdf":
+            data = await asyncio.to_thread(kpi_snapshot_pdf, name, snap)
+            media = "application/pdf"
+        else:
+            data = await asyncio.to_thread(kpi_snapshot_docx, name, snap)
+            media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        fname = safe_filename(title, fmt)
+        return Response(content=data, media_type=media,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
+
     @router.get("/{company_id}/kpis/chat/last")
     async def kpi_chat_last(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
         """Most recent non-empty conversation for this company+user (to recover it)."""

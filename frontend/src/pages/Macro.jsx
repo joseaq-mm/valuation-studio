@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, LineChart as LineChartIcon } from "lucide-react";
+import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
 import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
 import { macroIndicators } from "@/lib/api";
+import { downloadSvgJpg } from "@/lib/chartExport";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
@@ -386,20 +387,37 @@ const CoefHistoryChart = ({ history, height, small }) => {
     );
 };
 
-const CoefHistoryModal = ({ history, onClose }) => (
+const CoefHistoryModal = ({ history, onClose }) => {
+    const ref = React.useRef(null);
+    const [busy, setBusy] = React.useState(false);
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, "historico-coeficiente-macro"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+    return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="coef-history-modal">
         <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
                 <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2"><LineChartIcon size={22} /> Histórico del coeficiente</h2>
-                <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="coef-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                <div className="flex items-center gap-3">
+                    <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="coef-history-download-jpg" title="Descargar en JPG">
+                        {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                    </button>
+                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="coef-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                </div>
             </div>
-            <CoefHistoryChart history={history} height={420} />
+            <div ref={ref}>
+                <CoefHistoryChart history={history} height={420} />
+            </div>
             <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
                 Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro. El histórico crece cada día al refrescar los datos macro.
             </p>
         </div>
     </div>
-);
+    );
+};
 
 const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
     const [histOpen, setHistOpen] = useState(false);
@@ -581,6 +599,14 @@ const TrendCard = ({ points, byKey, selectedIndex, onExpand }) => {
 
 const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
     const data = React.useMemo(() => buildTrendData(points, byKey, selectedIndex), [points, byKey, selectedIndex]);
+    const ref = React.useRef(null);
+    const [busy, setBusy] = React.useState(false);
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, "evolucion-macro-10a"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
     return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={onClose} data-testid="trend-modal">
             <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-4 sm:p-5 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -588,9 +614,14 @@ const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
                     <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2">
                         <LineChartIcon size={22} className="text-[#052049] shrink-0" /> Evolución macro · 10 años (trimestral)
                     </h2>
-                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049] shrink-0" data-testid="trend-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="trend-modal-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="trend-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
                 </div>
-                <div className="w-full h-[50vh] min-h-[240px] max-h-[460px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[62vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                <div ref={ref} className="w-full h-[50vh] min-h-[240px] max-h-[460px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[62vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
                     <TrendChart data={data} height="100%" />
                 </div>
                 <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed shrink-0 [@media(orientation:landscape)_and_(max-height:600px)]:hidden">

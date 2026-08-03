@@ -13,8 +13,9 @@ import { useFx } from "@/lib/fx";
 import { useAuth } from "@/lib/auth";
 import HoverTip from "@/components/HoverTip";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
-import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2, ArrowLeftRight } from "lucide-react";
+import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2, ArrowLeftRight, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { downloadSvgJpg } from "@/lib/chartExport";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
 const ratioRows = [
@@ -1681,6 +1682,14 @@ function CompactTooltip({ active, payload, label }) {
 function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, color, type = "line", testid, userEdited = false, method = null, onMethodToggle = null }) {
     const [mode, setMode] = useState("annual");
     const [expanded, setExpanded] = useState(false);
+    const chartRef = React.useRef(null);
+    const [jpgBusy, setJpgBusy] = useState(false);
+    const downloadJpg = async () => {
+        setJpgBusy(true);
+        try { await downloadSvgJpg(chartRef.current, `grafico-${testid}`); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setJpgBusy(false); }
+    };
     const isTTM = mode === "ttm";
     const toggleMode = () => {
         const next = isTTM ? "annual" : "ttm";
@@ -1803,12 +1812,15 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
                             </div>
                             <div className="flex items-center gap-4">
                                 {legendEl}
+                                <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0 inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid={`${testid}-modal-download-jpg`}>
+                                    {jpgBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                                </button>
                                 <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Cerrar" data-testid={`${testid}-modal-close`}>
                                     <X size={22} />
                                 </button>
                             </div>
                         </div>
-                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
+                        <div ref={chartRef} className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
                             {renderChart("100%", true)}
                         </div>
                     </div>
@@ -1847,6 +1859,14 @@ function RatioHistoryTooltip({ active, payload, label, currency }) {
 function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, currency }) {
     const [mode, setMode] = useState("annual");
     const [expanded, setExpanded] = useState(false);
+    const chartRef = React.useRef(null);
+    const [jpgBusy, setJpgBusy] = useState(false);
+    const downloadJpg = async () => {
+        setJpgBusy(true);
+        try { await downloadSvgJpg(chartRef.current, "historico-poc-pov-precio"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setJpgBusy(false); }
+    };
     const isTTM = mode === "ttm";
     const toggleMode = () => {
         const next = isTTM ? "annual" : "ttm";
@@ -1937,9 +1957,14 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
                                 {titleEl}
                                 <div className="font-serif text-lg sm:text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
                             </div>
-                            <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
+                            <div className="flex items-center gap-4 shrink-0">
+                                <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid="ratio-history-modal-download-jpg">
+                                    {jpgBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                                </button>
+                                <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
+                            </div>
                         </div>
-                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
+                        <div ref={chartRef} className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
                             {renderChart("100%", true)}
                         </div>
                     </div>
