@@ -4,6 +4,21 @@
 
 const APP_FONT = "'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
+// Pick the actual chart <svg>, not the tiny recharts legend-icon <svg>s (which also
+// carry class="recharts-surface" and appear FIRST in the DOM). We choose the largest
+// svg by rendered area.
+function pickChartSvg(container) {
+    const svgs = [...container.querySelectorAll("svg")];
+    if (!svgs.length) return null;
+    let best = null, bestArea = -1;
+    for (const s of svgs) {
+        const r = s.getBoundingClientRect();
+        const area = r.width * r.height;
+        if (area > bestArea) { bestArea = area; best = s; }
+    }
+    return best;
+}
+
 function triggerDownload(dataUrl, filename) {
     const a = document.createElement("a");
     a.href = dataUrl;
@@ -13,10 +28,10 @@ function triggerDownload(dataUrl, filename) {
     a.remove();
 }
 
-// Rasterize the first <svg> inside `container` to a 2x JPG (white background).
+// Rasterize the chart <svg> inside `container` to a 2x JPG (white background).
 export async function downloadSvgJpg(container, filename = "grafico", scale = 2) {
     if (!container) throw new Error("sin contenedor");
-    const svg = container.querySelector("svg");
+    const svg = pickChartSvg(container);
     if (!svg) throw new Error("no se encontró el gráfico");
 
     const rect = svg.getBoundingClientRect();
