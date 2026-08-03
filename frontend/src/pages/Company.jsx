@@ -1794,21 +1794,23 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
             </div>
             {renderChart(200)}
             {expanded && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid={`${testid}-modal`} onClick={() => setExpanded(false)}>
-                    <div className="bg-white border border-black w-full max-w-5xl p-6" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-start justify-between mb-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid={`${testid}-modal`} onClick={() => setExpanded(false)}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-start justify-between mb-4 shrink-0">
                             <div>
                                 <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
-                                <div className="font-serif text-2xl">en miles de millones ({unit})</div>
+                                <div className="font-serif text-lg sm:text-2xl">en miles de millones ({unit})</div>
                             </div>
                             <div className="flex items-center gap-4">
                                 {legendEl}
-                                <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Cerrar" data-testid={`${testid}-modal-close`}>
+                                <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Cerrar" data-testid={`${testid}-modal-close`}>
                                     <X size={22} />
                                 </button>
                             </div>
                         </div>
-                        {renderChart(480, true)}
+                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[70vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                            {renderChart("100%", true)}
+                        </div>
                     </div>
                 </div>
             )}
@@ -1928,16 +1930,18 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
             </div>
             {renderChart(240)}
             {expanded && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid="ratio-history-modal" onClick={() => setExpanded(false)}>
-                    <div className="bg-white border border-black w-full max-w-5xl p-6" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-start justify-between mb-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid="ratio-history-modal" onClick={() => setExpanded(false)}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-start justify-between mb-4 shrink-0">
                             <div>
                                 {titleEl}
-                                <div className="font-serif text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
+                                <div className="font-serif text-lg sm:text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
                             </div>
-                            <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
+                            <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
                         </div>
-                        {renderChart(500, true)}
+                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[70vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                            {renderChart("100%", true)}
+                        </div>
                     </div>
                 </div>
             )}
