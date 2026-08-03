@@ -1795,7 +1795,7 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
             {renderChart(200)}
             {expanded && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid={`${testid}-modal`} onClick={() => setExpanded(false)}>
-                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-hidden [@media(orientation:landscape)_and_(max-height:600px)]:h-[95vh]" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-start justify-between mb-4 shrink-0">
                             <div>
                                 <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
@@ -1808,7 +1808,7 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
                                 </button>
                             </div>
                         </div>
-                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[70vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
                             {renderChart("100%", true)}
                         </div>
                     </div>
@@ -1897,11 +1897,11 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
             <ResponsiveContainer width="100%" height={height}>
                 <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#11111120" />
-                    <XAxis dataKey="year" stroke="#111" tick={axisTick} minTickGap={isTTM ? 14 : 5} />
+                    <XAxis dataKey="year" stroke="#111" tick={axisTick} minTickGap={isTTM ? 14 : 5} height={big ? 22 : 18} />
                     <YAxis stroke="#111" tick={{ fill: "#111", fontSize: big ? 13 : 12, fontFamily: "IBM Plex Mono" }}
                            tickFormatter={(v) => fmtNum(v)} label={{ value: `${currency}`, angle: -90, position: "insideLeft", style: { fontSize: 10, fontFamily: "IBM Plex Mono", fill: "#4A4A4A" } }} />
                     <Tooltip content={<RatioHistoryTooltip currency={currency} />} />
-                    <Legend wrapperStyle={{ fontSize: big ? 12 : 10, fontFamily: "IBM Plex Mono" }} />
+                    <Legend height={big ? 22 : 18} wrapperStyle={{ fontSize: big ? 12 : 10, fontFamily: "IBM Plex Mono", paddingTop: 0 }} />
                     <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={isTTM ? mkDot("#B32A22") : { r: dotBig, fill: "#B32A22", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={isTTM ? mkDot("#1D7044") : { r: dotBig, fill: "#1D7044", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : dotBig - 1, fill: "#052049" }} isAnimationActive={false} />
@@ -1931,7 +1931,7 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
             {renderChart(240)}
             {expanded && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid="ratio-history-modal" onClick={() => setExpanded(false)}>
-                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-hidden [@media(orientation:landscape)_and_(max-height:600px)]:h-[95vh]" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-start justify-between mb-4 shrink-0">
                             <div>
                                 {titleEl}
@@ -1939,7 +1939,7 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
                             </div>
                             <button onClick={() => setExpanded(false)} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0" title="Cerrar" data-testid="ratio-history-modal-close"><X size={22} /></button>
                         </div>
-                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[70vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                        <div className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
                             {renderChart("100%", true)}
                         </div>
                     </div>
