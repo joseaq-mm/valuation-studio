@@ -30,6 +30,7 @@ export default function GoogleCallback() {
             try {
                 await googleLogin(code, redirectUri);
                 await refresh();
+                try { localStorage.setItem("vs:auth-changed", String(Date.now())); } catch { /* ignore */ }
                 toast.success("Sesión iniciada");
                 window.history.replaceState(null, "", "/");
                 navigate("/watchlist", { replace: true });
