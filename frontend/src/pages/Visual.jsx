@@ -276,26 +276,6 @@ export default function Visual() {
     const [chartFull, setChartFull] = useState(false);   // fullscreen chart overlay (manual "Ampliar")
     useEffect(() => { countMediaItems("timeline-clip").then(setClipCount).catch(() => {}); }, []);
 
-    // Responsive chart height: on a phone in landscape, fill most of the viewport
-    // height so the wide bubble chart actually uses the extra width/height; portrait
-    // and desktop keep a comfortable fixed height. We DON'T force rotation or any
-    // modal — Recharts <ResponsiveContainer> re-renders on width change (ResizeObserver)
-    // and this recompute keeps the height sane when the device rotates.
-    const [chartH, setChartH] = useState(460);
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-        const recompute = () => {
-            const w = window.innerWidth, h = window.innerHeight;
-            const landscapePhone = coarse && w > h && Math.min(w, h) <= 560;
-            setChartH(landscapePhone ? Math.max(240, Math.round(h * 0.78)) : 460);
-        };
-        recompute();
-        window.addEventListener("resize", recompute);
-        window.addEventListener("orientationchange", recompute);
-        return () => { window.removeEventListener("resize", recompute); window.removeEventListener("orientationchange", recompute); };
-    }, []);
-
     // Lock body scroll + allow ESC to close while the fullscreen chart is open.
     useEffect(() => {
         if (!chartFull) return;
@@ -762,8 +742,8 @@ export default function Visual() {
                 </div>
                 </div>
                 {tlErr && <div className="text-xs text-[#B32A22] mb-2 font-mono" data-testid="visual-timeline-error">{tlErr}</div>}
-                <div ref={chartRef} className="w-full">
-                <ResponsiveContainer width="100%" height={chartH}>
+                <div ref={chartRef} className="w-full h-[60vh] min-h-[300px] max-h-[460px] landscape:max-md:h-[85vh] landscape:max-md:max-h-none">
+                <ResponsiveContainer width="100%" height="100%">
                     {chartNode}
                 </ResponsiveContainer>
                 </div>

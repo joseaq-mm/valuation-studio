@@ -1,0 +1,86 @@
+{
+  "summary": "Validated the refactor (25 MongoDB indexes at startup + Visual chart CSS-relative container + dead-code removal in routes/thesis.py) did NOT break Google login/session or cloud sync. Auth via Bearer token still works. Cloud sync Nivel 2 (watchlist add/persist/remove) and Nivel 1 (portfolio GET) work. All key pages render without runtime errors. Visual chart container height is 460px on portrait and width grows CSS-only from 324→714 when viewport widened from 390→844 without reload. Backend index startup log confirms 25 indexes across 16 collections.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "detailed_results": {
+    "auth_bearer": {
+      "GET /api/auth/me with Bearer": "200, user email profiletest@example.com",
+      "watchlist_page_shows_logged_in": true,
+      "Nivel_2_seeded_tickers_visible": ["AAPL", "NVDA", "GOOG"],
+      "logged_out_state_shown": false
+    },
+    "cloud_sync_nivel2_watchlist": {
+      "add_via_company_page_button": "'AÑADIR A NIVEL 2' on /company/MSFT → PUT /api/auth/watchlist persisted",
+      "api_after_add": ["AAPL","NVDA","GOOG","MSFT"],
+      "reload_persistence": "MSFT row still in Nivel 2 table (4 empresas)",
+      "cleanup_via_delete_endpoint": "POST /api/auth/watchlist/delete → count=3, MSFT removed",
+      "note": "The 'Añadir' button next to the top search input is the search-and-navigate button (navigates to company page), NOT a direct add-to-watchlist button. Actual add uses the company page's 'Añadir a Nivel 2' button. This is existing UX behavior, not a regression."
+    },
+    "cloud_sync_nivel1_portfolio": {
+      "GET /api/auth/portfolio": "200 OK",
+      "/portfolio page": "loads without error (body_len 1880, no overlay)"
+    },
+    "key_pages_bearer_session": {
+      "/watchlist": "loads, shows Nivel 2 with 3 seeded companies",
+      "/visual": "loads, no page errors, chart renders",
+      "/compare?tickers=AAPL,MSFT": "loads, no page errors",
+      "/thesis": "loads, no page errors (only pre-existing hydration warning about <span> inside <option> in ThesisSidebar select — unrelated to refactor)",
+      "/macro": "loads, no page errors",
+      "/portfolio": "loads, no page errors"
+    },
+    "visual_chart_responsive": {
+      "portrait_390x844": {"container_width": 324, "container_height": 460, "computed_height_style": "460px"},
+      "widened_to_844_no_reload": {"container_width": 714, "container_height": 460},
+      "width_grew_without_reload": true,
+      "verdict": "CSS-driven expansion working. Height is fixed at 460px (max-h-[460px]) as intended; width flexes with viewport."
+    },
+    "speed_sanity": {
+      "GET /api/company/AAPL": "200",
+      "GET /api/fx/rates": "200",
+      "GET /api/thesis/dashboard (bearer)": "200"
+    },
+    "index_startup": "Backend log: 'MongoDB indexes ensured (25 indexes across 16 collections).' matches spec."
+  },
+  "pytest_results": {
+    "file": "/app/backend/tests/test_refactor_indexes.py",
+    "junit_xml": "/app/test_reports/pytest/refactor_indexes.xml",
+    "passed": 7,
+    "failed": 0,
+    "tests": [
+      "test_auth_me_bearer",
+      "test_watchlist_get",
+      "test_watchlist_put_add_and_remove_msft",
+      "test_portfolio_get",
+      "test_company_aapl",
+      "test_fx_rates",
+      "test_thesis_dashboard_bearer"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_refactor_indexes.py",
+    "/app/test_reports/pytest/refactor_indexes.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py _ensure_indexes: non-unique indexes and try/except per index — safe/idempotent. Good choice using compound indexes on (user_id, id) / (user_id, type) matching the actual query patterns in auth.py and routes/thesis.py.",
+    "Visual.jsx chart container uses h-[60vh] min-h-[300px] max-h-[460px] with ResponsiveContainer height=100% — clean CSS-only solution; the removal of the JS chartH useEffect is verified: width flexes 324→714 on resize with no reload and no JS error.",
+    "Minor pre-existing (unrelated to this refactor): ThesisSidebar has a <select> option that renders <span data-ve-dynamic> inside <option>, causing React hydration warning 'In HTML, span cannot be a child of option'. Not blocking but should be cleaned up.",
+    "Recharts prints repeated console warnings 'width(-1) and height(-1)' on initial render; these come from hidden/unmounted chart containers and don't affect UX. Consider gating render behind isVisible if noise reduction desired.",
+    "auth.py watchlist tombstone logic (_merge_tombstones/_apply_tombstones) works but is fragile: entries without saved_at (which the API accepts as Optional) can be silently dropped if a matching tombstone exists. Consider setting saved_at=now server-side when client omits it, or documenting that clients MUST send saved_at."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_refactor_indexes.py (new pytest file)",
+    "cleared residual MSFT/TSLA/WBTNF tombstones from user_watchlists for test_profile_user_123 during testing"
+  ],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "100% (all key pages + watchlist add/persist/remove + visual chart responsive)"},
+  "test_credentials": "Bearer localStorage 'vs:token'='test_profile_token_fixed_123' (seeded profile user_id=test_profile_user_123, email=profiletest@example.com). Cookie is NOT required — the Authorization: Bearer header path via lib/api.js interceptor works.",
+  "seed_data_creation": "Re-ran /app/backend/tests/seed_profile_test.py to ensure baseline. Cleared user_watchlists.deletions for test user to allow deterministic MSFT re-add.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bearer auth path is fully working; use localStorage 'vs:token'='test_profile_token_fixed_123' (must be set AFTER first navigation then reload). The correct UX to add a ticker to Nivel 2 is via /company/{TICKER} → 'AÑADIR A NIVEL 2' button — NOT via the top search bar 'Añadir' button (which is a search-and-navigate). Cleanup uses POST /api/auth/watchlist/delete {ticker}. Watchlist tombstones can persist across tests — clear user_watchlists.deletions map to reset. 25 MongoDB indexes are created on startup (see server.py _ensure_indexes).",
+  "rca of the issue": "N/A — refactor is clean. All auth, cloud sync, key pages, and responsive chart behavior verified."
+}

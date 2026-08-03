@@ -837,9 +837,46 @@ async def _scheduled_ir_news_run():
         logger.error(f"scheduled ir-news crashed: {e}")
 
 
+async def _ensure_indexes():
+    """Create indexes for the hot query paths. Non-unique (safe: never fails on
+    existing duplicate data) and idempotent (create_index is a no-op if present).
+    Biggest win: user_sessions.session_token is looked up on every request."""
+    index_map = {
+        "user_sessions": [[("session_token", 1)], [("expires_at", 1)]],
+        "users": [[("user_id", 1)], [("email", 1)]],
+        "theses": [[("user_id", 1), ("id", 1)], [("user_id", 1), ("type", 1)],
+                   [("user_id", 1), ("folder_id", 1)], [("id", 1)],
+                   [("user_id", 1), ("type", 1), ("companies.ticker", 1)]],
+        "thesis_folders": [[("user_id", 1), ("id", 1)]],
+        "thesis_jobs": [[("id", 1)], [("user_id", 1), ("kind", 1), ("status", 1), ("created_at", 1)]],
+        "fundamentals": [[("ticker", 1)]],
+        "user_watchlists": [[("user_id", 1)]],
+        "user_portfolios": [[("user_id", 1)]],
+        "qual_snapshots": [[("user_id", 1), ("ticker", 1)]],
+        "kpi_files": [[("id", 1)], [("company_id", 1), ("is_deleted", 1)], [("user_id", 1)]],
+        "kpi_news": [[("id", 1)]],
+        "kpi_chats": [[("session_id", 1)]],
+        "company_alerts": [[("user_id", 1), ("ticker", 1)]],
+        "translations": [[("ticker", 1), ("source_hash", 1)]],
+        "radar_state": [[("id", 1)]],
+        "app_settings": [[("id", 1)]],
+    }
+    created = 0
+    for coll, keys_list in index_map.items():
+        for keys in keys_list:
+            try:
+                await db[coll].create_index(keys)
+                created += 1
+            except Exception as e:
+                logger.warning(f"index {coll}{keys} failed: {e}")
+    logger.info(f"MongoDB indexes ensured ({created} indexes across {len(index_map)} collections).")
+
+
+
 @app.on_event("startup")
 async def _startup_scheduler():
     global _scheduler
+    await _ensure_indexes()
     # Orphaned generation jobs (killed by a previous restart) would otherwise block the
     # user's serial queue forever — clear them on startup.
     try:

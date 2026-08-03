@@ -319,13 +319,6 @@ def _normalize_urls(urls) -> list:
         if len(out) >= 10:
             break
     return out
-    sources = gather_kpi_search_sources(company, ticker, query)
-    if docs:
-        sources = sources + docs
-    result, _cost = run_costed(run_kpi_search(company, ticker, drivers, query, sources))
-    if isinstance(result, dict):
-        result["_sources"] = [{"title": s.get("title"), "url": s.get("url")} for s in sources][:12]
-    return result
 
 
 def _selected_doc_sources(files: list) -> list:
