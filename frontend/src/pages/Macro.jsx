@@ -582,16 +582,18 @@ const TrendCard = ({ points, byKey, selectedIndex, onExpand }) => {
 const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
     const data = React.useMemo(() => buildTrendData(points, byKey, selectedIndex), [points, byKey, selectedIndex]);
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="trend-modal">
-            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-5" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2">
-                        <LineChartIcon size={22} className="text-[#052049]" /> Evolución macro · 10 años (trimestral)
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={onClose} data-testid="trend-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-4 sm:p-5 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3 shrink-0">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2">
+                        <LineChartIcon size={22} className="text-[#052049] shrink-0" /> Evolución macro · 10 años (trimestral)
                     </h2>
-                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="trend-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049] shrink-0" data-testid="trend-modal-close" aria-label="Cerrar"><X size={20} /></button>
                 </div>
-                <TrendChart data={data} height={460} />
-                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                <div className="w-full h-[50vh] min-h-[240px] max-h-[460px] [@media(orientation:landscape)_and_(max-height:600px)]:h-[62vh] [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 shrink-0">
+                    <TrendChart data={data} height="100%" />
+                </div>
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed shrink-0 [@media(orientation:landscape)_and_(max-height:600px)]:hidden">
                     Renta variable, PIB y su resta (RV − PIB) en el <strong>eje izquierdo</strong> (miles de M$); Productividad en el <strong>eje derecho</strong> (índice 2017=100).
                     Valores oficiales trimestrales; el último punto marcado como <strong>Est.</strong> usa los valores estimados en vivo (Renta variable con el índice {selectedIndex}, PIB con crecimiento interanual prorrateado).
                 </p>

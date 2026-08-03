@@ -18,6 +18,7 @@
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
 ## Implementado (Feb 2026)
+- **✅ Macro: modal "Evolución macro" responsive en horizontal (3 ago 2026, verificado 780x360 y 390x844):** el `TrendModal` (`Macro.jsx`) tenía el gráfico con altura fija 460px y el modal centrado sin límite de alto → en horizontal (poca altura) se recortaban el título (arriba) y la leyenda de colores (abajo). FIX: modal ahora `flex flex-col max-h-[95vh] overflow-y-auto`, título `shrink-0`, gráfico en contenedor de altura relativa (`h-[50vh] min-h-[240px] max-h-[460px]`, y `h-[62vh]` en landscape de poca altura) con `TrendChart height="100%"`, y la explicación larga se **oculta en horizontal** vía variante arbitraria `[@media(orientation:landscape)_and_(max-height:600px)]:hidden`. Vertical conserva todo (título+gráfico+leyenda+explicación).
 - **✅ Visual: 3 ajustes UI (3 ago 2026, verificado screenshots+medidas):**
   1. **Controles de zoom reordenados** (`PinchZoomPane.jsx`): orden arriba→abajo `reset (↺) · + · −` (el "volver" encima de la lupa +). Leyenda "Pellizca para hacer zoom…" pegada al eje X (`pb-0` en el contenedor + `py-0.5 -mt-1` en la leyenda) → más superficie para las burbujas en el modal a pantalla completa.
   2. **Filtro "Nivel" ensanchado** (`Visual.jsx`): la caja pasa a `col-span-2` (≈567px en desktop, ancho completo en móvil) para que "Ambas/Nivel 1/Nivel 2" quepan sin salirse; el resto de campos (Score min, etc.) ceden ese ancho.
