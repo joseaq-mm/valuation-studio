@@ -28,10 +28,10 @@ export function startGoogleLogin() {
     if (inIframe()) {
         // Popup at top level (Google won't render inside the preview iframe). We DON'T pass
         // noopener because the popup must keep window.opener to postMessage the token back.
-        const w = 480, h = 640;
-        const y = window.top ? window.top.outerHeight / 2 + window.top.screenY - h / 2 : 100;
-        const x = window.top ? window.top.outerWidth / 2 + window.top.screenX - w / 2 : 100;
-        const win = window.open(url, "vs_google_login", `width=${w},height=${h},left=${x},top=${y}`);
+        // NOTE: never read window.top.* here — the top frame is cross-origin (the chat) and
+        // accessing it throws a SecurityError.
+        let win = null;
+        try { win = window.open(url, "vs_google_login", "width=480,height=640"); } catch { win = null; }
         if (!win) {
             // Popup blocked → break out of the iframe by navigating the top window.
             try { window.top.location.href = url; } catch { window.location.href = url; }
