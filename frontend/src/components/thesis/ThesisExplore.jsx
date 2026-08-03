@@ -449,7 +449,7 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
             {treeFull && (
                 <div className="fixed inset-0 z-[70] bg-[#FDF1E6] flex flex-col" data-testid="explore-treemap-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0 bg-white">
-                        <div className="overline text-black truncate">{viewLabel}{path.length ? ` · ${path[path.length - 1].name}` : ""}</div>
+                        <div className="overline text-black truncate min-w-0 flex-1 mr-2">{viewLabel}{path.length ? ` · ${path[path.length - 1].name}` : ""}</div>
                         <div className="flex items-center gap-2 shrink-0">
                             <ShareMenu size="md" title="Mapa de tesis · Valuation Studio" testidPrefix="explore-treemap-share"
                                 createShare={async () => {

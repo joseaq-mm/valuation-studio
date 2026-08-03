@@ -400,9 +400,9 @@ const CoefHistoryModal = ({ history, onClose }) => {
     return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="coef-history-modal">
         <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-                <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2"><LineChartIcon size={22} /> Histórico del coeficiente</h2>
-                <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2 mb-3">
+                <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0"><LineChartIcon size={22} className="shrink-0" /> <span className="truncate">Histórico del coeficiente</span></h2>
+                <div className="flex items-center gap-3 shrink-0">
                     <ShareMenu size="md" title="Histórico del coeficiente · Valuation Studio" testidPrefix="coef-history-share"
                         createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Histórico del coeficiente")} />
                     <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="coef-history-download-jpg" title="Descargar en JPG">
@@ -613,9 +613,9 @@ const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
     return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={onClose} data-testid="trend-modal">
             <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-4 sm:p-5 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-3 shrink-0">
-                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2">
-                        <LineChartIcon size={22} className="text-[#052049] shrink-0" /> Evolución macro · 10 años (trimestral)
+                <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <LineChartIcon size={22} className="text-[#052049] shrink-0" /> <span className="truncate">Evolución macro · 10 años (trimestral)</span>
                     </h2>
                     <div className="flex items-center gap-3 shrink-0">
                         <ShareMenu size="md" title="Evolución macro · 10 años" testidPrefix="trend-modal-share"

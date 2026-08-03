@@ -1806,13 +1806,12 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
             {expanded && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid={`${testid}-modal`} onClick={() => setExpanded(false)}>
                     <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-hidden [@media(orientation:landscape)_and_(max-height:600px)]:h-[95vh]" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-start justify-between mb-4 shrink-0">
-                            <div>
+                        <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
+                            <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">{titleEl}{methodEl}</div>
                                 <div className="font-serif text-lg sm:text-2xl">en miles de millones ({unit})</div>
                             </div>
-                            <div className="flex items-center gap-4">
-                                {legendEl}
+                            <div className="flex items-center gap-2 shrink-0">
                                 <ShareMenu size="md" title={title} testidPrefix={`${testid}-share`}
                                     createShare={async () => shareUpload(await getSvgJpgBlob(chartRef.current), "jpg", title)} />
                                 <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0 inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid={`${testid}-modal-download-jpg`}>
@@ -1823,6 +1822,7 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
                                 </button>
                             </div>
                         </div>
+                        <div className="mb-2 shrink-0 flex justify-end">{legendEl}</div>
                         <div ref={chartRef} className="w-full h-[55vh] min-h-[240px] max-h-[520px] [@media(orientation:landscape)_and_(max-height:600px)]:h-auto [@media(orientation:landscape)_and_(max-height:600px)]:min-h-0 [@media(orientation:landscape)_and_(max-height:600px)]:max-h-none [@media(orientation:landscape)_and_(max-height:600px)]:flex-1">
                             {renderChart("100%", true)}
                         </div>
@@ -1955,12 +1955,12 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
             {expanded && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-8" style={{ background: "rgba(17,17,17,0.55)" }} data-testid="ratio-history-modal" onClick={() => setExpanded(false)}>
                     <div className="bg-white border border-black w-full max-w-5xl p-4 sm:p-6 flex flex-col max-h-[95vh] overflow-hidden [@media(orientation:landscape)_and_(max-height:600px)]:h-[95vh]" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-start justify-between mb-4 shrink-0">
-                            <div>
+                        <div className="flex items-start justify-between gap-2 mb-4 shrink-0">
+                            <div className="min-w-0">
                                 {titleEl}
                                 <div className="font-serif text-lg sm:text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
                             </div>
-                            <div className="flex items-center gap-4 shrink-0">
+                            <div className="flex items-center gap-2 shrink-0">
                                 <ShareMenu size="md" title="Histórico POC / POV vs Precio" testidPrefix="ratio-history-share"
                                     createShare={async () => shareUpload(await getSvgJpgBlob(chartRef.current), "jpg", "Historico POC POV Precio")} />
                                 <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid="ratio-history-modal-download-jpg">

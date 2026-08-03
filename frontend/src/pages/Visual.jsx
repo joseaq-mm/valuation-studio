@@ -966,7 +966,7 @@ export default function Visual() {
             {chartFull && (
                 <div className="fixed inset-0 z-[70] bg-white flex flex-col" data-testid="visual-chart-fullscreen" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0">
-                        <div className="overline text-[#4A4A4A] truncate">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
+                        <div className="overline text-[#4A4A4A] truncate min-w-0 flex-1 mr-2">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
                         <div className="flex items-center gap-2 shrink-0">
                             <ShareMenu size="md" title="Cuadrante Valuation Studio" testidPrefix="visual-chart-share"
                                 createShare={async () => shareUpload(await getSvgJpgBlob(fullChartRef.current), "jpg", "Cuadrante Valuation Studio")} />
