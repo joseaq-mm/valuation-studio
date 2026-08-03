@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getCompany, recalc, translateSummary } from "@/lib/api";
+import { getCompany, recalc, translateSummary, shareUpload } from "@/lib/api";
 import { api } from "@/lib/api";
 import { fmtNum, fmtPct, fmtPrice, fmtPctSigned, fmtCompact, ratioColor, signalLabel } from "@/lib/format";
 import LocaleNumberInput from "@/components/LocaleNumberInput";
@@ -15,7 +15,8 @@ import HoverTip from "@/components/HoverTip";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
 import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2, ArrowLeftRight, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { downloadSvgJpg } from "@/lib/chartExport";
+import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
+import ShareMenu from "@/components/ShareMenu";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, ComposedChart, Legend } from "recharts";
 
 const ratioRows = [
@@ -1812,6 +1813,8 @@ function ChartBlock({ title, data, qData, qLoading, onRequestQuarterly, unit, co
                             </div>
                             <div className="flex items-center gap-4">
                                 {legendEl}
+                                <ShareMenu size="md" title={title} testidPrefix={`${testid}-share`}
+                                    createShare={async () => shareUpload(await getSvgJpgBlob(chartRef.current), "jpg", title)} />
                                 <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors shrink-0 inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid={`${testid}-modal-download-jpg`}>
                                     {jpgBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
                                 </button>
@@ -1958,6 +1961,8 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
                                 <div className="font-serif text-lg sm:text-2xl">{isTTM ? "Trimestral TTM" : "Tendencia anual"}</div>
                             </div>
                             <div className="flex items-center gap-4 shrink-0">
+                                <ShareMenu size="md" title="Histórico POC / POV vs Precio" testidPrefix="ratio-history-share"
+                                    createShare={async () => shareUpload(await getSvgJpgBlob(chartRef.current), "jpg", "Historico POC POV Precio")} />
                                 <button onClick={downloadJpg} disabled={jpgBusy} className="text-[#4A4A4A] hover:text-black transition-colors inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" title="Descargar en JPG" data-testid="ratio-history-modal-download-jpg">
                                     {jpgBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
                                 </button>

@@ -1,0 +1,74 @@
+{
+  "summary": "Frontend-only verification of SHARE + SETTINGS feature batch. All share panels open with valid /s/<token> links across Thesis, KPI snapshot, KPI documents, Visual chart, Macro (trend + coef-history), Company (revenue-chart + ratio-history), and header page-share. Ajustes modal opens from renamed header button and hosts Moneda/Integraciones/Umbrales. Currency selector removed from header outside modal. Webhook Save rejects invalid host (422 → error toast), accepts discord.com URL and shows Configurado/Probar/Eliminar. Eliminar returns to no-webhook state (confirmed indirectly via Discord-unconfigured info toast). Public /s/<token> viewer renders share-view + download link + PDF iframe with no app header. Anonymous share nudge shows 'Inicia sesión para compartir' toast. All regression pages load with 0 pageerrors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ShareMenu popover on /thesis/thesis_test_aidc (thesis-share-btn)", "issue": "Panel opens with negative x (~-187px) so WhatsApp/Telegram/X/Facebook/Email/Discord/Slack buttons render OFF-SCREEN to the LEFT and are not clickable via normal mouse interaction. Functionality works when clicked via JS. Panel should be clamped to viewport (translateX to keep within window). thesis-share-panel bbox observed: {x:-187,y:346,w:290,h:230}.", "selector": "[data-testid=\"thesis-share-panel\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "detailed_results": {
+    "A_ajustes_modal": {
+      "settings-open text": "AJUSTES",
+      "header currency-selector count outside modal": 0,
+      "settings-modal opened": true,
+      "in-modal currency-selector": "present",
+      "in-modal thresholds-save": "present",
+      "note": "data-testid=\"webhook-row-discord\" and \"webhook-row-slack\" NOT found (count=0); however the inner input/save/status/test/clear testids are all present and functional. Row-wrapper testid appears to be missing per spec (minor)."
+    },
+    "B_integraciones": {
+      "invalid host https://evil.com/x": "422 → error toast shown, no crash",
+      "valid discord url": "saved OK — webhook-status-discord, webhook-test-discord, webhook-clear-discord all appear",
+      "Probar (fake webhook)": "400 error toast shown gracefully (no crash, modal alive)",
+      "Eliminar": "returned to unconfigured (verified later by Discord-unconfigured info toast on thesis share)"
+    },
+    "C_thesis_share": {
+      "thesis-share-btn -> thesis-share-panel": "OK",
+      "thesis-share-link contains /s/": true,
+      "buttons present": ["copy","whatsapp","telegram","x","facebook","email","discord","slack"],
+      "discord unconfigured toast": "'Configura el webhook de Discord en Ajustes' (verified)"
+    },
+    "D_kpi_snapshot_share": "kpi-snapshot-share-btn -> kpi-snapshot-share-panel with /s/ link ✓",
+    "E_kpi_document_share": "2 kpi-file-share-<id>-btn found; first click opened panel with /s/ link ✓",
+    "F_visual_chart_share": "visual-expand-chart -> visual-chart-share-btn -> visual-chart-share-panel with /s/ link ✓",
+    "G_macro_share": {
+      "trend-expand-btn -> trend-modal-share-btn -> trend-modal-share-panel": "/s/ link ✓",
+      "coef-history-expand-btn -> coef-history-share-btn -> coef-history-share-panel": "/s/ link ✓ (needs fresh page after previous modal)"
+    },
+    "H_company_share": {
+      "revenue-chart-expand -> revenue-chart-share-btn -> revenue-chart-share-panel": "/s/ link ✓",
+      "ratio-history-expand -> ratio-history-share-btn -> ratio-history-share-panel": "/s/ link ✓"
+    },
+    "I_page_share": "page-share-btn -> page-share-panel with /s/ link ✓ (takes several seconds due to html2pdf)",
+    "J_public_viewer": {
+      "route": "/s/<token>",
+      "share-view": 1,
+      "share-view-download": 1,
+      "share-view-pdf": 1,
+      "share-view-image": 0,
+      "header settings-open present": 0,
+      "nav count": 0,
+      "verdict": "login-free viewer works ✓"
+    },
+    "K_anonymous_nudge": "Removed vs:token, clicked page-share-btn on /kpis → toast 'Inicia sesión para compartir' shown, no crash ✓",
+    "regression_pageerrors": 0
+  },
+  "test_report_links": [],
+  "action_items": [
+    "MEDIUM: Clamp ShareMenu popover position within viewport — on /thesis/thesis_test_aidc the panel opens at x=-187 and its right-column buttons (WhatsApp/Telegram/X/Facebook/Email/Discord/Slack) are cut off to the left of the window. Consider using a right-anchored (dropdown-menu-right) layout when the trigger is near the left edge, or a position:fixed with clamped left = max(8, computed).",
+    "MINOR: Add data-testid=\"webhook-row-discord\" and data-testid=\"webhook-row-slack\" wrappers as specified (only inner testids are currently present)."
+  ],
+  "critical_code_review_comments": [
+    "ShareMenu popover has no viewport-edge collision handling; will overflow on any page where the share button sits close to the left/right edges of a container.",
+    "Modal cleanup between chart modals (trend vs coef-history, revenue-chart vs ratio-history) still requires a full page reload in tests — Escape sometimes doesn't propagate — consider explicit close buttons or a single-instance modal manager (already noted in iteration_32)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% functional (all 12 share flows + public viewer + anonymous nudge); 1 MEDIUM UI positioning bug"},
+  "test_credentials": "localStorage 'vs:token' = 'test_profile_token_fixed_123'. Set AFTER first navigation.",
+  "seed_data_creation": "None (used seeded thesis_test_aidc, NVDA kpi_snapshot + kpi docs).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All share panel testids resolve and contain a real /s/<token> URL. The only real bug is the ShareMenu popover overflowing left of the viewport when the trigger sits near the left edge (observed on /thesis/thesis_test_aidc thesis-share-btn — panel bbox x=-187). Functionality (click, copy, share intents, discord/slack info toast) works when interacted with programmatically. Public viewer /s/<token> renders share-view with download link and PDF iframe and no app chrome. Anonymous users get 'Inicia sesión para compartir' info toast. Webhook flow: invalid host → 422 error toast, valid discord.com URL → saved, Probar on fake URL → 400 error toast gracefully, Eliminar → back to unconfigured. Note: webhook-row-discord / webhook-row-slack wrapper testids missing but not blocking.",
+  "rca of the issue": "ShareMenu likely uses absolute positioning relative to a small trigger container; when the trigger is aligned to the left of a card/section that also sits at the left edge of the main content, the absolutely-positioned popover ends up with negative left. Fix: add boundary detection (window.innerWidth) or use a floating-ui/radix Popover with collisionBoundary=viewport, or default to right-anchored placement when triggerRect.left < panelWidth."
+}

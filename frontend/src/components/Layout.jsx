@@ -5,7 +5,6 @@ import { Search, Menu, X } from "lucide-react";
 import ThresholdsDialog from "./ThresholdsDialog";
 import ThemeToggle from "./ThemeToggle";
 import AuthButton from "./AuthButton";
-import CurrencySelector from "./CurrencySelector";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
 import BackButton from "./BackButton";
@@ -199,7 +198,6 @@ export default function Layout({ children }) {
                             <PageExportButton />
                             <LanguageToggle />
                             <ThemeToggle />
-                            <CurrencySelector />
                         </div>
                     </div>
                     )}
@@ -218,7 +216,6 @@ export default function Layout({ children }) {
                                 <PageExportButton />
                                 <LanguageToggle />
                                 <ThemeToggle />
-                                <CurrencySelector />
                             </div>
                         </div>
                     )}

@@ -274,6 +274,24 @@ export const kpiFileDownload = (companyId, fileId) =>
 export const kpiFileExport = (companyId, fileId, fmt) =>
     api.get(`/thesis/${companyId}/kpis/files/${fileId}/export/${fmt}`, { responseType: "blob", timeout: 180000 });
 
+// ---- Settings (integrations) ----
+export const settingsGet = () => api.get(`/settings`).then(r => r.data);
+export const settingsUpdate = (payload) => api.put(`/settings`, payload).then(r => r.data);
+export const settingsTestWebhook = (target) => api.post(`/settings/test-webhook`, { target }).then(r => r.data);
+
+// ---- Sharing ----
+export const shareCreate = (payload) => api.post(`/share/create`, payload).then(r => r.data);
+export const shareUpload = (blob, format, title) => {
+    const fd = new FormData();
+    fd.append("file", blob, `${title || "documento"}.${format}`);
+    fd.append("format", format);
+    fd.append("title", title || "documento");
+    return api.post(`/share/upload`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 }).then(r => r.data);
+};
+export const shareWebhook = (target, title, url) => api.post(`/share/webhook`, { target, title, url }).then(r => r.data);
+export const shareMeta = (token) => api.get(`/share/${token}`).then(r => r.data);
+export const shareFileUrl = (token, dl = false) => `${API}/share/${token}/file${dl ? "?dl=1" : ""}`;
+
 // Download the company KPI validation snapshot as PDF / Word (.docx). Returns the
 // raw axios response (blob) so the caller can read Content-Disposition for the name.
 export const kpiExport = (companyId, fmt) =>

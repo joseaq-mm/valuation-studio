@@ -45,6 +45,9 @@ api_router.include_router(make_macro_router(db))
 from routes.exports import make_router as make_exports_router
 api_router.include_router(make_exports_router(db, _auth_required))
 
+from routes.share import make_router as make_share_router
+api_router.include_router(make_share_router(db, _auth_required, _auth_optional))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,10 @@
 import React from "react";
 import FormatDownloadMenu from "@/components/FormatDownloadMenu";
-import { thesisExport } from "@/lib/api";
+import ShareMenu from "@/components/ShareMenu";
+import { thesisExport, shareCreate } from "@/lib/api";
 
 /** Single split-button to download a saved thesis (company / tendencia) as PDF or
- *  Word (.docx): the symbol downloads the selected format; the caret switches it.
- *  Requires a persisted thesis id (auth Bearer via api.js). */
+ *  Word (.docx) + a Share button (shares the currently-selected format). */
 export default function ThesisDownloadButtons({ thesisId, title, className = "" }) {
     if (!thesisId) return null;
     return (
@@ -15,6 +15,14 @@ export default function ThesisDownloadButtons({ thesisId, title, className = "" 
                 defaultFmt="pdf"
                 fetcher={(fmt) => thesisExport(thesisId, fmt)}
                 fallbackName={title || "tesis"}
+                leftSlot={(fmt) => (
+                    <ShareMenu
+                        size="md"
+                        title={title || "Tesis"}
+                        testidPrefix="thesis-share"
+                        createShare={() => shareCreate({ kind: "thesis", id: thesisId, fmt })}
+                    />
+                )}
                 testids={{
                     menu: "thesis-download-menu",
                     btn: "thesis-download-btn",

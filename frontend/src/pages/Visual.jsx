@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
 import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete } from "@/lib/api";
-import { downloadSvgJpg } from "@/lib/chartExport";
+import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
+import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
+import ShareMenu from "@/components/ShareMenu";
 import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
 import { ExportLibrary } from "@/components/ExportLibrary";
 import { getPortfolio } from "@/lib/portfolio";
@@ -967,6 +968,8 @@ export default function Visual() {
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0">
                         <div className="overline text-[#4A4A4A] truncate">Cuadrante calidad ↔ valoración{tlMode && tl ? ` · ${monthLabel(tl.months[tlIdx])}` : ""}</div>
                         <div className="flex items-center gap-2 shrink-0">
+                            <ShareMenu size="md" title="Cuadrante Valuation Studio" testidPrefix="visual-chart-share"
+                                createShare={async () => shareUpload(await getSvgJpgBlob(fullChartRef.current), "jpg", "Cuadrante Valuation Studio")} />
                             <button onClick={downloadJpg} disabled={jpgBusy} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-50" data-testid="visual-chart-download-jpg">
                                 {jpgBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} JPG
                             </button>

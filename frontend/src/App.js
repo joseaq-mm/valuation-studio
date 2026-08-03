@@ -17,6 +17,7 @@ import Macro from "@/pages/Macro";
 import AuthCallback from "@/pages/AuthCallback";
 import GoogleCallback from "@/pages/GoogleCallback";
 import Instructions from "@/pages/Instructions";
+import ShareView from "@/pages/ShareView";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
 import { I18nProvider } from "@/lib/i18n";
@@ -36,6 +37,14 @@ function AppRouter() {
     const location = useLocation();
     if (location.hash && location.hash.includes("session_id=")) {
         return <Layout><AuthCallback /></Layout>;
+    }
+    // Public shared-document viewer: no app chrome, no auth.
+    if (location.pathname.startsWith("/s/")) {
+        return (
+            <Routes>
+                <Route path="/s/:token" element={<ShareView />} />
+            </Routes>
+        );
     }
     return (
         <Layout>

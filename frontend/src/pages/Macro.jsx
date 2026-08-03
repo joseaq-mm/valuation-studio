@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
 import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
-import { macroIndicators } from "@/lib/api";
-import { downloadSvgJpg } from "@/lib/chartExport";
+import { macroIndicators, shareUpload } from "@/lib/api";
+import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
+import ShareMenu from "@/components/ShareMenu";
 import HoverTip from "@/components/HoverTip";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
@@ -402,6 +403,8 @@ const CoefHistoryModal = ({ history, onClose }) => {
             <div className="flex items-center justify-between mb-3">
                 <h2 className="font-serif text-2xl text-[#052049] flex items-center gap-2"><LineChartIcon size={22} /> Histórico del coeficiente</h2>
                 <div className="flex items-center gap-3">
+                    <ShareMenu size="md" title="Histórico del coeficiente · Valuation Studio" testidPrefix="coef-history-share"
+                        createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Histórico del coeficiente")} />
                     <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="coef-history-download-jpg" title="Descargar en JPG">
                         {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
                     </button>
@@ -615,6 +618,8 @@ const TrendModal = ({ points, byKey, selectedIndex, onClose }) => {
                         <LineChartIcon size={22} className="text-[#052049] shrink-0" /> Evolución macro · 10 años (trimestral)
                     </h2>
                     <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title="Evolución macro · 10 años" testidPrefix="trend-modal-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Evolución macro 10 años")} />
                         <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="trend-modal-download-jpg" title="Descargar en JPG">
                             {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
                         </button>

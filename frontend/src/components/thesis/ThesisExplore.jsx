@@ -2,7 +2,9 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layers, TrendingUp, Building2, BarChart3, Share2, ChevronRight, MousePointerClick, Trash2, Check, Maximize2, X, Download, Loader2 } from "lucide-react";
 import { squarify, relColor } from "@/lib/treemap";
-import { downloadHtmlJpg } from "@/lib/chartExport";
+import { downloadHtmlJpg, getHtmlJpgBlob } from "@/lib/chartExport";
+import { shareUpload } from "@/lib/api";
+import ShareMenu from "@/components/ShareMenu";
 import PinchZoomPane from "@/components/PinchZoomPane";
 import HoverTip from "@/components/HoverTip";
 import { toast } from "sonner";
@@ -449,6 +451,11 @@ export default function ThesisExplore({ dash, onDeleteFolder, onPrepareThesis })
                     <div className="flex items-center justify-between px-4 py-2 border-b border-black shrink-0 bg-white">
                         <div className="overline text-black truncate">{viewLabel}{path.length ? ` · ${path[path.length - 1].name}` : ""}</div>
                         <div className="flex items-center gap-2 shrink-0">
+                            <ShareMenu size="md" title="Mapa de tesis · Valuation Studio" testidPrefix="explore-treemap-share"
+                                createShare={async () => {
+                                    const el = treeFullRef.current?.querySelector("[data-testid='explore-treemap-full']") || treeFullRef.current;
+                                    return shareUpload(await getHtmlJpgBlob(el), "jpg", "Mapa de tesis");
+                                }} />
                             <button onClick={downloadTreeJpg} disabled={jpgBusy} className="overline text-xs px-3 py-1.5 border border-black hover:bg-black hover:text-white transition flex items-center gap-1.5 disabled:opacity-50" data-testid="explore-treemap-download-jpg">
                                 {jpgBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} JPG
                             </button>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FileText, Image as ImageIcon, FileType, Upload, Trash2, Loader2, AlertCircle, ClipboardPaste, Pencil, Check, X, DownloadCloud, RotateCw } from "lucide-react";
-import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileRetry, kpiFileExport } from "@/lib/api";
+import { kpiFilesList, kpiFileUpload, kpiTranscriptAdd, kpiFileToggle, kpiFileUpdate, kpiFileDelete, kpiFileRetry, kpiFileExport, shareCreate } from "@/lib/api";
 import FormatDownloadMenu from "@/components/FormatDownloadMenu";
+import ShareMenu from "@/components/ShareMenu";
 import { toast } from "sonner";
 
 // Which output formats a document can be exported to, plus the default (its native format).
@@ -256,6 +257,14 @@ export default function KpiDocuments({ companyId, refreshKey, onChanged }) {
                                         defaultFmt={formatsFor(f).def}
                                         fetcher={(fmt) => kpiFileExport(companyId, f.id, fmt)}
                                         fallbackName={f.display_name || f.original_filename || "documento"}
+                                        leftSlot={(fmt) => (
+                                            <ShareMenu
+                                                size="sm"
+                                                title={f.display_name || f.original_filename || "Documento"}
+                                                testidPrefix={`kpi-file-share-${f.id}`}
+                                                createShare={() => shareCreate({ kind: "kpi_file", company_id: companyId, file_id: f.id, fmt })}
+                                            />
+                                        )}
                                         testids={{
                                             menu: `kpi-file-download-menu-${f.id}`,
                                             btn: `kpi-file-download-${f.id}`,

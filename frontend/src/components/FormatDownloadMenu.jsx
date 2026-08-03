@@ -27,7 +27,7 @@ function filenameFromDisposition(disp, fallback) {
  *  the user presses the symbol again to download). */
 export default function FormatDownloadMenu({
     formats, defaultFmt, fetcher, fallbackName = "documento",
-    size = "sm", testids = {},
+    size = "sm", testids = {}, leftSlot = null,
 }) {
     const [fmt, setFmt] = useState(defaultFmt || formats[0]);
     const [open, setOpen] = useState(false);
@@ -60,7 +60,8 @@ export default function FormatDownloadMenu({
     const meta = FMT[fmt] || FMT.pdf;
 
     return (
-        <div className="relative shrink-0 flex items-center" ref={ref} data-testid={testids.menu}>
+        <div className="relative shrink-0 flex items-center gap-1" ref={ref} data-testid={testids.menu}>
+            {leftSlot && leftSlot(fmt)}
             <button
                 onClick={doDownload}
                 disabled={busy}

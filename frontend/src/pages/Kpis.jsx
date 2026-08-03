@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BarChart3, Sparkles, Loader2, ExternalLink, Pencil, Check, X, RefreshCw, Search, AlertTriangle, Zap, TrendingUp, TrendingDown, Minus, FileText, FileType2 } from "lucide-react";
-import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch, kpiExport } from "@/lib/api";
+import { kpiCompanies, kpiGet, kpiRun, kpiEdit, kpiSearch, kpiExport, shareCreate } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import KpiDocuments from "@/components/kpi/KpiDocuments";
+import ShareMenu from "@/components/ShareMenu";
 import KpiChat from "@/components/kpi/KpiChat";
 import KpiNews from "@/components/kpi/KpiNews";
 import HoverTip from "@/components/HoverTip";
@@ -420,6 +421,12 @@ export default function Kpis() {
                                         <button onClick={() => analyze("full")} className="btn-ghost inline-flex items-center gap-1.5" data-testid="kpi-reanalyze-btn"><RefreshCw size={13} /> Reanalizar</button>
                                     </HoverTip>
                                     <span className="w-px h-5 bg-black/15 mx-0.5" aria-hidden />
+                                    <ShareMenu
+                                        size="sm"
+                                        title={`KPIs ${selCompany?.ticker || ""}`.trim()}
+                                        testidPrefix="kpi-snapshot-share"
+                                        createShare={() => shareCreate({ kind: "kpi_snapshot", company_id: selId, fmt: "pdf" })}
+                                    />
                                     <HoverTip text="Descarga esta validación de KPIs (coeficiente, drivers y tabla) en PDF.">
                                         <button onClick={() => downloadKpis("pdf")} disabled={!!kpiDl} className="btn-ghost inline-flex items-center gap-1.5 disabled:opacity-50" data-testid="kpi-download-pdf">
                                             {kpiDl === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} PDF
