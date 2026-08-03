@@ -588,6 +588,16 @@ class KpiChatSaveRequest(BaseModel):
     title: Optional[str] = None
 
 
+class KpiChatMessage(BaseModel):
+    role: str
+    text: str
+
+
+class KpiChatReplaceRequest(BaseModel):
+    session_id: str
+    messages: List[KpiChatMessage]
+
+
 class KpiProposeThesisRequest(BaseModel):
     session_id: str
     origin: Optional[str] = "usuario"  # "ia" | "usuario"
@@ -2765,6 +2775,37 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
              "$set": {"updated_at": now}},
             upsert=True)
         return {"reply": reply, "sources": [{"title": w["title"], "url": w["url"]} for w in (web or [])[:6]]}
+
+    @router.get("/{company_id}/kpis/chat/last")
+    async def kpi_chat_last(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Most recent non-empty conversation for this company+user (to recover it)."""
+        conv = await db.kpi_chats.find_one(
+            {"company_id": company_id, "user_id": user["user_id"], "messages.0": {"$exists": True}},
+            {"_id": 0, "session_id": 1, "messages": 1, "updated_at": 1},
+            sort=[("updated_at", -1)])
+        if not conv:
+            return {"conversation": None}
+        return {"conversation": {
+            "session_id": conv["session_id"],
+            "messages": [{"role": m.get("role"), "text": m.get("text") or ""} for m in (conv.get("messages") or [])],
+            "updated_at": conv.get("updated_at"),
+        }}
+
+    @router.put("/{company_id}/kpis/chat")
+    async def kpi_chat_replace(company_id: str, req: KpiChatReplaceRequest, user: Dict[str, Any] = Depends(auth_required)):
+        """Overwrite the stored messages of a conversation (the 'Guardar chat' button)."""
+        name, ticker, ctx = await _kpi_chat_context(company_id, user["user_id"])
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        msgs = [{"role": ("user" if m.role == "user" else "assistant"), "text": (m.text or "").strip()}
+                for m in req.messages if (m.text or "").strip()]
+        now = datetime.now(timezone.utc).isoformat()
+        await db.kpi_chats.update_one(
+            {"session_id": req.session_id, "company_id": company_id, "user_id": user["user_id"]},
+            {"$setOnInsert": {"created_at": now, "company_name": name, "ticker": ticker},
+             "$set": {"messages": msgs, "updated_at": now}},
+            upsert=True)
+        return {"ok": True, "count": len(msgs)}
 
     @router.post("/{company_id}/kpis/chat/save")
     async def kpi_chat_save(company_id: str, req: KpiChatSaveRequest, user: Dict[str, Any] = Depends(auth_required)):
