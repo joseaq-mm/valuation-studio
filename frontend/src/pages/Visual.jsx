@@ -119,27 +119,7 @@ const fmtN = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
 const coefColor = (c) => (c == null ? "#9ca3af" : c > 1.05 ? "#1D7044" : c < 0.95 ? "#B32A22" : "#B8860B");
 
 // ---------- Quadrant background labels (with subtitle) ----------
-const QuadrantLabels = ({ inverted = false }) => (
-    inverted ? (
-        // Mobile inverted axes: X = Ratio Compra (izq=cara, dcha=barata), Y = Score (arriba=alto, abajo=bajo)
-        <>
-            {/* TL: score alto + cara → premium */}
-            <text x="12%" y="10%" textAnchor="start" fill="#4A4A4A" fillOpacity={0.65} fontSize={14} fontWeight={700}>💎 PREMIUM</text>
-            <text x="12%" y="10%" dy={14} textAnchor="start" fill="#4A4A4A" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + cara → esperar entrada</text>
-
-            {/* TR: score alto + barata → joya */}
-            <text x="88%" y="10%" textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={14} fontWeight={700}>🏆 JOYAS ESCONDIDAS</text>
-            <text x="88%" y="10%" dy={14} textAnchor="end" fill="#1D7044" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + descuento → comprar</text>
-
-            {/* BL: score bajo + cara → sobrevalorada */}
-            <text x="12%" y="80%" textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={14} fontWeight={700}>🚫 SOBREVALORADA</text>
-            <text x="12%" y="80%" dy={14} textAnchor="start" fill="#B32A22" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + cara → ignorar</text>
-
-            {/* BR: score bajo + barata → trampa */}
-            <text x="88%" y="80%" textAnchor="end" fill="#B8860B" fillOpacity={0.55} fontSize={14} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
-            <text x="88%" y="80%" dy={14} textAnchor="end" fill="#B8860B" fillOpacity={0.55} fontSize={10} fontStyle="italic">Calidad baja + barata → auditar bien antes</text>
-        </>
-    ) : (
+const QuadrantLabels = () => (
     <>
         {/* TL: low score + alto ratio compra (barata relativa) → trampa */}
         <text x="12%" y="10%" textAnchor="start" fill="#B8860B" fillOpacity={0.55} fontSize={14} fontWeight={700}>⚠️ TRAMPA DE VALOR</text>
@@ -157,7 +137,6 @@ const QuadrantLabels = ({ inverted = false }) => (
         <text x="88%" y="80%" textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={14} fontWeight={700}>💎 PREMIUM</text>
         <text x="88%" y="80%" dy={14} textAnchor="end" fill="#4A4A4A" fillOpacity={0.65} fontSize={10} fontStyle="italic">Calidad alta + cara → esperar entrada</text>
     </>
-    )
 );
 
 // ---------- Custom dot ----------
@@ -303,7 +282,6 @@ export default function Visual() {
     // modal — Recharts <ResponsiveContainer> re-renders on width change (ResizeObserver)
     // and this recompute keeps the height sane when the device rotates.
     const [chartH, setChartH] = useState(460);
-    const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
     useEffect(() => {
         if (typeof window === "undefined") return;
         const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -311,7 +289,6 @@ export default function Visual() {
             const w = window.innerWidth, h = window.innerHeight;
             const landscapePhone = coarse && w > h && Math.min(w, h) <= 560;
             setChartH(landscapePhone ? Math.max(240, Math.round(h * 0.78)) : 460);
-            setIsMobile(w < 768);
         };
         recompute();
         window.addEventListener("resize", recompute);
@@ -705,11 +682,11 @@ export default function Visual() {
         const upto = tl.months.slice(0, tlIdx + 1);
         return tlSeriesVisible.map((s) => {
             const path = [];
-            for (const m of upto) { const a = s.pts[m]; if (a && a[0] != null && a[2] != null) path.push(isMobile ? { x: a[2], y: a[0] } : { x: a[0], y: a[2] }); }
+            for (const m of upto) { const a = s.pts[m]; if (a && a[0] != null && a[2] != null) path.push({ x: a[0], y: a[2] }); }
             const cur = s.pts[tl.months[Math.min(tlIdx, tl.months.length - 1)]];
             return { ticker: s.ticker, path, color: colorForRv(cur ? cur[3] : 0) };
         }).filter((t) => t.path.length >= 2);
-    }, [tl, tlIdx, tlSeriesVisible, tlTrail, isMobile]);
+    }, [tl, tlIdx, tlSeriesVisible, tlTrail]);
 
 
     if (!user) {
@@ -720,33 +697,16 @@ export default function Visual() {
         );
     }
 
-    // Axis values (score & ratio compra). On mobile we INVERT the axes:
-    // Score cualitativo goes to the vertical (Y) axis and Ratio Compra to the
-    // horizontal (X) axis, per user request. Desktop keeps the original layout.
-    const medScore = tlMode ? tlMedians.mx : medianX;
-    const medRc = tlMode ? tlMedians.my : medianY;
-    const domScore = tlMode ? tlDomains.x : xDomain;
-    const domRc = tlMode ? tlDomains.y : ["auto", "auto"];
-    const scoreLabel = `Score ≈${medScore.toFixed(0)}`;
-    const rcLabel = `${medRc >= 0 ? "+" : ""}${medRc.toFixed(0)}%`;
     const chartNode = (
         <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 50 }}>
             <CartesianGrid stroke="#00000010" />
-            {isMobile ? (
-                <XAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={domRc} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-            ) : (
-                <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={domScore} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-            )}
-            {isMobile ? (
-                <YAxis type="number" dataKey="avg_overall_score" name="Score" domain={domScore} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-            ) : (
-                <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={domRc} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
-            )}
+            <XAxis type="number" dataKey="avg_overall_score" name="Score" domain={tlMode ? tlDomains.x : xDomain} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Score cualitativo →", position: "insideBottom", offset: -10, fontSize: 11, fontFamily: "IBM Plex Mono" }} />
+            <YAxis type="number" dataKey="ratio_compra_pct" name="Ratio Compra %" domain={tlMode ? tlDomains.y : ["auto", "auto"]} allowDataOverflow tick={{ fontFamily: "IBM Plex Mono", fontSize: 11 }} label={{ value: "Ratio Compra % →", angle: -90, position: "insideLeft", fontSize: 11, fontFamily: "IBM Plex Mono" }} />
             <ZAxis dataKey="sum_tam_score" range={[60, 600]} />
             <Tooltip content={<ScatterTooltip />} />
-            <ReferenceLine x={isMobile ? medRc : medScore} stroke="#000" strokeDasharray="3 3" label={{ value: isMobile ? rcLabel : scoreLabel, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-            <ReferenceLine y={isMobile ? medScore : medRc} stroke="#000" strokeDasharray="3 3" label={{ value: isMobile ? scoreLabel : rcLabel, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
-            <QuadrantLabels inverted={isMobile} />
+            <ReferenceLine x={tlMode ? tlMedians.mx : medianX} stroke="#000" strokeDasharray="3 3" label={{ value: `Score ≈${(tlMode ? tlMedians.mx : medianX).toFixed(0)}`, position: "top", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+            <ReferenceLine y={tlMode ? tlMedians.my : medianY} stroke="#000" strokeDasharray="3 3" label={{ value: `${(tlMode ? tlMedians.my : medianY) >= 0 ? "+" : ""}${(tlMode ? tlMedians.my : medianY).toFixed(0)}%`, position: "right", fill: "#4A4A4A", fontSize: 10, fontFamily: "IBM Plex Mono" }} />
+            <QuadrantLabels />
             {tlMode && tlTrail && <Customized component={(p) => <TrailLayer {...p} trails={tlTrails} />} />}
             <Scatter data={tlMode ? tlStepRows : mapRows} shape={<Dot />} isAnimationActive={!tlMode} />
         </ScatterChart>
