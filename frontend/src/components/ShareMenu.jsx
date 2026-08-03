@@ -14,7 +14,7 @@ export default function ShareMenu({ createShare, title = "documento", size = "sm
     const [busy, setBusy] = useState(false);
     const [url, setUrl] = useState("");
     const [copied, setCopied] = useState(false);
-    const [alignLeft, setAlignLeft] = useState(false);
+    const [panelStyle, setPanelStyle] = useState({});
     const ref = useRef(null);
 
     useEffect(() => {
@@ -37,10 +37,20 @@ export default function ShareMenu({ createShare, title = "documento", size = "sm
         setBusy(true);
         try {
             await ensureLink();
-            // Keep the 290px popover inside the viewport: if the trigger sits near the
-            // left edge (right-anchored panel would overflow left), anchor it left.
+            // Fixed, viewport-clamped position so the 290px panel never overflows on
+            // mobile (right edge) or when the trigger sits near the left edge.
             const rect = ref.current?.getBoundingClientRect();
-            if (rect) setAlignLeft(rect.right < 298);
+            if (rect) {
+                const m = 8;
+                const vw = window.innerWidth, vh = window.innerHeight;
+                const w = Math.min(290, vw - m * 2);
+                const panelH = 280;
+                let left = Math.round(rect.right - w);
+                left = Math.max(m, Math.min(left, vw - w - m));
+                let top = rect.bottom + 4;
+                if (top + panelH > vh) top = Math.max(m, rect.top - panelH - 4);
+                setPanelStyle({ position: "fixed", left, top, width: w });
+            }
             setOpen(true);
         } catch (e) {
             toast.error(e?.response?.data?.detail || "No se pudo generar el enlace para compartir");
@@ -89,7 +99,7 @@ export default function ShareMenu({ createShare, title = "documento", size = "sm
                 {busy ? <Loader2 size={iconSize} className="animate-spin" /> : <Share2 size={iconSize} />}
             </button>
             {open && (
-                <div className={`absolute ${alignLeft ? "left-0" : "right-0"} top-full mt-1 z-40 bg-white border border-black/25 shadow-xl w-[290px] p-3`} data-testid={`${testidPrefix}-panel`} onMouseDown={(e) => e.stopPropagation()}>
+                <div style={panelStyle} className="z-50 bg-white border border-black/25 shadow-xl p-3" data-testid={`${testidPrefix}-panel`} onMouseDown={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-2 mb-2">
                         <Link2 size={13} className="text-[#4A4A4A]" />
                         <input readOnly value={url} className="flex-1 min-w-0 border border-black/25 bg-[#FAF6EE] px-2 py-1 text-[11px] font-mono truncate" data-testid={`${testidPrefix}-link`} onFocus={(e) => e.target.select()} />
