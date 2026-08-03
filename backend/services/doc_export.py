@@ -360,3 +360,88 @@ def thesis_pdf(doc):
 
 def thesis_docx(doc):
     return render_docx(thesis_blocks(doc), _txt(doc.get("title")))
+
+
+# ── KPI source-document conversion (original → chosen output format) ───────────
+# The uploaded document (PDF/image) is the source of truth; text docs (transcripts,
+# auto-fetched web/SEC) use their stored text. We convert the ORIGINAL to the format
+# the user picks (PDF · Word · JPG). JPG is only offered for image originals.
+
+def image_to_jpg(data):
+    """Return the image as JPEG bytes (flattening transparency onto white)."""
+    from PIL import Image
+    im = Image.open(io.BytesIO(data))
+    if im.mode in ("RGBA", "LA", "P"):
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        im = im.convert("RGBA")
+        bg.paste(im, mask=im.split()[-1])
+        im = bg
+    else:
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
+
+
+def image_to_pdf(data):
+    """Embed an image on an A4 page, scaled to fit with margins."""
+    from PIL import Image
+    from reportlab.pdfgen import canvas as _canvas
+    im = Image.open(io.BytesIO(data)).convert("RGB")
+    buf = io.BytesIO()
+    c = _canvas.Canvas(buf, pagesize=A4)
+    pw, ph = A4
+    margin = 15 * mm
+    max_w, max_h = pw - 2 * margin, ph - 2 * margin
+    iw, ih = im.size
+    ratio = min(max_w / iw, max_h / ih)
+    dw, dh = iw * ratio, ih * ratio
+    x, y = (pw - dw) / 2, (ph - dh) / 2
+    from reportlab.lib.utils import ImageReader
+    c.drawImage(ImageReader(im), x, y, width=dw, height=dh, preserveAspectRatio=True, mask="auto")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def image_to_docx(data, title=None):
+    """Embed an image in a .docx, scaled to page width."""
+    jpg = image_to_jpg(data)
+    d = Document()
+    if title:
+        d.add_heading(_txt(title)[:120] or "Documento", level=1)
+    d.add_picture(io.BytesIO(jpg), width=Inches(6.2))
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def pdf_to_docx(data, title=None):
+    """Faithful copy of a PDF into a .docx by rendering each page to an image
+    (up to 40 pages) and embedding it full width."""
+    import fitz  # PyMuPDF
+    d = Document()
+    if title:
+        d.add_heading(_txt(title)[:120] or "Documento", level=1)
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        zoom = 150 / 72.0  # ~150 DPI
+        mat = fitz.Matrix(zoom, zoom)
+        for i, page in enumerate(doc):
+            if i >= 40:
+                break
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            d.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(6.4))
+    finally:
+        doc.close()
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def text_to_pdf(title, text):
+    return render_pdf(kpi_doc_blocks(title, text), _txt(title) or "Documento")
+
+
+def text_to_docx(title, text):
+    return render_docx(kpi_doc_blocks(title, text), _txt(title) or "Documento")

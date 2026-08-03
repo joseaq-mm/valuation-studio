@@ -269,6 +269,11 @@ export const macroIndicators = (refresh = false) =>
 export const kpiFileDownload = (companyId, fileId) =>
     api.get(`/thesis/${companyId}/kpis/files/${fileId}/download`, { responseType: "blob", timeout: 180000 });
 
+// Convert an uploaded KPI source document (original) to a chosen output format
+// (pdf | docx | jpg). Returns the raw axios response (blob).
+export const kpiFileExport = (companyId, fileId, fmt) =>
+    api.get(`/thesis/${companyId}/kpis/files/${fileId}/export/${fmt}`, { responseType: "blob", timeout: 180000 });
+
 // Download the company KPI validation snapshot as PDF / Word (.docx). Returns the
 // raw axios response (blob) so the caller can read Content-Disposition for the name.
 export const kpiExport = (companyId, fmt) =>

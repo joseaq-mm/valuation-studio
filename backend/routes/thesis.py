@@ -3108,6 +3108,71 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return Response(content=data, media_type=rec.get("content_type") or ctype,
                         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
+    @router.get("/{company_id}/kpis/files/{file_id}/export/{fmt}")
+    async def export_kpi_file(company_id: str, file_id: str, fmt: str,
+                              auth: str = Query(None), authorization: str = Header(None), session_token: str = Cookie(None)):
+        """Convert an uploaded KPI source document (original) to the chosen output
+        format: pdf | docx | jpg. JPG is only valid for image originals."""
+        if fmt not in ("pdf", "docx", "jpg"):
+            raise HTTPException(status_code=400, detail="Formato no soportado")
+        token = None
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1]
+        elif auth:
+            token = auth
+        elif session_token:
+            token = session_token
+        uid = None
+        if token:
+            sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0, "user_id": 1})
+            uid = sess.get("user_id") if sess else None
+        rec = await db.kpi_files.find_one({"id": file_id, "company_id": company_id, "is_deleted": False}, {"_id": 0})
+        if not rec or rec.get("user_id") != uid:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+        from services import doc_export as dx
+        ctype = (rec.get("content_type") or "")
+        is_image = ctype.startswith("image/")
+        is_pdf = "pdf" in ctype
+        has_binary = bool(rec.get("storage_path"))
+        title = rec.get("display_name") or rec.get("original_filename") or "documento"
+
+        if fmt == "jpg" and not (is_image and has_binary):
+            raise HTTPException(status_code=400, detail="JPG solo disponible para documentos de imagen")
+
+        media = {"pdf": "application/pdf",
+                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                 "jpg": "image/jpeg"}[fmt]
+
+        if has_binary and (is_image or is_pdf):
+            data, _ = await asyncio.to_thread(get_object, rec["storage_path"])
+            if is_image:
+                if fmt == "jpg":
+                    out = await asyncio.to_thread(dx.image_to_jpg, data)
+                elif fmt == "pdf":
+                    out = await asyncio.to_thread(dx.image_to_pdf, data)
+                else:
+                    out = await asyncio.to_thread(dx.image_to_docx, data, title)
+            else:  # pdf original
+                if fmt == "pdf":
+                    out = data
+                else:  # docx
+                    out = await asyncio.to_thread(dx.pdf_to_docx, data, title)
+        else:
+            # Text-only docs (transcript / auto-fetched web/SEC): use stored text.
+            text = rec.get("extracted_text") or ""
+            if not text:
+                raise HTTPException(status_code=404, detail="Sin contenido descargable")
+            if fmt == "pdf":
+                out = await asyncio.to_thread(dx.text_to_pdf, title, text)
+            else:  # docx
+                out = await asyncio.to_thread(dx.text_to_docx, title, text)
+
+        from urllib.parse import quote
+        fname = dx.safe_filename(title, fmt)
+        return Response(content=out, media_type=media,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
+
     # ----- KPI qualitative news (inform scores; aged out, refreshed on reanalyze) -----
     def _news_public(n):
         return {
