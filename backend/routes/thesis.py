@@ -2776,6 +2776,27 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             upsert=True)
         return {"reply": reply, "sources": [{"title": w["title"], "url": w["url"]} for w in (web or [])[:6]]}
 
+    @router.get("/{thesis_id}/export/{fmt}")
+    async def export_thesis(thesis_id: str, fmt: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Download an individual thesis (company or tendencia) as PDF or Word (.docx)."""
+        if fmt not in ("pdf", "docx"):
+            raise HTTPException(status_code=400, detail="Formato no soportado")
+        doc = await db.theses.find_one({"id": thesis_id, "user_id": user["user_id"]}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Tesis no encontrada")
+        from services.doc_export import thesis_pdf, thesis_docx, safe_filename
+        from urllib.parse import quote
+        title = (doc.get("title") or "tesis")
+        if fmt == "pdf":
+            data = await asyncio.to_thread(thesis_pdf, doc)
+            media = "application/pdf"
+        else:
+            data = await asyncio.to_thread(thesis_docx, doc)
+            media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        fname = safe_filename(title, fmt)
+        return Response(content=data, media_type=media,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
+
     @router.get("/{company_id}/kpis/chat/last")
     async def kpi_chat_last(company_id: str, user: Dict[str, Any] = Depends(auth_required)):
         """Most recent non-empty conversation for this company+user (to recover it)."""
