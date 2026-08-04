@@ -18,6 +18,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import GoogleCallback from "@/pages/GoogleCallback";
 import Instructions from "@/pages/Instructions";
 import ShareView from "@/pages/ShareView";
+import ServerWaking from "@/components/ServerWaking";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
 import { I18nProvider } from "@/lib/i18n";
@@ -81,6 +82,7 @@ function App() {
                                 </TourProvider>
                                 <Toaster position="bottom-right" toastOptions={{ style: { borderRadius: 0, border: "1px solid #111", fontFamily: "IBM Plex Sans" } }} />
                                 <PWAInstallPrompt />
+                                <ServerWaking />
                             </I18nProvider>
                         </FxProvider>
                     </AuthProvider>
