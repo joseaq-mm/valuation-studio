@@ -17,6 +17,12 @@
 ## Personas
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
+- **✅ TESIS/EMPRESA · Columna Coef KPI + Combinados en el recuadro cualitativo (6 ago 2026, testing_agent iteration_37 frontend 5/5 · backend curl):**
+  - **Columna "Coef KPI" por tesis** en el recuadro resumen (componente compartido `CompanyQualCard`, ambas páginas): el coef de cada driver (`kpi_snapshot.drivers[].coef`) mapeado por nombre a su tesis. Verde >1,05 / rojo <0,95 / ámbar. `—` si sin analizar.
+  - **Página de Tesis:** en la fila de resultados combinados se añadió el **Coef KPI global** (`coef_global`) junto a Score media y TAM total, y se **agrandaron** los tres valores (ValueBox `size="lg"`). Nada más cambió ahí.
+  - **Página principal (empresa):** la zona de resultados pasó a **5 tarjetas** bajo la última tesis (con tooltip cada una, sin la leyenda media/suma): Score·media, TAM Score·total, Coef KPI·global, **diagrama triangular** (`TriScore`, 3 ejes Score/TAM/CoefKPI) y **Combinado cualitativo %**. En la fila de ratios/perfil financiero (`hero-kpis`, ahora 4 columnas) se añadió la tarjeta **Combinado total %**.
+  - **Backend:** `company_profile` devuelve `kpi_coef` por fila, `coef_global`, `combined_qual` y `combined` (estos últimos vía `ticker_metrics`, con las fórmulas exactas de la página Visual). Estado vacío (sin tesis) muestra `—` sin romper.
+
 - **✅ COMUNIDAD · FASE 2 — Ideas de inversión enlazadas a tus datos (6 ago 2026, testing_agent iteration_36 100% · backend 8/8 pytest + frontend e2e):**
   - Nueva pestaña **"Ideas"** en `/comunidad` (`community-tab-ideas`). Cada idea se enlaza a un **ticker**, con **postura** (Alcista/Bajista/Neutral) y **precio objetivo** opcional. `components/community/Ideas.jsx` (reutiliza `TopicView` de `Forum.jsx` para el debate: respuestas + likes + moderación IA + rate-limit).
   - **Foto de valoración del autor** junto a cada idea (`GET /api/thesis/ticker-metrics/{ticker}`): cuantitativo **Precio, POC, POV, Ratio Compra %, Ratio Venta %** (desde fundamentals, para CUALQUIER ticker) + cualitativo **Score, TAM Score, Coef KPI, Combinado cualitativo %, Combinado total %** SOLO si el ticker está en las tesis TREND desarrolladas del autor (`has_qual`). Fórmulas de los combinados replican **exactamente** las de la página `/visual`. Si el autor no tiene tesis → leyenda **"Tesis no desarrollada"** (solo valoración por precio). El snapshot se captura al publicar y se guarda en la idea.

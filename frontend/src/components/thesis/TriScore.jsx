@@ -23,8 +23,8 @@ export function TriScore({ score, tam, coef }) {
         { axis: "Coef KPI", score: coef == null ? 0 : clamp(((coef - 0.5) / 1.0) * 100, 0, 100), raw: coef == null ? "—" : coef.toFixed(2) },
     ];
     return (
-        <div className="w-full h-full min-h-[150px]" data-testid="tri-score">
-            <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full" style={{ height: 160 }} data-testid="tri-score">
+            <ResponsiveContainer width="100%" height={160}>
                 <RadarChart data={data} outerRadius="62%" margin={{ top: 12, right: 26, bottom: 8, left: 26 }}>
                     <PolarGrid stroke="#00000020" />
                     <PolarAngleAxis dataKey="axis" tick={{ fontFamily: "IBM Plex Mono", fontSize: 9.5, fill: "#4A4A4A" }} />
