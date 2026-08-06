@@ -310,3 +310,30 @@ export const kpiIrSourcesSet = (companyId, urls) =>
     api.put(`/thesis/${companyId}/kpis/ir-sources`, { urls }).then(r => r.data);
 export const kpiIrRefresh = (companyId, onStatus = null) =>
     api.post(`/thesis/${companyId}/kpis/ir-refresh`).then(r => startAndPoll(r.data, onStatus));
+
+// ---------------- Feedback / Suggestions ----------------
+export const feedbackCreateThread = (type, message, metadata, screenshotBlob = null) => {
+    const fd = new FormData();
+    fd.append("type", type);
+    fd.append("message", message);
+    fd.append("metadata", JSON.stringify(metadata || {}));
+    if (screenshotBlob) fd.append("screenshot", screenshotBlob, "captura.jpg");
+    return api.post(`/feedback/threads`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 60000 }).then(r => r.data);
+};
+export const feedbackMyThreads = () => api.get(`/feedback/threads`).then(r => r.data);
+export const feedbackGetThread = (id) => api.get(`/feedback/threads/${id}`).then(r => r.data);
+export const feedbackReply = (id, text) => api.post(`/feedback/threads/${id}/messages`, { text }).then(r => r.data);
+export const feedbackScreenshot = (id) =>
+    api.get(`/feedback/threads/${id}/screenshot`, { responseType: "blob" }).then(r => r.data);
+export const feedbackUnread = () => api.get(`/feedback/unread`).then(r => r.data);
+export const feedbackAdminThreads = ({ status = null, type = null, q = null } = {}) =>
+    api.get(`/feedback/admin/threads`, { params: { status, type, q } }).then(r => r.data);
+export const feedbackAdminUpdateStatus = (id, status) =>
+    api.patch(`/feedback/admin/threads/${id}`, { status }).then(r => r.data);
+export const feedbackSurveys = () => api.get(`/feedback/surveys`).then(r => r.data);
+export const feedbackCreateSurvey = (question, options) =>
+    api.post(`/feedback/surveys`, { question, options }).then(r => r.data);
+export const feedbackVote = (id, option_index) =>
+    api.post(`/feedback/surveys/${id}/vote`, { option_index }).then(r => r.data);
+export const feedbackToggleSurvey = (id, active) =>
+    api.patch(`/feedback/surveys/${id}`, { active }).then(r => r.data);

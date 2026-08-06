@@ -48,6 +48,9 @@ api_router.include_router(make_exports_router(db, _auth_required))
 from routes.share import make_router as make_share_router
 api_router.include_router(make_share_router(db, _auth_required, _auth_optional))
 
+from routes.feedback import make_router as make_feedback_router
+api_router.include_router(make_feedback_router(db, _auth_required))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -863,6 +866,11 @@ async def _ensure_indexes():
         "translations": [[("ticker", 1), ("source_hash", 1)]],
         "radar_state": [[("id", 1)]],
         "app_settings": [[("id", 1)]],
+        "feedback_threads": [[("id", 1)], [("user_id", 1), ("last_message_at", -1)],
+                             [("status", 1)], [("type", 1)], [("unread_for_admin", 1)]],
+        "feedback_messages": [[("thread_id", 1), ("created_at", 1)]],
+        "surveys": [[("id", 1)], [("active", 1)]],
+        "survey_votes": [[("survey_id", 1), ("user_id", 1)], [("user_id", 1)]],
     }
     created = 0
     for coll, keys_list in index_map.items():

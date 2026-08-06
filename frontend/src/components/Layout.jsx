@@ -10,6 +10,7 @@ import HelpChat from "./HelpChat";
 import BackButton from "./BackButton";
 import LoginNudge from "./LoginNudge";
 import PageExportButton from "./PageExportButton";
+import FeedbackControls from "./feedback/FeedbackControls";
 import { useI18n } from "@/lib/i18n";
 
 export default function Layout({ children }) {
@@ -132,6 +133,7 @@ export default function Layout({ children }) {
 
                         {compact && (
                         <div className="order-2 ml-auto flex items-center gap-2">
+                            <FeedbackControls mobile />
                             <AuthButton />
                             <button
                                 className="border border-black bg-white p-2"
@@ -193,6 +195,7 @@ export default function Layout({ children }) {
                             ))}
                         </nav>
                         <div className="flex items-center gap-1 flex-wrap">
+                            <FeedbackControls />
                             <HelpChat />
                             <ThresholdsDialog />
                             <PageExportButton />
