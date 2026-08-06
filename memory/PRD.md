@@ -17,6 +17,13 @@
 ## Personas
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
+- **✅ COMUNIDAD · FASE 2 — Ideas de inversión enlazadas a tus datos (6 ago 2026, testing_agent iteration_36 100% · backend 8/8 pytest + frontend e2e):**
+  - Nueva pestaña **"Ideas"** en `/comunidad` (`community-tab-ideas`). Cada idea se enlaza a un **ticker**, con **postura** (Alcista/Bajista/Neutral) y **precio objetivo** opcional. `components/community/Ideas.jsx` (reutiliza `TopicView` de `Forum.jsx` para el debate: respuestas + likes + moderación IA + rate-limit).
+  - **Foto de valoración del autor** junto a cada idea (`GET /api/thesis/ticker-metrics/{ticker}`): cuantitativo **Precio, POC, POV, Ratio Compra %, Ratio Venta %** (desde fundamentals, para CUALQUIER ticker) + cualitativo **Score, TAM Score, Coef KPI, Combinado cualitativo %, Combinado total %** SOLO si el ticker está en las tesis TREND desarrolladas del autor (`has_qual`). Fórmulas de los combinados replican **exactamente** las de la página `/visual`. Si el autor no tiene tesis → leyenda **"Tesis no desarrollada"** (solo valoración por precio). El snapshot se captura al publicar y se guarda en la idea.
+  - **Señal de la comunidad** (`GET /api/community/ideas/signal`): panel arriba de la pestaña con los tickers más comentados y el reparto de posturas (▲alcistas/▼bajistas/■neutrales) — primer ladrillo de la señal de inversión (Fase 4 la ampliará con IA).
+  - **Backend:** `routes/community.py` — `TopicCreate` admite `scope="idea"` + `ticker/stance/target_price/metrics`; `topic_pub` los devuelve; nuevo `/ideas/signal`. `routes/thesis.py` — nuevo `ticker_metrics` (reutiliza `visual_data`).
+  - Nota: la ruta cualitativa (`has_qual=true`) no se pudo probar con los usuarios de test (sin tesis); claves backend/frontend verificadas coincidentes (`tam_score`).
+
 - **✅ COMUNIDAD · FASE 1 — foro general + grupos + DMs + moderación IA (6 ago 2026, testing_agent iteration_35 100% · backend 16/16 pytest + frontend e2e):**
   - **Página `/comunidad`** (solo logueados; anónimo → `community-login-needed`) con 3 pestañas (`community-tab-general|groups|dms`) + **notificaciones** (`community-notifs-btn`/`panel`, reply-a-tu-tema).
   - **General:** foro de temas con respuestas y **👍 likes**, orden Recientes/Populares, composer "Nuevo tema". `components/community/Forum.jsx` (TopicFeed + TopicView, reutilizado también por grupos).
