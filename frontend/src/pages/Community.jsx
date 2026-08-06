@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { MessagesSquare, Users, Mail, Bell, Loader2 } from "lucide-react";
+import { MessagesSquare, Users, Mail, Bell, Loader2, Lightbulb } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { feedbackUnread, communityNotifications, communityMarkNotifsRead } from "@/lib/api";
 import Forum from "@/components/community/Forum";
 import Groups from "@/components/community/Groups";
 import DirectMessages from "@/components/community/DirectMessages";
+import Ideas from "@/components/community/Ideas";
 
 function fmtDate(iso) {
     try { return new Date(iso).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
@@ -50,6 +51,7 @@ export default function Community() {
     const unreadNotifs = (notifs || []).filter((n) => !n.read).length;
     const tabs = [
         { key: "general", label: "General", icon: MessagesSquare },
+        { key: "ideas", label: "Ideas", icon: Lightbulb },
         { key: "groups", label: "Grupos", icon: Users },
         { key: "dms", label: "Mensajes", icon: Mail },
     ];
@@ -91,6 +93,7 @@ export default function Community() {
             </div>
 
             {tab === "general" && <Forum scope="general" onChanged={() => setTick((t) => t + 1)} />}
+            {tab === "ideas" && <Ideas onChanged={() => setTick((t) => t + 1)} />}
             {tab === "groups" && <Groups isAdmin={isAdmin} onChanged={() => setTick((t) => t + 1)} />}
             {tab === "dms" && <DirectMessages onChanged={() => setTick((t) => t + 1)} />}
         </div>

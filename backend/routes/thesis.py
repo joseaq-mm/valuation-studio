@@ -1825,6 +1825,112 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         return {"rows": rows}
 
+    @router.get("/ticker-metrics/{ticker}")
+    async def ticker_metrics(ticker: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Author's valuation snapshot for a ticker, used by Community · Ideas de inversión.
+        Qualitative (Score, TAM Score, Coef KPI, Combinado cualitativo/total) only exists if
+        the ticker belongs to the user's developed TREND theses; otherwise has_qual=False.
+        Quantitative (POC/POV, Ratio Compra/Venta, precio) comes from the fundamentals cache
+        for ANY ticker. Combined indices replicate the /visual page formulas exactly."""
+        tk = (ticker or "").upper().strip()
+        if not tk:
+            raise HTTPException(400, "Ticker requerido")
+
+        def _c01(v):
+            try:
+                return max(0.0, min(1.0, float(v)))
+            except Exception:
+                return 0.0
+
+        # --- Qualitative universe (only tickers in the user's developed theses) ---
+        vd = await visual_data(user)  # type: ignore[arg-type]
+        rows = vd.get("rows") or []
+        coefs = [r["kpi_coef"] for r in rows if isinstance(r.get("kpi_coef"), (int, float))]
+        mediaC = (sum(coefs) / len(coefs)) if coefs else 1.0
+        neutro = (1.0 + mediaC) / 2.0
+        row = next((r for r in rows if (r.get("ticker") or "").upper().strip() == tk), None)
+
+        has_qual = bool(row and row.get("avg_overall_score") is not None)
+        score = row.get("avg_overall_score") if row else None
+        tam = row.get("sum_tam_score") if row else None
+        kpi_coef = row.get("kpi_coef") if row else None
+        ratio_c = row.get("ratio_compra_pct") if row else None
+        ratio_v = row.get("ratio_venta_pct") if row else None
+        price = row.get("current_price") if row else None
+        currency = row.get("currency") if row else None
+        name = row.get("name") if row else None
+
+        # --- Quantitative from fundamentals cache (fetch on miss) for POC/POV + any ticker ---
+        poc = pov = None
+        cached = await db.fundamentals.find_one({"ticker": tk}, {"_id": 0})
+        data = (cached or {}).get("data")
+        if not data:
+            try:
+                data = await asyncio.to_thread(fetch_fundamentals_sync, tk)
+                await db.fundamentals.update_one(
+                    {"ticker": tk},
+                    {"$set": {"ticker": tk, "data": data, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                    upsert=True,
+                )
+            except Exception as e:
+                logger.warning(f"ticker-metrics fundamentals fetch failed ({tk}): {e}")
+                data = None
+        if data:
+            name = name or data.get("name")
+            currency = currency or data.get("currency")
+            if price is None:
+                price = data.get("current_price")
+            try:
+                ap = data.get("auto_projections") or {}
+                r2 = compute_custom_ratios({
+                    "revenue_2y": ap.get("revenue_2y"), "fcf_2y": ap.get("fcf_2y"),
+                    "shares_outstanding": data.get("shares_outstanding"),
+                    "gross_margin": data.get("gross_margin"), "operating_margin": data.get("operating_margin"),
+                    "net_debt": data.get("net_debt"), "market_cap": data.get("market_cap"),
+                    "revenue_cagr_4y": ap.get("revenue_cagr_4y"), "fcf_cagr_4y": ap.get("fcf_cagr_4y"),
+                    "current_price": data.get("current_price"),
+                })
+                poc, pov = r2.get("poc"), r2.get("pov")
+                if ratio_c is None:
+                    ratio_c = r2.get("ratio_compra_pct")
+                if ratio_v is None:
+                    ratio_v = r2.get("ratio_venta_pct")
+            except Exception:
+                pass
+
+        # --- Combined indices (exact /visual formulas) ---
+        combined_qual = combined = None
+        if has_qual:
+            s = _c01((score or 0) / 100.0)
+            t = _c01((tam or 0) / 30.0)
+            qual_base = (s + t) / 2.0
+            rc = _c01(((ratio_c if ratio_c is not None else -50) + 50) / 150.0)
+            rv = _c01(((ratio_v if ratio_v is not None else -50) + 50) / 150.0)
+            price_base = (rc + rv) / 2.0
+            if isinstance(kpi_coef, (int, float)):
+                f = max(0.6, min(1.4, 1.0 + 0.5 * (kpi_coef - neutro)))
+            else:
+                f = 1.0
+            cq = _c01(qual_base * f)
+            combined_qual = round(cq * 100.0, 1)
+            combined = round((cq + price_base) / 2.0 * 100.0, 1)
+
+        return {
+            "ticker": tk, "name": name, "has_qual": has_qual,
+            "score": round(score, 1) if isinstance(score, (int, float)) else None,
+            "tam_score": round(tam, 2) if isinstance(tam, (int, float)) else None,
+            "kpi_coef": round(kpi_coef, 2) if isinstance(kpi_coef, (int, float)) else None,
+            "combined_qual": combined_qual, "combined": combined,
+            "ratio_compra_pct": round(ratio_c, 1) if isinstance(ratio_c, (int, float)) else None,
+            "ratio_venta_pct": round(ratio_v, 1) if isinstance(ratio_v, (int, float)) else None,
+            "poc": round(poc, 2) if isinstance(poc, (int, float)) else None,
+            "pov": round(pov, 2) if isinstance(pov, (int, float)) else None,
+            "current_price": round(price, 2) if isinstance(price, (int, float)) else None,
+            "currency": currency,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+
     # ---------------------- Visual time dial (evolution over time) ----------------------
     def _clamp_ratio(v):
         # Projecting today's POC/POV onto much older (split-adjusted, tiny) prices can

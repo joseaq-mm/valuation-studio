@@ -1,0 +1,23 @@
+{
+  "summary": "Fase 2 Comunidad · Ideas de inversión probada end-to-end (backend + frontend). 8/8 pytest OK + flujo UI completo (Ideas tab, panel señal con signal-AAPL, composer con carga de metrics AAPL, publicación con stance Alcista/target 260, listado con badge/stance/metrics/'Tesis no desarrollada', apertura de idea con TopicView + header de metrics, respuesta, like 0→1). Regresión: pestañas General/Grupos/Mensajes visibles y General renderiza foros. Sin bugs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_community_ideas.py",
+    "/app/test_reports/pytest/ideas_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "IdeaMetrics referencia m.tam_score en el bloque cualitativo, pero el backend ticker_metrics devuelve el campo como 'tam' (línea 1855: tam = row.get('sum_tam_score')). Cuando has_qual=true, la celda 'TAM Score' mostrará '—'. No es reproducible con los test users (no tienen tesis), pero al primer usuario con tesis desarrollada se verá roto. Fix: usar m.tam en Ideas.jsx o renombrar la salida del endpoint.",
+    "thesis.py ticker_metrics guarda fundamentals cache incluso si fetch_fundamentals_sync devuelve dict vacío/parcial — puede saturar la caché con datos incompletos. Considerar validar data antes de upsert.",
+    "En Ideas.jsx IdeaComposer no valida stance obligatorio antes de submit (default 'bull' está bien) — OK, informativo.",
+    "Rate limit 6/60s puede convertir 429 en UX confusa: apiErr sí muestra el detail español, pero no se distingue de moderación. Menor."
+  ],
+  "updated_files": ["/app/backend/tests/test_community_ideas.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (flujos clave + regresión)"},
+  "test_credentials": "Bearer test_profile_token_fixed_123 (normal, sin tesis → has_qual=false esperado). Bearer admin_test_token_123 (admin).",
+  "seed_data_creation": "El test UI creó la idea 'TEST_UI AAPL sube por servicios' (stance bull, target 260) además de las ideas TEST_ existentes. Backend tests crearon 'TEST_idea AAPL alcista' (stance bull, target 250). No se limpia (prefijo TEST_).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fase 2 Ideas OK. Endpoints validados: GET /api/thesis/ticker-metrics/{ticker} (AAPL y ZZZFAKE no rompen, has_qual=false, metrics cuantitativas presentes), POST /api/community/topics scope=idea con metrics, GET /api/community/topics?scope=idea, GET /api/community/ideas/signal (agrega bull/bear/neutral). UI: composer carga metrics vía thesisTickerMetrics; card muestra IdeaMetrics con 'Tesis no desarrollada'; TopicView reutilizado con header de metrics; like en idea funciona. Único punto ciego: la ruta has_qual=true (Score/TAM Score/Coef KPI) no probada porque los users no tienen tesis; el review de código detectó una inconsistencia de campo 'tam' vs 'tam_score' que se manifestará ahí — reportada como comentario crítico."
+}

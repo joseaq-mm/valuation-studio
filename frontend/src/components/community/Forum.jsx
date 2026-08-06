@@ -107,7 +107,7 @@ function TopicFeed({ scope, groupId, onOpen, onChanged }) {
     );
 }
 
-function TopicView({ id, onBack, onChanged }) {
+export function TopicView({ id, onBack, onChanged, header = null }) {
     const [data, setData] = useState(null);
     const [reply, setReply] = useState("");
     const [sending, setSending] = useState(false);
@@ -148,6 +148,7 @@ function TopicView({ id, onBack, onChanged }) {
     return (
         <div data-testid="community-topic-view">
             <button onClick={onBack} className="flex items-center gap-1 text-sm mb-3 hover:underline" data-testid="topic-back"><ChevronLeft size={16} /> Volver</button>
+            {header}
             <div className="border border-black bg-white p-4">
                 <div className="flex justify-between items-start gap-2">
                     <h2 className="font-serif text-2xl leading-tight">{topic.title}</h2>

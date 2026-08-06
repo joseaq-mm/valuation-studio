@@ -45,10 +45,15 @@ def _strip_json(s: str) -> str:
 
 
 class TopicCreate(BaseModel):
-    scope: str = "general"          # general | group
+    scope: str = "general"          # general | group | idea
     group_id: Optional[str] = None
     title: str
     body: str = ""
+    # Fase 2 · Ideas de inversión (solo scope="idea")
+    ticker: Optional[str] = None
+    stance: Optional[str] = None     # bull | bear | neutral
+    target_price: Optional[float] = None
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class ReplyCreate(BaseModel):
@@ -127,7 +132,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     # ---------------- Serializers ----------------
     def topic_pub(t, uid):
         liked = t.get("liked_by") or []
-        return {
+        out = {
             "id": t["id"], "scope": t.get("scope"), "group_id": t.get("group_id"),
             "title": t.get("title"), "body": t.get("body"),
             "author_id": t.get("author_id"), "author_name": t.get("author_name"),
@@ -136,6 +141,12 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
             "like_count": len(liked), "liked_by_me": uid in liked,
             "can_delete": t.get("author_id") == uid,
         }
+        if t.get("scope") == "idea":
+            out.update({
+                "ticker": t.get("ticker"), "stance": t.get("stance"),
+                "target_price": t.get("target_price"), "metrics": t.get("metrics"),
+            })
+        return out
 
     def reply_pub(r, uid):
         liked = r.get("liked_by") or []
@@ -181,7 +192,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
 
     @router.post("/topics")
     async def create_topic(req: TopicCreate, user: Dict[str, Any] = Depends(auth_required)):
-        if req.scope not in ("general", "group"):
+        if req.scope not in ("general", "group", "idea"):
             raise HTTPException(400, "scope no válido")
         if not req.title.strip():
             raise HTTPException(400, "El título no puede estar vacío")
@@ -189,15 +200,26 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
             g = await _group_or_404(req.group_id)
             if not _can_view_group(g, user):
                 raise HTTPException(403, "No puedes publicar en este grupo")
+        if req.scope == "idea" and not (req.ticker or "").strip():
+            raise HTTPException(400, "La idea debe llevar un ticker")
         await guard_post(user["user_id"], f"{req.title}\n{req.body}")
         tid = uuid.uuid4().hex
         now = _now()
-        await db.community_topics.insert_one({
+        doc = {
             "id": tid, "scope": req.scope, "group_id": req.group_id if req.scope == "group" else None,
             "title": req.title.strip()[:160], "body": req.body.strip()[:5000],
             "author_id": user["user_id"], "author_name": user.get("name") or user.get("email"),
             "created_at": now, "last_activity_at": now, "reply_count": 0, "liked_by": [], "is_removed": False,
-        })
+        }
+        if req.scope == "idea":
+            stance = req.stance if req.stance in ("bull", "bear", "neutral") else "neutral"
+            doc.update({
+                "ticker": (req.ticker or "").upper().strip()[:12],
+                "stance": stance,
+                "target_price": req.target_price,
+                "metrics": req.metrics or {},
+            })
+        await db.community_topics.insert_one(doc)
         return {"id": tid}
 
     @router.get("/topics/{tid}")
@@ -453,5 +475,28 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     async def mark_read(user: Dict[str, Any] = Depends(auth_required)):
         await db.community_notifications.update_many({"user_id": user["user_id"], "read": False}, {"$set": {"read": True}})
         return {"ok": True}
+
+    @router.get("/ideas/signal")
+    async def ideas_signal(user: Dict[str, Any] = Depends(auth_required)):
+        """Señal de comunidad: tickers más comentados en Ideas con el reparto de posturas."""
+        agg: Dict[str, Dict[str, Any]] = {}
+        async for t in db.community_topics.find(
+            {"scope": "idea", "is_removed": {"$ne": True}},
+            {"_id": 0, "ticker": 1, "stance": 1, "metrics": 1, "reply_count": 1, "liked_by": 1},
+        ):
+            tk = (t.get("ticker") or "").upper().strip()
+            if not tk:
+                continue
+            a = agg.setdefault(tk, {"ticker": tk, "ideas": 0, "bull": 0, "bear": 0, "neutral": 0,
+                                    "engagement": 0, "combined": None})
+            a["ideas"] += 1
+            st = t.get("stance") or "neutral"
+            a[st if st in ("bull", "bear", "neutral") else "neutral"] += 1
+            a["engagement"] += (t.get("reply_count") or 0) + len(t.get("liked_by") or [])
+            m = t.get("metrics") or {}
+            if a["combined"] is None and isinstance(m.get("combined"), (int, float)):
+                a["combined"] = m.get("combined")
+        rows = sorted(agg.values(), key=lambda x: (x["ideas"], x["engagement"]), reverse=True)
+        return {"signal": rows[:12]}
 
     return router

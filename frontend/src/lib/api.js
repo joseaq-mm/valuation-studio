@@ -361,3 +361,5 @@ export const communitySendDm = (id, text) => api.post(`/community/dms/${id}/mess
 export const communityUnread = () => api.get(`/community/unread`).then(r => r.data);
 export const communityNotifications = () => api.get(`/community/notifications`).then(r => r.data);
 export const communityMarkNotifsRead = () => api.post(`/community/notifications/read`).then(r => r.data);
+export const communityIdeasSignal = () => api.get(`/community/ideas/signal`).then(r => r.data);
+export const thesisTickerMetrics = (ticker) => api.get(`/thesis/ticker-metrics/${ticker}`).then(r => r.data);
