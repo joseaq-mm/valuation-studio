@@ -103,6 +103,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         await db.feedback_threads.insert_one({
             "id": tid, "user_id": user["user_id"], "user_email": user.get("email"),
             "user_name": user.get("name"), "type": type, "status": "new",
+            "scope": "feedback",
             "subject": subject, "screenshot_path": shot_path, "metadata": meta,
             "created_at": now, "last_message_at": now,
             "unread_for_admin": 1, "unread_for_user": 0,
@@ -115,7 +116,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
 
     @router.get("/threads")
     async def my_threads(user: Dict[str, Any] = Depends(auth_required)):
-        cur = db.feedback_threads.find({"user_id": user["user_id"]}, {"_id": 0}).sort("last_message_at", -1)
+        cur = db.feedback_threads.find({"user_id": user["user_id"], "scope": "feedback"}, {"_id": 0}).sort("last_message_at", -1)
         return {"threads": [thread_public(t, False) async for t in cur]}
 
     async def _load_thread(tid, user):
@@ -168,7 +169,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     async def unread(user: Dict[str, Any] = Depends(auth_required)):
         admin = is_admin(user)
         my_unread = 0
-        async for t in db.feedback_threads.find({"user_id": user["user_id"]}, {"_id": 0, "unread_for_user": 1}):
+        async for t in db.feedback_threads.find({"user_id": user["user_id"], "scope": "feedback"}, {"_id": 0, "unread_for_user": 1}):
             my_unread += t.get("unread_for_user", 0)
         # Active surveys the user hasn't voted yet.
         voted = set()
@@ -180,7 +181,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
                 pending_surveys += 1
         admin_unread = 0
         if admin:
-            async for t in db.feedback_threads.find({"unread_for_admin": {"$gt": 0}}, {"_id": 0, "id": 1}):
+            async for t in db.feedback_threads.find({"unread_for_admin": {"$gt": 0}, "scope": "feedback"}, {"_id": 0, "id": 1}):
                 admin_unread += 1
         return {"user_total": my_unread + pending_surveys, "user_threads": my_unread,
                 "pending_surveys": pending_surveys, "is_admin": admin, "admin_threads": admin_unread}
@@ -191,7 +192,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
                             q: Optional[str] = Query(None), user: Dict[str, Any] = Depends(auth_required)):
         if not is_admin(user):
             raise HTTPException(403, "Solo administrador")
-        query = {}
+        query = {"scope": "feedback"}
         if status in STATUSES:
             query["status"] = status
         if type in TYPES:

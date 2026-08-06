@@ -897,6 +897,12 @@ async def _startup_scheduler():
         )
     except Exception as e:
         logger.warning(f"orphan generate-job cleanup failed: {e}")
+    # Fase 0 comunidad: sella los hilos de feedback existentes con scope="feedback"
+    # para que los futuros hilos de comunidad (general/grupos/dm) no se mezclen.
+    try:
+        await db.feedback_threads.update_many({"scope": {"$exists": False}}, {"$set": {"scope": "feedback"}})
+    except Exception as e:
+        logger.warning(f"feedback scope backfill failed: {e}")
     try:
         from storage import init_storage
         init_storage()
