@@ -17,6 +17,15 @@
 ## Personas
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
+- **✅ COMUNIDAD · FASE 1 — foro general + grupos + DMs + moderación IA (6 ago 2026, testing_agent iteration_35 100% · backend 16/16 pytest + frontend e2e):**
+  - **Página `/comunidad`** (solo logueados; anónimo → `community-login-needed`) con 3 pestañas (`community-tab-general|groups|dms`) + **notificaciones** (`community-notifs-btn`/`panel`, reply-a-tu-tema).
+  - **General:** foro de temas con respuestas y **👍 likes**, orden Recientes/Populares, composer "Nuevo tema". `components/community/Forum.jsx` (TopicFeed + TopicView, reutilizado también por grupos).
+  - **Grupos:** públicos (cualquiera se une) y privados (por invitación; el admin añade miembros). **Solo el admin crea grupos** (403 para el resto). `components/community/Groups.jsx`.
+  - **Mensajes privados 1:1:** buscar usuario (`/community/users/search`) → conversación tipo chat con no-leídos por participante. `components/community/DirectMessages.jsx`.
+  - **Moderación (Fase 1 mínima, día 1):** cada publicación (tema/respuesta/DM) pasa un **filtro IA** (Emergent LLM Key, `openai/gpt-4.1-mini`) que **bloquea insultos/odio/spam/publicidad engañosa/estafas → HTTP 422** (fail-open si la IA no responde), + **rate-limit 6 posts/60s → HTTP 429**. Anti-manipulación de mercado y buscador avanzado quedan para **Fase 3** (análisis guardado en `/app/memory/FASE3_MODERACION_BUSCADOR.md`).
+  - **Cabecera:** el botón **Comunidad** (`community-menu-btn`) ahora incluye **Foro de la comunidad** (`community-forum-link` → `/comunidad`) + Sugerencias + Administración; el badge combina no-leídos de feedback + comunidad (DMs + notificaciones).
+  - **Backend** `routes/community.py` (registrado en `server.py`; +8 colecciones con índices). Buscador de usuarios con `re.escape` (anti-ReDoS). Todo lo de Sugerencias/Admin/Encuestas intacto.
+
 - **✅ COMUNIDAD · FASE 0 — cimientos + consolidación de cabecera (6 ago 2026, verificado curl + screenshot):**
   - **Cabecera simplificada:** los antiguos botones sueltos "Sugerencias" + campana + escudo admin se colapsan en UN solo botón **"Comunidad"** (`community-menu-btn`, icono Users + chevron + badge de no-leídos `feedback-unread-badge` + **tooltip** HoverTip). Al pulsar abre un desplegable (`community-menu`) con **Sugerencias** (`feedback-open-btn`, abre el panel de siempre) y, solo para admin, **Administración** (`feedback-admin-link` → `/admin/feedback`). Ahorra espacio y prepara el crecimiento (foros/grupos/DMs). `components/feedback/FeedbackControls.jsx` reescrito; `FeedbackPanel.jsx` sin cambios.
   - **Modelo con `scope` (cimiento):** los hilos ahora llevan `scope` (`feedback` | futuro `general`/`group`/`dm`/`idea`). `create_thread` sella `scope="feedback"`; `my_threads`, `admin/threads` y `unread` filtran `scope="feedback"` para que los futuros hilos de comunidad NO se mezclen con Sugerencias. Backfill al arranque en `server.py` (hilos previos → `scope="feedback"`). Nada visible cambia para el usuario.

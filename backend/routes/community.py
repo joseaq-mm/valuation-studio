@@ -348,7 +348,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     # ================= USERS (para iniciar DM) =================
     @router.get("/users/search")
     async def search_users(q: str = Query(..., min_length=1), user: Dict[str, Any] = Depends(auth_required)):
-        rx = {"$regex": q.strip(), "$options": "i"}
+        import re
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         out = []
         async for u in db.users.find({"$or": [{"name": rx}, {"email": rx}]}, {"_id": 0, "user_id": 1, "name": 1, "email": 1, "picture": 1}).limit(8):
             if u.get("user_id") == user["user_id"]:
