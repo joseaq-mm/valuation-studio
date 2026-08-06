@@ -17,6 +17,7 @@
 ## Personas
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
+- **✅ FIX Coef KPI por tesis + rediseño tarjetas (6 ago 2026):** (1) BUG raíz: los nombres de `kpi_snapshot.drivers` NO coinciden con los títulos de las tesis trend (el LLM los reformula) → el match por nombre exacto dejaba el Coef KPI en «—» (ej. Airbnb "Ecosistema de Super-Apps..." salía vacío pese a valer 1,25 en /kpis). Solución: `match_driver_coef` en `thesis.py` mapea por **solape de tokens** (normaliza acentos, quita stopwords, stem ligero, umbral 0,34). Verificado con datos reales de Airbnb (1.35 / — / 1.25). (2) En la ficha de empresa se **eliminó el diagrama triangular** y la zona pasó a **4 tarjetas más grandes** (Score·media, TAM·total, Coef KPI·global, Combinado cualitativo) a todo el ancho.
 - **✅ TESIS/EMPRESA · Columna Coef KPI + Combinados en el recuadro cualitativo (6 ago 2026, testing_agent iteration_37 frontend 5/5 · backend curl):**
   - **Columna "Coef KPI" por tesis** en el recuadro resumen (componente compartido `CompanyQualCard`, ambas páginas): el coef de cada driver (`kpi_snapshot.drivers[].coef`) mapeado por nombre a su tesis. Verde >1,05 / rojo <0,95 / ámbar. `—` si sin analizar.
   - **Página de Tesis:** en la fila de resultados combinados se añadió el **Coef KPI global** (`coef_global`) junto a Score media y TAM total, y se **agrandaron** los tres valores (ValueBox `size="lg"`). Nada más cambió ahí.

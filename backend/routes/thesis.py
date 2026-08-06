@@ -71,6 +71,45 @@ def prune_stale_split_dev(split_dev, alive_ids):
     return [e for e in (split_dev or []) if e.get("developed_id") in alive]
 
 
+import unicodedata as _ud
+
+_DRIVER_STOP = {"de", "y", "la", "el", "los", "las", "del", "con", "para", "en",
+                "a", "e", "o", "u", "al", "un", "una", "the", "of", "and", "integrado", "integrada"}
+
+
+def _driver_tokens(s: str) -> set:
+    s = _ud.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    out = set()
+    for w in re.findall(r"[a-z0-9]+", s):
+        if w in _DRIVER_STOP or len(w) <= 2:
+            continue
+        if len(w) > 4 and w.endswith("s"):
+            w = w[:-1]  # light singular stem
+        out.add(w)
+    return out
+
+
+def match_driver_coef(title: str, drivers: list):
+    """Map a (LLM-reworded) trend-thesis title to the best KPI driver by token overlap.
+    kpi_snapshot driver names come from the company thesis trends[].name and do NOT match
+    the generated trend-thesis titles verbatim, so an exact-name match misses most of them."""
+    tt = _driver_tokens(title)
+    if not tt:
+        return None
+    best_sim, best_coef = 0.0, None
+    for d in (drivers or []):
+        dt = _driver_tokens(d.get("name"))
+        if not dt:
+            continue
+        inter = len(tt & dt)
+        if not inter:
+            continue
+        sim = inter / len(tt | dt)
+        if sim > best_sim:
+            best_sim, best_coef = sim, d.get("coef")
+    return best_coef if best_sim >= 0.34 else None
+
+
 def company_is_complete(doc) -> bool:
     """A company thesis is 'complete' when planning is locked (has split_dev) AND every
     non-merged driver has been fully developed (whole developed, or — if planned as
@@ -1488,21 +1527,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         sum_tam = round(sum(tams), 2) if tams else None
 
         # Per-thesis KPI coefficient (from the company plan's kpi_snapshot.drivers,
-        # matched to each developed trend thesis by driver name) + company-level
-        # coef_global. Fase KPI-en-tesis.
-        _kn = lambda s: (s or "").strip().lower()  # noqa: E731
+        # matched to each developed trend thesis by TOKEN OVERLAP because the LLM
+        # rewords titles) + company-level coef_global.
         coef_global = None
-        driver_coef: Dict[str, float] = {}
+        drivers_list = []
         if plan_doc:
             snap = plan_doc.get("kpi_snapshot") or {}
             cg = snap.get("coef_global")
             coef_global = round(cg, 2) if isinstance(cg, (int, float)) else None
-            for d in (snap.get("drivers") or []):
-                c = d.get("coef")
-                if d.get("name") and isinstance(c, (int, float)):
-                    driver_coef[_kn(d.get("name"))] = round(c, 2)
+            drivers_list = snap.get("drivers") or []
         for r in plan_rows:
-            r["kpi_coef"] = driver_coef.get(_kn(r.get("thesis_title")))
+            c = match_driver_coef(r.get("thesis_title"), drivers_list)
+            r["kpi_coef"] = round(c, 2) if isinstance(c, (int, float)) else None
 
         # Combined indices (same formulas as the Visual page) via ticker_metrics.
         combined_qual = combined = None

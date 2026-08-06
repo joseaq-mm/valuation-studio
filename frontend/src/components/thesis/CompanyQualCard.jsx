@@ -5,7 +5,6 @@ import { Sparkles, ArrowRight, GitMerge, ChevronDown, ChevronRight } from "lucid
 import { useAuth } from "@/lib/auth";
 import { thesisCompanyProfile, thesisMergeThesis, thesisUnmergeThesis } from "@/lib/api";
 import { ValueBox, scoreColor, tamColor, fmtTamScore, coefColor, fmtCoef } from "./ScoreBar";
-import { TriScore } from "./TriScore";
 
 import HoverTip from "@/components/HoverTip";
 
@@ -118,11 +117,11 @@ function ThesisTitleLink({ to, title, bold = false, arrowSize = 12, colorClass =
 
 function QualStatCard({ label, tip, value, color, testid }) {
     return (
-        <div className="border border-black/20 bg-white p-2.5 flex flex-col items-center justify-center text-center min-h-[130px]" data-testid={testid}>
+        <div className="border border-black/20 bg-white p-4 flex flex-col items-center justify-center text-center min-h-[150px]" data-testid={testid}>
             <HoverTip text={tip} maxWidth={280}>
-                <div className="overline text-[#4A4A4A] cursor-help leading-tight mb-2">{label}</div>
+                <div className="overline text-[#4A4A4A] cursor-help leading-tight mb-2.5">{label}</div>
             </HoverTip>
-            <div className="font-mono font-bold text-3xl" style={{ color: value == null ? "#9CA3AF" : color }}>{value == null ? "—" : value}</div>
+            <div className="font-mono font-bold text-4xl sm:text-5xl" style={{ color: value == null ? "#9CA3AF" : color }}>{value == null ? "—" : value}</div>
         </div>
     );
 }
@@ -356,16 +355,10 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                             </div>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 pt-4" data-testid="qual-cards">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-4" data-testid="qual-cards">
                             <QualStatCard label="Score · media" tip="Media de todos los 'Score global tesis': calidad general de la empresa a través de las tesis en las que encaja (0–100)." value={profile.avg_overall_score} color={scoreColor(profile.avg_overall_score)} testid="qual-card-score" />
                             <QualStatCard label="TAM Score · total" tip="Suma de todos los TAM Scores: potencial total acumulado de la empresa por su exposición a varias tendencias. >1 = oportunidad grande respecto a su tamaño." value={fmtTamScore(profile.sum_tam_score)} color={tamColor(profile.sum_tam_score)} testid="qual-card-tam" />
                             <QualStatCard label="Coef KPI · global" tip="Coeficiente KPI global (0,5–1,5): validación operativa del conjunto de tesis con datos reales. >1 confirma la tesis; <1 la refuta. «—» = sin analizar en /kpis." value={fmtCoef(profile.coef_global)} color={coefColor(profile.coef_global)} testid="qual-card-coef" />
-                            <div className="border border-black/20 bg-white p-2 flex flex-col min-h-[130px]" data-testid="qual-card-tri">
-                                <HoverTip text="Diagrama triangular: Score, TAM Score y Coef KPI en un vistazo. Cada eje 0–100 (mayor = mejor)." maxWidth={280}>
-                                    <div className="overline text-[#4A4A4A] cursor-help text-center">Perfil triangular</div>
-                                </HoverTip>
-                                <div className="flex-1"><TriScore score={profile.avg_overall_score} tam={profile.sum_tam_score} coef={profile.coef_global} /></div>
-                            </div>
                             <QualStatCard label="Combinado cualitativo" tip="Combinado cualitativo (0–100%): une Score y TAM Score, modulado por el Coef KPI relativo a la media de tu universo. Fuerza CUALITATIVA total — calidad + potencial + validación operativa — sin precio." value={profile.combined_qual != null ? `${profile.combined_qual}%` : null} color="#052049" testid="qual-card-combqual" />
                         </div>
                     )}
