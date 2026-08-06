@@ -19,6 +19,7 @@ import GoogleCallback from "@/pages/GoogleCallback";
 import Instructions from "@/pages/Instructions";
 import ShareView from "@/pages/ShareView";
 import AdminFeedback from "@/pages/AdminFeedback";
+import Community from "@/pages/Community";
 import ServerWaking from "@/components/ServerWaking";
 import { AuthProvider } from "@/lib/auth";
 import { FxProvider } from "@/lib/fx";
@@ -63,6 +64,7 @@ function AppRouter() {
                 <Route path="/macro" element={<Macro />} />
                 <Route path="/instrucciones" element={<Instructions />} />
                 <Route path="/admin/feedback" element={<AdminFeedback />} />
+                <Route path="/comunidad" element={<Community />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/auth/google" element={<GoogleCallback />} />
             </Routes>

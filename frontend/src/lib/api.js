@@ -337,3 +337,27 @@ export const feedbackVote = (id, option_index) =>
     api.post(`/feedback/surveys/${id}/vote`, { option_index }).then(r => r.data);
 export const feedbackToggleSurvey = (id, active) =>
     api.patch(`/feedback/surveys/${id}`, { active }).then(r => r.data);
+
+// ---------------- Community (Fase 1: general + groups + DMs) ----------------
+export const communityTopics = (scope = "general", groupId = null, sort = "recent") =>
+    api.get(`/community/topics`, { params: { scope, group_id: groupId, sort } }).then(r => r.data);
+export const communityCreateTopic = (payload) => api.post(`/community/topics`, payload).then(r => r.data);
+export const communityGetTopic = (id) => api.get(`/community/topics/${id}`).then(r => r.data);
+export const communityReply = (id, body) => api.post(`/community/topics/${id}/replies`, { body }).then(r => r.data);
+export const communityLikeTopic = (id) => api.post(`/community/topics/${id}/like`).then(r => r.data);
+export const communityLikeReply = (id) => api.post(`/community/replies/${id}/like`).then(r => r.data);
+export const communityDeleteTopic = (id) => api.delete(`/community/topics/${id}`).then(r => r.data);
+export const communityDeleteReply = (id) => api.delete(`/community/replies/${id}`).then(r => r.data);
+export const communityGroups = () => api.get(`/community/groups`).then(r => r.data);
+export const communityCreateGroup = (payload) => api.post(`/community/groups`, payload).then(r => r.data);
+export const communityGetGroup = (id) => api.get(`/community/groups/${id}`).then(r => r.data);
+export const communityJoinGroup = (id) => api.post(`/community/groups/${id}/join`).then(r => r.data);
+export const communityLeaveGroup = (id) => api.post(`/community/groups/${id}/leave`).then(r => r.data);
+export const communitySearchUsers = (q) => api.get(`/community/users/search`, { params: { q } }).then(r => r.data);
+export const communityDms = () => api.get(`/community/dms`).then(r => r.data);
+export const communityStartDm = (userId) => api.post(`/community/dms`, { user_id: userId }).then(r => r.data);
+export const communityGetDm = (id) => api.get(`/community/dms/${id}`).then(r => r.data);
+export const communitySendDm = (id, text) => api.post(`/community/dms/${id}/messages`, { text }).then(r => r.data);
+export const communityUnread = () => api.get(`/community/unread`).then(r => r.data);
+export const communityNotifications = () => api.get(`/community/notifications`).then(r => r.data);
+export const communityMarkNotifsRead = () => api.post(`/community/notifications/read`).then(r => r.data);

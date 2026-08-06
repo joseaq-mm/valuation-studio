@@ -51,6 +51,9 @@ api_router.include_router(make_share_router(db, _auth_required, _auth_optional))
 from routes.feedback import make_router as make_feedback_router
 api_router.include_router(make_feedback_router(db, _auth_required))
 
+from routes.community import make_router as make_community_router
+api_router.include_router(make_community_router(db, _auth_required))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -871,6 +874,12 @@ async def _ensure_indexes():
         "feedback_messages": [[("thread_id", 1), ("created_at", 1)]],
         "surveys": [[("id", 1)], [("active", 1)]],
         "survey_votes": [[("survey_id", 1), ("user_id", 1)], [("user_id", 1)]],
+        "community_topics": [[("id", 1)], [("scope", 1), ("group_id", 1), ("last_activity_at", -1)]],
+        "community_replies": [[("topic_id", 1), ("created_at", 1)]],
+        "community_groups": [[("id", 1)], [("members", 1)]],
+        "community_dm_threads": [[("id", 1)], [("participants", 1), ("last_message_at", -1)]],
+        "community_dm_messages": [[("dm_id", 1), ("created_at", 1)]],
+        "community_notifications": [[("user_id", 1), ("read", 1), ("created_at", -1)]],
     }
     created = 0
     for coll, keys_list in index_map.items():
