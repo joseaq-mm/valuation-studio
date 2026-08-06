@@ -1440,10 +1440,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         # (every non-merged driver developed). Used by the UI to hide the "Buscar más
         # tesis" CTA once there's nothing left to plan/develop.
         plan_complete = False
+        plan_doc = None
         if plan_id:
             plan_doc = await db.theses.find_one(
                 {"user_id": uid, "id": plan_id},
-                {"_id": 0, "trends": 1, "split_dev": 1},
+                {"_id": 0, "trends": 1, "split_dev": 1, "kpi_snapshot": 1},
             )
             if plan_doc:
                 plan_complete = company_is_complete(plan_doc)
@@ -1486,6 +1487,34 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         avg_overall = round(sum(overalls) / len(overalls), 1) if overalls else None
         sum_tam = round(sum(tams), 2) if tams else None
 
+        # Per-thesis KPI coefficient (from the company plan's kpi_snapshot.drivers,
+        # matched to each developed trend thesis by driver name) + company-level
+        # coef_global. Fase KPI-en-tesis.
+        _kn = lambda s: (s or "").strip().lower()  # noqa: E731
+        coef_global = None
+        driver_coef: Dict[str, float] = {}
+        if plan_doc:
+            snap = plan_doc.get("kpi_snapshot") or {}
+            cg = snap.get("coef_global")
+            coef_global = round(cg, 2) if isinstance(cg, (int, float)) else None
+            for d in (snap.get("drivers") or []):
+                c = d.get("coef")
+                if d.get("name") and isinstance(c, (int, float)):
+                    driver_coef[_kn(d.get("name"))] = round(c, 2)
+        for r in plan_rows:
+            r["kpi_coef"] = driver_coef.get(_kn(r.get("thesis_title")))
+
+        # Combined indices (same formulas as the Visual page) via ticker_metrics.
+        combined_qual = combined = None
+        try:
+            tm = await ticker_metrics(tk, user)
+            combined_qual = tm.get("combined_qual")
+            combined = tm.get("combined")
+            if coef_global is None and isinstance(tm.get("kpi_coef"), (int, float)):
+                coef_global = tm.get("kpi_coef")
+        except Exception as e:
+            logger.warning(f"company_profile combined calc failed ({tk}): {e}")
+
         reverse = None
         if rev_doc:
             reverse = {
@@ -1503,6 +1532,9 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             "other_rows": other_rows,
             "avg_overall_score": avg_overall,
             "sum_tam_score": sum_tam,
+            "coef_global": coef_global,
+            "combined_qual": combined_qual,
+            "combined": combined,
             "reverse": reverse,
             "plan_complete": plan_complete,
         }

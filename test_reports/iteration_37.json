@@ -1,0 +1,26 @@
+{
+  "summary": "UI-only verification of CompanyQualCard 'Coef KPI' + Combinados changes. All 5 review points PASS. (1) /company/MSFT qual-cards branch: Coef KPI column populated (Nube e IA 1.28 green, Gaming 0.88 red); the 5 cards render below with values Score·media 79, TAM Score·total 2.50, Coef KPI·global 1.15, triangular radar (qual-card-tri) and Combinado cualitativo 45.3%. (2) hero-kpis is md:grid-cols-4 and includes combinado-total-card with value 29.9%; layout not broken. (3) /thesis/seed_plan_msft renders CompanyQualCard with fromCompanyId branch: qual-aggregates row shows THREE enlarged value boxes qual-avg-overall=79, qual-sum-tam=2.50, qual-coef-global=1.15 (font-size 16px vs 12px on per-row cells → visibly larger); Coef KPI column also populated (1.28, 0.88); qual-cards grid correctly absent on this branch. (4) /company/AAPL empty state: company-qual-empty CTA visible and combinado-total-value shows '—' without crash. (5) Regression: header, ratios compra/venta (-41,4% / -15,0%), perfil financiero radar and generator area render normally.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/thesis/seed_plan_msft (and any page with TriScore before layout settles)", "issues": ["Recharts warning in console: 'The width(-1) and height(-1) of chart should be greater than 0' — TriScore's ResponsiveContainer mounts before parent has size. Radar still renders correctly after resize, but the noisy warning suggests adding a minHeight/aspect or width/height props on ResponsiveContainer to silence it."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: silence Recharts width(-1)/height(-1) warning in TriScore (set explicit aspect or minHeight on ResponsiveContainer)."
+  ],
+  "critical_code_review_comments": [
+    "CompanyQualCard.jsx line 273 renders a full-width row per thesis followed by inline merge panels — file is getting large; consider extracting the per-row + aggregates + cards blocks into sub-components for readability.",
+    "In CompanyQualCard the 'others' section uses hard-coded '—' with color #9CA3AF for kpi column — fine, but if backend later exposes kpi_coef for non-source theses this branch will still show '—'; low priority."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100% (5/5 review points)"},
+  "test_credentials": "session_token cookie = test_profile_token_fixed_123 (also mirrored to localStorage vs:token). Seeded MSFT plan seed_plan_msft + trend theses seed_trend_nube_e_ia / seed_trend_gaming intact.",
+  "seed_data_creation": "None. No writes performed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Thesis-page enlarged-aggregates branch is reachable directly at /thesis/seed_plan_msft (company-type thesis → ThesisResult renders CompanyQualCard with fromCompanyId=thesis.id). Measured font-size proves enlargement (16px vs 12px). Coef KPI column shows kpi_coef mapped from kpi_snapshot.drivers by name."
+}

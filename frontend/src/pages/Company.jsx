@@ -247,6 +247,7 @@ export default function Company() {
     const [data, setData] = useState(null);
     const { user } = useAuth();
     const [qualRefreshKey, setQualRefreshKey] = useState(0);
+    const [qualProfile, setQualProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
@@ -998,10 +999,10 @@ export default function Company() {
             </div>
 
             {/* Qualitative thesis bridge (Thesis Engine ↔ quant dashboard) */}
-            <CompanyQualCard ticker={data.ticker} refreshKey={qualRefreshKey} />
+            <CompanyQualCard ticker={data.ticker} refreshKey={qualRefreshKey} onProfile={setQualProfile} />
 
-            {/* Hero KPIs - Ratio Compra & Venta + Perfil financiero */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-black mb-6" data-testid="hero-kpis">
+            {/* Hero KPIs - Ratio Compra & Venta + Perfil financiero + Combinado total */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border border-black mb-6" data-testid="hero-kpis">
                 <div className="bg-white p-6 md:border-r border-black border-b md:border-b-0" data-testid="ratio-compra-card">
                     <div className="overline text-[#4A4A4A]">Ratio de Compra</div>
                     <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: ratioColor(cr.ratio_compra_pct) }} data-testid="ratio-compra-value">
@@ -1028,8 +1029,17 @@ export default function Company() {
                     </div>
                     <div className="text-xs text-[#4A4A4A] mt-3">Upside hasta el precio objetivo de venta.</div>
                 </div>
-                <div className="bg-white p-6 border-t border-black md:border-t-0" data-testid="metrics-radar-card">
+                <div className="bg-white p-6 border-t border-black md:border-t-0 md:border-r" data-testid="metrics-radar-card">
                     <MetricsRadar inputs={inputs} />
+                </div>
+                <div className="bg-white p-6 border-t border-black md:border-t-0 flex flex-col items-center justify-center text-center" data-testid="combinado-total-card">
+                    <HoverTip text="Combinado total (0–100%): índice global que une calidad + potencial + validación KPI (vía el Combinado cualitativo) y la valoración (Compra/Venta). El coeficiente KPI cuenta una sola vez.">
+                        <div className="overline text-[#4A4A4A] cursor-help">Combinado total</div>
+                    </HoverTip>
+                    <div className="font-mono text-5xl sm:text-6xl font-medium mt-2" style={{ color: qualProfile?.combined == null ? "#9CA3AF" : "#052049" }} data-testid="combinado-total-value">
+                        {qualProfile?.combined != null ? `${qualProfile.combined}%` : "—"}
+                    </div>
+                    <div className="text-xs text-[#4A4A4A] mt-3">Calidad + potencial + KPI + valoración.</div>
                 </div>
             </div>
 

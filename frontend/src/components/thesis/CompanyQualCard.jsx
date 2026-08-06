@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { Sparkles, ArrowRight, GitMerge, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisCompanyProfile, thesisMergeThesis, thesisUnmergeThesis } from "@/lib/api";
-import { ValueBox, scoreColor, tamColor, fmtTamScore } from "./ScoreBar";
+import { ValueBox, scoreColor, tamColor, fmtTamScore, coefColor, fmtCoef } from "./ScoreBar";
+import { TriScore } from "./TriScore";
 
 import HoverTip from "@/components/HoverTip";
 
@@ -115,6 +116,17 @@ function ThesisTitleLink({ to, title, bold = false, arrowSize = 12, colorClass =
     );
 }
 
+function QualStatCard({ label, tip, value, color, testid }) {
+    return (
+        <div className="border border-black/20 bg-white p-2.5 flex flex-col items-center justify-center text-center min-h-[130px]" data-testid={testid}>
+            <HoverTip text={tip} maxWidth={280}>
+                <div className="overline text-[#4A4A4A] cursor-help leading-tight mb-2">{label}</div>
+            </HoverTip>
+            <div className="font-mono font-bold text-3xl" style={{ color: value == null ? "#9CA3AF" : color }}>{value == null ? "—" : value}</div>
+        </div>
+    );
+}
+
 /**
  * Bridges the qualitative Thesis Engine with the quantitative company dashboard.
  * Lists every saved TREND thesis where this ticker appears — one line each, with
@@ -127,7 +139,7 @@ function ThesisTitleLink({ to, title, bold = false, arrowSize = 12, colorClass =
  * thesis into another the company belongs to, removing the company from it
  * (reversible via the "Tesis fusionadas" strip below).
  */
-export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey = 0, companyId = null, thesisMerges = [], onMerged, fromCompanyId = null }) {
+export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey = 0, companyId = null, thesisMerges = [], onMerged, fromCompanyId = null, onProfile }) {
     const { user } = useAuth();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -144,9 +156,9 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
             if (alive) setLoading(true);
             try {
                 const d = await thesisCompanyProfile(ticker, fromCompanyId);
-                if (alive) setProfile(d);
+                if (alive) { setProfile(d); onProfile?.(d); }
             } catch {
-                if (alive) setProfile(null);
+                if (alive) { setProfile(null); onProfile?.(null); }
             } finally {
                 if (alive) setLoading(false);
             }
@@ -225,7 +237,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
         );
     }
 
-    const COLS = "grid-cols-[1fr_5rem_4.5rem]";
+    const COLS = "grid-cols-[1fr_4.25rem_4.25rem_4.25rem]";
 
     return (
         <div className="border border-black bg-white p-5 mb-6" data-testid="company-qual-card">
@@ -252,6 +264,7 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                         <div className="overline text-[#4A4A4A]">Tesis</div>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">Score global tesis</div>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">TAM Score</div>
+                        <div className="overline text-[#4A4A4A] text-center leading-tight">Coef KPI</div>
                     </div>
 
                     {/* One line per thesis */}
@@ -281,6 +294,11 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                                 </div>
                                 <div className="flex justify-center">
                                     <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-tam-${r.thesis_id}`} />
+                                </div>
+                                <div className="flex justify-center">
+                                    <HoverTip text="Coeficiente KPI de esta tesis (0,5–1,5): validación operativa de este driver con datos reales. «—» = aún sin analizar en /kpis." maxWidth={280}>
+                                        <div className="cursor-help"><ValueBox text={fmtCoef(r.kpi_coef) ?? "—"} color={coefColor(r.kpi_coef)} testid={`qual-kpi-${r.thesis_id}`} /></div>
+                                    </HoverTip>
                                 </div>
                             </div>
                             {canMerge && mergeFor === r.thesis_id && (
@@ -313,23 +331,44 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                         </React.Fragment>
                     ))}
 
-                    {/* Aggregates */}
-                    <div className={`grid ${COLS} gap-x-4 items-center pt-3`} data-testid="qual-aggregates">
-                        <div className="text-xs text-[#4A4A4A] leading-snug">
-                            <div><strong>Media</strong> · calidad general</div>
-                            <div><strong>Suma</strong> · potencial total</div>
+                    {/* Aggregates — Thesis page: enlarged 3-value row · Company page: card grid */}
+                    {fromCompanyId ? (
+                        <div className={`grid ${COLS} gap-x-4 items-center pt-3`} data-testid="qual-aggregates">
+                            <div className="text-xs text-[#4A4A4A] leading-snug">
+                                <div><strong>Media</strong> · calidad general</div>
+                                <div><strong>Suma</strong> · potencial total</div>
+                                <div><strong>Global</strong> · validación KPI</div>
+                            </div>
+                            <div className="flex justify-center">
+                                <HoverTip text="Media de todos los 'Score global tesis': calidad general de la empresa a través de las tesis en las que encaja." maxWidth={300}>
+                                    <div className="cursor-help"><ValueBox size="lg" text={profile.avg_overall_score ?? "—"} color={scoreColor(profile.avg_overall_score)} testid="qual-avg-overall" /></div>
+                                </HoverTip>
+                            </div>
+                            <div className="flex justify-center">
+                                <HoverTip text="Suma de todos los TAM Scores: potencial total acumulado de la empresa por su exposición a varias tendencias." maxWidth={300}>
+                                    <div className="cursor-help"><ValueBox size="lg" text={fmtTamScore(profile.sum_tam_score) ?? "—"} color={tamColor(profile.sum_tam_score)} testid="qual-sum-tam" /></div>
+                                </HoverTip>
+                            </div>
+                            <div className="flex justify-center">
+                                <HoverTip text="Coeficiente KPI global (0,5–1,5): validación operativa del conjunto de tesis de la empresa con datos reales. «—» = aún sin analizar en /kpis." maxWidth={300}>
+                                    <div className="cursor-help"><ValueBox size="lg" text={fmtCoef(profile.coef_global) ?? "—"} color={coefColor(profile.coef_global)} testid="qual-coef-global" /></div>
+                                </HoverTip>
+                            </div>
                         </div>
-                        <div className="flex justify-center">
-                            <HoverTip text="Media de todos los 'Score global tesis': una idea de la calidad general de la empresa a través de las tesis en las que encaja." maxWidth={300}>
-                                <div className="cursor-help"><ValueBox text={profile.avg_overall_score ?? "—"} color={scoreColor(profile.avg_overall_score)} testid="qual-avg-overall" /></div>
-                            </HoverTip>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 pt-4" data-testid="qual-cards">
+                            <QualStatCard label="Score · media" tip="Media de todos los 'Score global tesis': calidad general de la empresa a través de las tesis en las que encaja (0–100)." value={profile.avg_overall_score} color={scoreColor(profile.avg_overall_score)} testid="qual-card-score" />
+                            <QualStatCard label="TAM Score · total" tip="Suma de todos los TAM Scores: potencial total acumulado de la empresa por su exposición a varias tendencias. >1 = oportunidad grande respecto a su tamaño." value={fmtTamScore(profile.sum_tam_score)} color={tamColor(profile.sum_tam_score)} testid="qual-card-tam" />
+                            <QualStatCard label="Coef KPI · global" tip="Coeficiente KPI global (0,5–1,5): validación operativa del conjunto de tesis con datos reales. >1 confirma la tesis; <1 la refuta. «—» = sin analizar en /kpis." value={fmtCoef(profile.coef_global)} color={coefColor(profile.coef_global)} testid="qual-card-coef" />
+                            <div className="border border-black/20 bg-white p-2 flex flex-col min-h-[130px]" data-testid="qual-card-tri">
+                                <HoverTip text="Diagrama triangular: Score, TAM Score y Coef KPI en un vistazo. Cada eje 0–100 (mayor = mejor)." maxWidth={280}>
+                                    <div className="overline text-[#4A4A4A] cursor-help text-center">Perfil triangular</div>
+                                </HoverTip>
+                                <div className="flex-1"><TriScore score={profile.avg_overall_score} tam={profile.sum_tam_score} coef={profile.coef_global} /></div>
+                            </div>
+                            <QualStatCard label="Combinado cualitativo" tip="Combinado cualitativo (0–100%): une Score y TAM Score, modulado por el Coef KPI relativo a la media de tu universo. Fuerza CUALITATIVA total — calidad + potencial + validación operativa — sin precio." value={profile.combined_qual != null ? `${profile.combined_qual}%` : null} color="#052049" testid="qual-card-combqual" />
                         </div>
-                        <div className="flex justify-center">
-                            <HoverTip text="Suma de todos los TAM Scores: una idea del potencial total acumulado de la empresa por su exposición a varias tendencias." maxWidth={300}>
-                                <div className="cursor-help"><ValueBox text={fmtTamScore(profile.sum_tam_score) ?? "—"} color={tamColor(profile.sum_tam_score)} testid="qual-sum-tam" /></div>
-                            </HoverTip>
-                        </div>
-                    </div>
+                    )}
                 </>
             )}
 
@@ -365,6 +404,9 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                                         </div>
                                         <div className="flex justify-center">
                                             <ValueBox text={fmtTamScore(r.tam_score) ?? "—"} color={tamColor(r.tam_score)} testid={`qual-other-tam-${r.thesis_id}`} />
+                                        </div>
+                                        <div className="flex justify-center">
+                                            <ValueBox text="—" color="#9CA3AF" testid={`qual-other-kpi-${r.thesis_id}`} />
                                         </div>
                                     </div>
                                 ))}

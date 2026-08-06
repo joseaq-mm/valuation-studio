@@ -9,16 +9,21 @@ export const scoreColor = (v) => {
 
 export const tamColor = (v) => (v == null ? "#9CA3AF" : v >= 1 ? "#1E7D45" : "#B8860B");
 
+export const coefColor = (c) => (c == null ? "#9CA3AF" : c > 1.05 ? "#1D7044" : c < 0.95 ? "#B32A22" : "#B8860B");
+
+export const fmtCoef = (v) => (v == null || isNaN(v) ? null : v.toFixed(2));
+
 export const fmtTamScore = (v) => {
     if (v == null || isNaN(v)) return null;
     return v.toFixed(2);
 };
 
-/** Square boxed value, matching the ScoreBadge box look. */
-export function ValueBox({ text, color, testid, title }) {
+/** Square boxed value, matching the ScoreBadge box look. size: sm | lg */
+export function ValueBox({ text, color, testid, title, size = "sm" }) {
+    const cls = size === "lg" ? "w-16 h-14 text-base" : "w-11 h-10 text-xs";
     return (
         <div
-            className="w-11 h-10 border-2 flex items-center justify-center font-mono text-xs font-bold shrink-0"
+            className={`${cls} border-2 flex items-center justify-center font-mono font-bold shrink-0`}
             style={{ borderColor: color, color }}
             data-testid={testid}
             title={title}
