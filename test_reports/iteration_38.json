@@ -1,0 +1,24 @@
+{
+  "summary": "Phase 3 (Community search + moderation + auto-hide + AI anti-manipulation flag) validated end-to-end. Backend: 10/10 pytest tests pass covering search min-length, search returns structure, report first (200 · reports=1), same-user dedupe (already=true), auto-hide at 3 distinct reporters (topic hidden from list AND single GET returns 404), non-admin 403 on /admin/moderation, admin lists items, admin approve restores visibility (single GET 200), admin delete soft-removes (single GET 404), and at least one source='ai' item exists in the queue. Frontend: /comunidad renders community-page; search debounced, requires >=2 chars, shows community-search-results, clears via community-search-clear, shows search-no-results for gibberish; report-btn opens report-popover; report-send sends and toast 'Gracias, lo revisaremos' shows. /admin/feedback: non-admin sees admin-feedback-denied; admin sees admin-feedback-page + Moderation tab renders admin-moderation with items (3 open, 1 IA badge, 2 reporte badges), mod-status-filter switches to 'all' expanding to 7 items, approve/delete buttons present per open item.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_community_moderation.py",
+    "/app/test_reports/pytest/community_mod.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "community.py is ~684 lines and includes topics, replies, groups, DMs, notifications, search, reports, moderation, ideas-signal. Consider splitting into submodules (topics/, moderation/, dms/) for maintainability.",
+    "assess_idea() runs an LLM call synchronously after topic insert in create_topic; a slow LLM can extend the POST latency (up to ~12s timeout). Consider offloading to a background task (fire-and-forget) so the client isn't blocked by moderation IA.",
+    "Auto-hide threshold is hard-coded to 3 in report() (line 610). Consider extracting to a constant like RATE_MAX/RATE_WINDOW for consistency and easier tuning.",
+    "search endpoint depends on a Mongo text index over community_topics/replies. The route wraps failures with 'try/except → logger.warning'; ensure the text index is created on startup (currently not visible in this file).",
+    "In ReportButton.jsx `done` state is per-mount; navigating away and back allows re-report attempts — server correctly dedupes, but UI could persist done-state via targetId key. Minor UX only."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (search + report + admin moderation + denied)"},
+  "test_credentials": "session_token cookie test_profile_token_fixed_123 (normal), admin_test_token_123 (admin), reporter_token_2/reporter_token_3 for extra reporters.",
+  "seed_data_creation": "Backend pytest created ~5 TEST_ topics (TEST_search_*, TEST_report_*, TEST_delmod_*). One was auto-hidden then admin-approved (restored). Another was admin-deleted. All non-destructive to seeded data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Community Phase 3 fully green. Backend regression file at /app/backend/tests/test_community_moderation.py — reuse. For admin UI testing, remember to set BOTH session_token cookie AND localStorage 'vs:token' key to the token value; also useAuth needs ~2-3s to resolve before admin-feedback-denied/admin-feedback-page renders (poll instead of single wait). /comunidad has polling that prevents wait_until='networkidle' — use wait_until='commit' + wait_for_selector [data-testid=community-page]."
+}
