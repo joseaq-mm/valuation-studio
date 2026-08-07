@@ -370,3 +370,8 @@ export const communityAdminModeration = (status = "open") =>
     api.get(`/community/admin/moderation`, { params: { status } }).then(r => r.data);
 export const communityResolveModeration = (id, action) =>
     api.post(`/community/admin/moderation/${id}`, { action }).then(r => r.data);
+// Fase 4 · IA de conclusiones
+export const communitySignalAI = () => api.get(`/community/ideas/signal/ai`).then(r => r.data);
+export const communityGenerateSignal = () => api.post(`/community/ideas/signal/generate`).then(r => r.data);
+export const feedbackAdminInsights = () => api.get(`/feedback/admin/insights`).then(r => r.data);
+export const feedbackGenerateInsights = () => api.post(`/feedback/admin/insights/generate`).then(r => r.data);

@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from storage import put_object, get_object, APP_NAME
+from services.llm import claude_json
 
 ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
 TYPES = {"bug", "suggestion", "feature"}
@@ -213,6 +214,79 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         if not r.matched_count:
             raise HTTPException(404, "Hilo no encontrado")
         return {"ok": True}
+
+    # ---------------- FASE 4 · Insights de negocio (IA, admin) ----------------
+    INSIGHTS_SYS = (
+        "Eres el jefe de producto de Valuation Studio (app de valoración de acciones con foro/comunidad). "
+        "Recibes las Sugerencias/feedback de usuarios (tipo Error/Idea/Mejora y estado) y una muestra de la actividad "
+        "de la comunidad (temas del foro e ideas de inversión). Escribe en español de España, conciso y accionable. "
+        "Agrupa señales repetidas en TEMAS (no repitas literalmente cada mensaje). Devuelve SOLO un JSON válido: "
+        '{"summary":"2-4 frases con el pulso general del producto",'
+        '"frictions":[{"title":"…","detail":"…","mentions":N}],'
+        '"top_requests":[{"title":"…","detail":"…","mentions":N}],'
+        '"frequent_bugs":[{"title":"…","detail":"…","mentions":N}],'
+        '"roadmap":[{"title":"…","priority":"P0|P1|P2","why":"por qué ahora"}]}. '
+        "Ordena roadmap por impacto (P0 primero). Máx 5 elementos por lista. Si no hay datos suficientes en alguna "
+        "categoría, devuélvela como lista vacía. No inventes: básate solo en lo recibido."
+    )
+
+    @router.get("/admin/insights")
+    async def admin_insights(user: Dict[str, Any] = Depends(auth_required)):
+        if not is_admin(user):
+            raise HTTPException(403, "Solo administrador")
+        doc = await db.feedback_ai.find_one({"id": "insights"}, {"_id": 0})
+        return {"insights": doc}
+
+    @router.post("/admin/insights/generate")
+    async def admin_insights_generate(user: Dict[str, Any] = Depends(auth_required)):
+        if not is_admin(user):
+            raise HTTPException(403, "Solo administrador")
+        # 1) Feedback (subject + tipo + estado + primer mensaje del usuario)
+        fb_lines = []
+        n_fb = 0
+        async for t in db.feedback_threads.find({"scope": "feedback"}, {"_id": 0}).sort("last_message_at", -1).limit(200):
+            msg = await db.feedback_messages.find_one(
+                {"thread_id": t["id"], "sender": "user"}, {"_id": 0, "text": 1}, sort=[("created_at", 1)])
+            txt = ((msg or {}).get("text") or t.get("subject") or "").strip().replace("\n", " ")[:280]
+            fb_lines.append(f"- [{t.get('type')}·{t.get('status')}] {txt}")
+            n_fb += 1
+        # 2) Comunidad (temas del foro + ideas)
+        com_lines = []
+        n_com = 0
+        async for c in db.community_topics.find(
+            {"scope": {"$in": ["general", "idea"]}, "is_removed": {"$ne": True}, "hidden": {"$ne": True}},
+            {"_id": 0, "scope": 1, "title": 1, "body": 1, "ticker": 1, "stance": 1, "reply_count": 1},
+        ).sort("last_activity_at", -1).limit(120):
+            tag = "idea" if c.get("scope") == "idea" else "foro"
+            tk = f" {c.get('ticker')}({c.get('stance')})" if c.get("scope") == "idea" else ""
+            body = (c.get("body") or "").strip().replace("\n", " ")[:160]
+            com_lines.append(f"- [{tag}{tk}] {(c.get('title') or '')[:120]} — {body}")
+            n_com += 1
+        if not fb_lines and not com_lines:
+            raise HTTPException(400, "Aún no hay feedback ni actividad de comunidad para analizar")
+        prompt = (
+            "SUGERENCIAS/FEEDBACK DE USUARIOS:\n" + ("\n".join(fb_lines) or "(ninguna)") +
+            "\n\nACTIVIDAD DE LA COMUNIDAD (foro + ideas):\n" + ("\n".join(com_lines) or "(ninguna)")
+        )
+        try:
+            data = await claude_json(INSIGHTS_SYS, prompt, timeout=80)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"admin_insights IA falló: {e}")
+            raise HTTPException(502, "El análisis por IA no está disponible ahora mismo. Inténtalo de nuevo.")
+        doc = {
+            "id": "insights", "generated_at": _now(),
+            "generated_by": user.get("name") or user.get("email"),
+            "sources": {"feedback": n_fb, "community": n_com},
+            "summary": data.get("summary") or "",
+            "frictions": data.get("frictions") or [],
+            "top_requests": data.get("top_requests") or [],
+            "frequent_bugs": data.get("frequent_bugs") or [],
+            "roadmap": data.get("roadmap") or [],
+        }
+        await db.feedback_ai.update_one({"id": "insights"}, {"$set": doc}, upsert=True)
+        doc.pop("_id", None)
+        return {"insights": doc}
 
     # ---------------- Surveys ----------------
     @router.post("/surveys")

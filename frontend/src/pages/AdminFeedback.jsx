@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Loader2, Send, Bug, Lightbulb, Wand2, Plus, X, ShieldCheck, BarChart3, Power, Flag, Check, Trash2, Bot } from "lucide-react";
+import { Search, Loader2, Send, Bug, Lightbulb, Wand2, Plus, X, ShieldCheck, BarChart3, Power, Flag, Check, Trash2, Bot, Sparkles, RefreshCw, AlertTriangle, Rocket, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import {
     feedbackAdminThreads, feedbackGetThread, feedbackReply, feedbackScreenshot,
     feedbackAdminUpdateStatus, feedbackSurveys, feedbackCreateSurvey, feedbackToggleSurvey, feedbackUnread,
     communityAdminModeration, communityResolveModeration,
+    feedbackAdminInsights, feedbackGenerateInsights,
 } from "@/lib/api";
 
 const TYPE_META = {
@@ -57,14 +58,103 @@ function AdminInner({ isAdmin, navigate }) {
                     <div className="overline text-[#4A4A4A] mt-1">Sugerencias, encuestas y moderación</div>
                 </div>
             </div>
-            <div className="flex border border-black mb-5 max-w-md">
-                {[["feedback", "Sugerencias y encuestas"], ["moderation", "Moderación"]].map(([k, l]) => (
+            <div className="flex border border-black mb-5 max-w-2xl">
+                {[["feedback", "Sugerencias y encuestas"], ["moderation", "Moderación"], ["insights", "Insights IA"]].map(([k, l]) => (
                     <button key={k} onClick={() => setTab(k)}
                         className={`flex-1 py-2.5 text-xs uppercase tracking-[0.12em] font-semibold ${tab === k ? "bg-black text-[#FDF1E6]" : "hover:bg-black/5"}`}
                         data-testid={`admin-tab-${k}`}>{l}</button>
                 ))}
             </div>
-            {tab === "feedback" ? (<><SurveysAdmin /><ThreadsAdmin /></>) : <ModerationQueue />}
+            {tab === "feedback" ? (<><SurveysAdmin /><ThreadsAdmin /></>)
+                : tab === "moderation" ? <ModerationQueue />
+                    : <InsightsAdmin />}
+        </div>
+    );
+}
+
+function InsightsAdmin() {
+    const [ins, setIns] = useState(undefined); // undefined=loading, null=none
+    const [gen, setGen] = useState(false);
+
+    const load = useCallback(async () => {
+        try { const r = await feedbackAdminInsights(); setIns(r.insights || null); }
+        catch { setIns(null); }
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    const generate = async () => {
+        setGen(true);
+        try { const r = await feedbackGenerateInsights(); setIns(r.insights || null); toast.success("Insights de negocio actualizados"); }
+        catch (e) { toast.error(e?.response?.data?.detail || "No se pudo generar el análisis"); }
+        finally { setGen(false); }
+    };
+
+    const PRIO = { P0: "#B32A22", P1: "#C99700", P2: "#052049" };
+    const Section = ({ title, icon: Icon, items, color, testid }) => (
+        <div className="border border-black/15 bg-white p-3" data-testid={testid}>
+            <div className="flex items-center gap-2 mb-2" style={{ color }}><Icon size={16} /><span className="overline">{title}</span></div>
+            {(!items || !items.length) ? <div className="text-xs text-[#4A4A4A] italic">Sin señales relevantes.</div>
+                : <ul className="space-y-2">
+                    {items.map((it, i) => (
+                        <li key={i} className="text-sm">
+                            <div className="flex items-center gap-2">
+                                <span className="font-medium">{it.title}</span>
+                                {it.mentions != null && <span className="text-[10px] text-[#4A4A4A] border border-black/20 px-1.5 py-0.5">{it.mentions} menc.</span>}
+                            </div>
+                            {it.detail && <div className="text-xs text-[#4A4A4A] mt-0.5">{it.detail}</div>}
+                        </li>
+                    ))}
+                </ul>}
+        </div>
+    );
+
+    if (ins === undefined) return <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto" /></div>;
+    return (
+        <div data-testid="admin-insights">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <div>
+                    <div className="font-serif text-xl leading-none">Insights de negocio</div>
+                    <div className="overline text-[#4A4A4A] mt-1">IA sobre sugerencias + actividad de la comunidad</div>
+                </div>
+                <button onClick={generate} disabled={gen}
+                    className="btn-primary !px-3 !py-1.5 flex items-center gap-1.5 text-xs disabled:opacity-50" data-testid="insights-generate-btn">
+                    {gen ? <Loader2 size={14} className="animate-spin" /> : (ins ? <RefreshCw size={14} /> : <Sparkles size={14} />)}
+                    {ins ? "Actualizar" : "Generar insights"}
+                </button>
+            </div>
+            {!ins ? (
+                <div className="border border-black/15 bg-white p-8 text-center" data-testid="insights-empty">
+                    <Sparkles className="mx-auto mb-2 opacity-30" size={32} />
+                    <p className="text-sm text-[#4A4A4A]">Aún no has generado insights. Pulsa «Generar insights» para que la IA resuma el feedback y la comunidad.</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    <div className="border border-black bg-[#FDF1E6]/60 p-3">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="overline flex items-center gap-1.5 text-[#052049]"><Sparkles size={13} /> Pulso del producto</span>
+                            <span className="text-[10px] text-[#4A4A4A]" data-testid="insights-updated">Actualizado {fmtDate(ins.generated_at)} · {ins.sources?.feedback || 0} sugerencias · {ins.sources?.community || 0} de comunidad</span>
+                        </div>
+                        <p className="text-sm text-[#2A2A2A]" data-testid="insights-summary">{ins.summary}</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <Section title="Fricciones repetidas" icon={AlertTriangle} items={ins.frictions} color="#B32A22" testid="insights-frictions" />
+                        <Section title="Más pedidas" icon={Lightbulb} items={ins.top_requests} color="#C99700" testid="insights-requests" />
+                        <Section title="Bugs frecuentes" icon={Bug} items={ins.frequent_bugs} color="#052049" testid="insights-bugs" />
+                    </div>
+                    <div className="border border-black/15 bg-white p-3" data-testid="insights-roadmap">
+                        <div className="flex items-center gap-2 mb-2 text-[#1D7044]"><Rocket size={16} /><span className="overline">Mini-roadmap priorizado</span></div>
+                        {(!ins.roadmap || !ins.roadmap.length) ? <div className="text-xs text-[#4A4A4A] italic">Sin propuestas.</div>
+                            : <ol className="space-y-2">
+                                {ins.roadmap.map((r, i) => (
+                                    <li key={i} className="flex items-start gap-2 text-sm" data-testid={`roadmap-item-${i}`}>
+                                        <span className="text-[10px] font-bold text-white px-1.5 py-0.5 mt-0.5 shrink-0" style={{ background: PRIO[r.priority] || "#4A4A4A" }}>{r.priority}</span>
+                                        <div><span className="font-medium">{r.title}</span>{r.why && <div className="text-xs text-[#4A4A4A] mt-0.5">{r.why}</div>}</div>
+                                    </li>
+                                ))}
+                            </ol>}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

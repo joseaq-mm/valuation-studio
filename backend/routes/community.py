@@ -16,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from services.llm import claude_json
+
 logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
@@ -679,5 +681,98 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
                 a["combined"] = m.get("combined")
         rows = sorted(agg.values(), key=lambda x: (x["ideas"], x["engagement"]), reverse=True)
         return {"signal": rows[:12]}
+
+    # ============ FASE 4 · SEÑAL DE INVERSIÓN IA (comunidad) ============
+    async def _signal_agg() -> List[Dict[str, Any]]:
+        """Agrega ideas por ticker con posturas, engagement y foto de valoración."""
+        agg: Dict[str, Dict[str, Any]] = {}
+        async for t in db.community_topics.find(
+            {"scope": "idea", "is_removed": {"$ne": True}, "hidden": {"$ne": True}},
+            {"_id": 0, "ticker": 1, "stance": 1, "metrics": 1, "reply_count": 1,
+             "liked_by": 1, "title": 1, "target_price": 1},
+        ):
+            tk = (t.get("ticker") or "").upper().strip()
+            if not tk:
+                continue
+            a = agg.setdefault(tk, {"ticker": tk, "ideas": 0, "bull": 0, "bear": 0, "neutral": 0,
+                                    "engagement": 0, "metrics": None, "titles": [], "targets": []})
+            a["ideas"] += 1
+            st = t.get("stance") or "neutral"
+            a[st if st in ("bull", "bear", "neutral") else "neutral"] += 1
+            a["engagement"] += (t.get("reply_count") or 0) + len(t.get("liked_by") or [])
+            if a["metrics"] is None and isinstance(t.get("metrics"), dict) and t["metrics"]:
+                a["metrics"] = t["metrics"]
+            if t.get("title"):
+                a["titles"].append(t["title"][:120])
+            if isinstance(t.get("target_price"), (int, float)):
+                a["targets"].append(t["target_price"])
+        return sorted(agg.values(), key=lambda x: (x["ideas"], x["engagement"]), reverse=True)
+
+    SIGNAL_SYS = (
+        "Eres un analista de inversión senior de Valuation Studio. Escribes en español de España, con rigor y sin "
+        "recomendaciones de compra/venta directas (solo análisis). Para cada acción recibes: el consenso de la comunidad "
+        "(nº de ideas alcistas/bajistas/neutrales y engagement) y la foto de valoración propia de la app: precio actual, "
+        "POC (precio objetivo de compra), POV (precio objetivo de venta), Ratio Compra % y Ratio Venta % (positivos = "
+        "infravalorada según ese objetivo), y si existe, métricas cualitativas (Score, TAM, Coef KPI, combinados %). "
+        "Tu trabajo es CONTRASTAR el sentimiento de la comunidad con la valoración cuantitativa. Un veredicto 'mixed' es "
+        "correcto cuando comunidad y valoración discrepan (p.ej. comunidad muy alcista pero POC/POV indican que ya está cara). "
+        "Devuelve SOLO un JSON válido: "
+        '{"items":[{"ticker":"XXX","verdict":"bull|bear|mixed","confidence":"alta|media|baja",'
+        '"summary":"2-3 frases en español que contrastan comunidad vs valoración","alignment":"comunidad y valoración alineadas|en conflicto|neutral"}]}. '
+        "Incluye SOLO los tickers recibidos. No inventes datos que no estén en el contexto."
+    )
+
+    def _fmt_metrics_for_ai(m: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(m, dict) or not m:
+            return "sin foto de valoración"
+        def g(k):
+            v = m.get(k)
+            return f"{v}" if isinstance(v, (int, float)) else "—"
+        base = (f"precio={g('current_price')}, POC={g('poc')}, POV={g('pov')}, "
+                f"RatioCompra%={g('ratio_compra_pct')}, RatioVenta%={g('ratio_venta_pct')}")
+        if m.get("has_qual"):
+            base += (f"; Score={g('score')}, TAM={g('tam_score')}, CoefKPI={g('kpi_coef')}, "
+                     f"CombCual%={g('combined_qual')}, CombTotal%={g('combined')}")
+        return base
+
+    @router.get("/ideas/signal/ai")
+    async def signal_ai(user: Dict[str, Any] = Depends(auth_required)):
+        doc = await db.community_ai.find_one({"id": "signal"}, {"_id": 0})
+        return {"ai": doc}
+
+    @router.post("/ideas/signal/generate")
+    async def signal_generate(user: Dict[str, Any] = Depends(auth_required)):
+        rows = (await _signal_agg())[:10]
+        if not rows:
+            raise HTTPException(400, "Aún no hay ideas para analizar")
+        lines = []
+        for r in rows:
+            avg_target = round(sum(r["targets"]) / len(r["targets"]), 2) if r["targets"] else None
+            lines.append(
+                f"- {r['ticker']}: comunidad {r['bull']}▲/{r['bear']}▼/{r['neutral']}■ ({r['ideas']} ideas, "
+                f"engagement {r['engagement']}). Objetivo medio comunidad: {avg_target if avg_target is not None else '—'}. "
+                f"Valoración app: {_fmt_metrics_for_ai(r['metrics'])}."
+            )
+        prompt = "Analiza estas acciones y contrasta comunidad vs valoración:\n" + "\n".join(lines)
+        try:
+            data = await claude_json(SIGNAL_SYS, prompt, timeout=70)
+            ai_items = {i.get("ticker", "").upper(): i for i in (data.get("items") or []) if i.get("ticker")}
+        except Exception as e:
+            logger.warning(f"signal_generate IA falló: {e}")
+            raise HTTPException(502, "El análisis por IA no está disponible ahora mismo. Inténtalo de nuevo.")
+        items = []
+        for r in rows:
+            ai = ai_items.get(r["ticker"], {})
+            items.append({
+                "ticker": r["ticker"], "ideas": r["ideas"], "bull": r["bull"], "bear": r["bear"],
+                "neutral": r["neutral"], "engagement": r["engagement"], "metrics": r["metrics"],
+                "verdict": ai.get("verdict") or "mixed", "confidence": ai.get("confidence") or "media",
+                "summary": ai.get("summary") or "", "alignment": ai.get("alignment") or "neutral",
+            })
+        doc = {"id": "signal", "generated_at": _now(),
+               "generated_by": user.get("name") or user.get("email"), "items": items}
+        await db.community_ai.update_one({"id": "signal"}, {"$set": doc}, upsert=True)
+        doc.pop("_id", None)
+        return {"ai": doc}
 
     return router

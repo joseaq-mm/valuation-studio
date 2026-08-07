@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, Send, TrendingUp, TrendingDown, Minus, ThumbsUp, MessageCircle, BarChart3, Search } from "lucide-react";
+import { Loader2, Plus, Send, TrendingUp, TrendingDown, Minus, ThumbsUp, MessageCircle, BarChart3, Search, Sparkles, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import {
     communityTopics, communityCreateTopic, communityLikeTopic, communityIdeasSignal, thesisTickerMetrics,
+    communitySignalAI, communityGenerateSignal,
 } from "@/lib/api";
 import { TopicView } from "./Forum";
 import ReportButton from "./ReportButton";
@@ -11,6 +12,11 @@ const STANCES = {
     bull: { label: "Alcista", icon: TrendingUp, color: "#1D7044" },
     bear: { label: "Bajista", icon: TrendingDown, color: "#B32A22" },
     neutral: { label: "Neutral", icon: Minus, color: "#B8860B" },
+};
+const VERDICTS = {
+    bull: { label: "Alcista", color: "#1D7044", bg: "#1D704415" },
+    bear: { label: "Bajista", color: "#B32A22", bg: "#B32A2215" },
+    mixed: { label: "Mixto", color: "#B8860B", bg: "#B8860B15" },
 };
 
 function fmtDate(iso) {
@@ -77,15 +83,27 @@ export default function Ideas({ onChanged }) {
 function IdeasFeed({ onOpen, onChanged }) {
     const [ideas, setIdeas] = useState(null);
     const [signal, setSignal] = useState([]);
+    const [ai, setAi] = useState(null);
+    const [genLoading, setGenLoading] = useState(false);
     const [composing, setComposing] = useState(false);
 
     const load = useCallback(async () => {
         try {
-            const [r, s] = await Promise.all([communityTopics("idea"), communityIdeasSignal()]);
-            setIdeas(r.topics || []); setSignal(s.signal || []);
+            const [r, s, a] = await Promise.all([communityTopics("idea"), communityIdeasSignal(), communitySignalAI()]);
+            setIdeas(r.topics || []); setSignal(s.signal || []); setAi(a.ai || null);
         } catch { setIdeas([]); }
     }, []);
     useEffect(() => { load(); }, [load]);
+
+    const generateAI = async () => {
+        setGenLoading(true);
+        try {
+            const r = await communityGenerateSignal();
+            setAi(r.ai || null);
+            toast.success("Análisis de la comunidad actualizado");
+        } catch (e) { toast.error(apiErr(e, "No se pudo generar el análisis")); }
+        finally { setGenLoading(false); }
+    };
 
     const like = async (t) => {
         try { const r = await communityLikeTopic(t.id); setIdeas((xs) => xs.map((x) => x.id === t.id ? { ...x, liked_by_me: r.liked, like_count: r.like_count } : x)); }
@@ -96,7 +114,14 @@ function IdeasFeed({ onOpen, onChanged }) {
         <div data-testid="community-ideas">
             {signal.length > 0 && (
                 <div className="border border-black bg-white p-3 mb-4" data-testid="ideas-signal">
-                    <div className="flex items-center gap-2 mb-2"><BarChart3 size={16} /><span className="overline">Señal de la comunidad · más comentadas</span></div>
+                    <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                        <span className="overline flex items-center gap-2"><BarChart3 size={16} /> Señal de la comunidad · más comentadas</span>
+                        <button onClick={generateAI} disabled={genLoading}
+                            className="btn-primary !px-3 !py-1 flex items-center gap-1.5 text-xs disabled:opacity-50" data-testid="signal-generate-btn">
+                            {genLoading ? <Loader2 size={13} className="animate-spin" /> : (ai ? <RefreshCw size={13} /> : <Sparkles size={13} />)}
+                            {ai ? "Actualizar análisis IA" : "Generar análisis IA"}
+                        </button>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         {signal.map((s) => (
                             <div key={s.ticker} className="border border-black/20 px-2 py-1 flex items-center gap-2 text-xs" data-testid={`signal-${s.ticker}`}>
@@ -110,6 +135,30 @@ function IdeasFeed({ onOpen, onChanged }) {
                             </div>
                         ))}
                     </div>
+                    {ai && Array.isArray(ai.items) && ai.items.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-black/10" data-testid="signal-ai">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="overline flex items-center gap-1.5 text-[#052049]"><Sparkles size={13} /> Análisis IA · comunidad vs. tu valoración</span>
+                                <span className="text-[10px] text-[#4A4A4A]" data-testid="signal-ai-updated">Actualizado {fmtDate(ai.generated_at)}</span>
+                            </div>
+                            <div className="space-y-2">
+                                {ai.items.map((it) => {
+                                    const v = VERDICTS[it.verdict] || VERDICTS.mixed;
+                                    return (
+                                        <div key={it.ticker} className="border border-black/15 p-2.5" style={{ background: v.bg }} data-testid={`signal-ai-${it.ticker}`}>
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <span className="font-mono font-bold text-sm">{it.ticker}</span>
+                                                <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 border" style={{ color: v.color, borderColor: v.color }} data-testid={`verdict-${it.ticker}`}>{v.label}</span>
+                                                {it.confidence && <span className="text-[10px] text-[#4A4A4A] uppercase">confianza {it.confidence}</span>}
+                                                <span className="text-[10px] text-[#4A4A4A]">▲{it.bull}/▼{it.bear}/■{it.neutral}</span>
+                                            </div>
+                                            <p className="text-xs text-[#2A2A2A] leading-snug">{it.summary}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

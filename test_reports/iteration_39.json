@@ -1,0 +1,21 @@
+{
+  "summary": "FASE 4 (IA de conclusiones): Verified Señal IA de comunidad + Insights IA admin. Backend 7/7 pytest pass. Frontend rendering perfect: Signal AI shows AAPL card with 'Mixto' badge, Spanish contrast summary (community 4 bull vs valoración cara: RatioCompra +5.6%, RatioVenta +40%), timestamp, and 'Actualizar análisis IA' button. Admin Insights renders full layout: pulse summary, 3 sections (Fricciones/Más pedidas/Bugs frecuentes) with mentions badges, and mini-roadmap with 3 items (P0/P0/P2). Permissions correct: non-admin gets admin-feedback-denied (no Insights tab visible); non-admin gets 403 on both admin insights endpoints. Non-admin CAN call POST /ideas/signal/generate (endpoint is not admin-gated, which matches design intent).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase4_ai_insights.py",
+    "/app/test_reports/pytest/fase4_ai.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Ideas.jsx signal panel and AdminFeedback InsightsAdmin work as designed. UI in Spanish, badges and testids all present.",
+    "Signal generate is not gated to admin (any authenticated user can regenerate). Not a bug (matches spec — community feature), but worth noting for future abuse control if rate-limiting is desired."
+  ],
+  "updated_files": ["/app/backend/tests/test_fase4_ai_insights.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "user: test_profile_token_fixed_123 · admin: admin_test_token_123",
+  "seed_data_creation": "None (existing cache was populated).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both AI caches are populated (db.community_ai id=signal; db.feedback_ai id=insights). Regeneration burns LLM credits — only regenerate if absolutely necessary. Signal has AAPL only right now (4 ideas). Non-admin CAN hit POST /community/ideas/signal/generate (not admin-gated); admin endpoints /feedback/admin/insights[/generate] return 403 for non-admin as required."
+}
