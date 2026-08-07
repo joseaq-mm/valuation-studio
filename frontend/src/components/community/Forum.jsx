@@ -5,6 +5,7 @@ import {
     communityTopics, communityCreateTopic, communityGetTopic, communityReply,
     communityLikeTopic, communityLikeReply, communityDeleteTopic, communityDeleteReply,
 } from "@/lib/api";
+import ReportButton from "./ReportButton";
 
 function fmtDate(iso) {
     try { return new Date(iso).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
@@ -99,6 +100,7 @@ function TopicFeed({ scope, groupId, onOpen, onChanged }) {
                                     <ThumbsUp size={13} /> {t.like_count}
                                 </button>
                                 <span className="flex items-center gap-1"><MessageCircle size={13} /> {t.reply_count}</span>
+                                <ReportButton targetType="topic" targetId={t.id} />
                             </div>
                         </div>
                     ))}
@@ -169,6 +171,7 @@ export function TopicView({ id, onBack, onChanged, header = null }) {
                                 <ThumbsUp size={12} /> {r.like_count}
                             </button>
                             {r.can_delete && <button onClick={() => delReply(r)} className="text-[#B32A22]" data-testid={`reply-delete-${r.id}`}><Trash2 size={12} /></button>}
+                            <ReportButton targetType="reply" targetId={r.id} size={12} />
                         </div>
                     </div>
                 ))}

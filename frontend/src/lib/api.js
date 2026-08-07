@@ -363,3 +363,10 @@ export const communityNotifications = () => api.get(`/community/notifications`).
 export const communityMarkNotifsRead = () => api.post(`/community/notifications/read`).then(r => r.data);
 export const communityIdeasSignal = () => api.get(`/community/ideas/signal`).then(r => r.data);
 export const thesisTickerMetrics = (ticker) => api.get(`/thesis/ticker-metrics/${ticker}`).then(r => r.data);
+export const communitySearch = (q) => api.get(`/community/search`, { params: { q } }).then(r => r.data);
+export const communityReport = (target_type, target_id, reason = null) =>
+    api.post(`/community/report`, { target_type, target_id, reason }).then(r => r.data);
+export const communityAdminModeration = (status = "open") =>
+    api.get(`/community/admin/moderation`, { params: { status } }).then(r => r.data);
+export const communityResolveModeration = (id, action) =>
+    api.post(`/community/admin/moderation/${id}`, { action }).then(r => r.data);

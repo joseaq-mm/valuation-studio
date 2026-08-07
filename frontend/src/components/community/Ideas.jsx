@@ -5,6 +5,7 @@ import {
     communityTopics, communityCreateTopic, communityLikeTopic, communityIdeasSignal, thesisTickerMetrics,
 } from "@/lib/api";
 import { TopicView } from "./Forum";
+import ReportButton from "./ReportButton";
 
 const STANCES = {
     bull: { label: "Alcista", icon: TrendingUp, color: "#1D7044" },
@@ -145,6 +146,7 @@ function IdeasFeed({ onOpen, onChanged }) {
                                         <ThumbsUp size={13} /> {t.like_count}
                                     </button>
                                     <span className="flex items-center gap-1"><MessageCircle size={13} /> {t.reply_count}</span>
+                                    <ReportButton targetType="topic" targetId={t.id} />
                                 </div>
                             </div>
                         );

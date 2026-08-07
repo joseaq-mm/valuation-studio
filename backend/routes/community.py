@@ -129,6 +129,45 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         if not ok:
             raise HTTPException(422, reason or "Contenido no permitido por las normas de la comunidad.")
 
+    IDEA_ASSESS_SYS = (
+        "Eres un supervisor de una comunidad de inversión en español. Evalúa si una IDEA de inversión "
+        "muestra señales de MANIPULACIÓN o mala praxis (NO si es ofensiva). Señales: presión/urgencia para "
+        "comprar o vender ya, promesas de rentabilidad garantizada o 'x2/x10 seguro', objetivos de precio "
+        "sin fundamento, lenguaje de pump-and-dump. Una tesis argumentada y educada NO es sospechosa aunque sea muy alcista. "
+        'Devuelve SOLO JSON: {"suspicious": true|false, "reason": "motivo breve en español"}.'
+    )
+
+    async def assess_idea(title, body, ticker, stance, target_price, metrics):
+        """Anti-manipulación: NO bloquea; devuelve (suspicious, reason) para la cola del Admin.
+        Combina reglas (objetivo que contradice fuertemente tus POC/POV) + intención por IA."""
+        reasons = []
+        m = metrics or {}
+        poc, pov = m.get("poc"), m.get("pov")
+        try:
+            tp = float(target_price) if target_price is not None else None
+        except Exception:
+            tp = None
+        if tp is not None:
+            if stance == "bull" and isinstance(pov, (int, float)) and pov > 0 and tp > pov * 1.4:
+                reasons.append(f"Objetivo ({tp}) muy por encima de tu Precio Objetivo de Venta/POV ({pov}).")
+            if stance == "bear" and isinstance(poc, (int, float)) and poc > 0 and tp < poc * 0.6:
+                reasons.append(f"Objetivo ({tp}) muy por debajo de tu Precio Objetivo de Compra/POC ({poc}).")
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            chat = LlmChat(
+                api_key=os.environ["EMERGENT_LLM_KEY"],
+                session_id=f"idea-{uuid.uuid4().hex[:8]}",
+                system_message=IDEA_ASSESS_SYS,
+            ).with_model("openai", "gpt-4.1-mini")
+            payload = f"Ticker: {ticker} · Postura: {stance} · Objetivo: {target_price}\nTítulo: {title}\n{body}"
+            resp = await asyncio.wait_for(chat.send_message(UserMessage(text=payload[:2000])), timeout=12)
+            data = json.loads(_strip_json(resp))
+            if data.get("suspicious"):
+                reasons.append(data.get("reason") or "Posible lenguaje de manipulación.")
+        except Exception as e:
+            logger.warning(f"assess_idea fail-open: {e}")
+        return (len(reasons) > 0), " ".join(reasons)
+
     # ---------------- Serializers ----------------
     def topic_pub(t, uid):
         liked = t.get("liked_by") or []
@@ -173,7 +212,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     @router.get("/topics")
     async def list_topics(scope: str = Query("general"), group_id: Optional[str] = Query(None),
                           sort: str = Query("recent"), user: Dict[str, Any] = Depends(auth_required)):
-        q = {"scope": scope, "is_removed": {"$ne": True}}
+        q = {"scope": scope, "is_removed": {"$ne": True}, "hidden": {"$ne": True}}
         if scope == "group":
             if not group_id:
                 raise HTTPException(400, "group_id requerido")
@@ -220,11 +259,24 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
                 "metrics": req.metrics or {},
             })
         await db.community_topics.insert_one(doc)
+        if req.scope == "idea":
+            try:
+                suspicious, reason = await assess_idea(doc["title"], doc["body"], doc["ticker"], doc["stance"], doc.get("target_price"), doc.get("metrics"))
+                if suspicious:
+                    await db.community_mod.insert_one({
+                        "id": uuid.uuid4().hex, "kind": "ai", "source": "ai",
+                        "target_type": "topic", "target_id": tid, "ticker": doc["ticker"],
+                        "preview": doc["title"], "author_name": doc["author_name"],
+                        "reporters": [], "reason": reason or "Posible manipulación de mercado.",
+                        "status": "open", "created_at": now,
+                    })
+            except Exception as e:
+                logger.warning(f"idea anti-manip flag failed: {e}")
         return {"id": tid}
 
     @router.get("/topics/{tid}")
     async def get_topic(tid: str, user: Dict[str, Any] = Depends(auth_required)):
-        t = await db.community_topics.find_one({"id": tid, "is_removed": {"$ne": True}}, {"_id": 0})
+        t = await db.community_topics.find_one({"id": tid, "is_removed": {"$ne": True}, "hidden": {"$ne": True}}, {"_id": 0})
         if not t:
             raise HTTPException(404, "Tema no encontrado")
         if t.get("scope") == "group":
@@ -232,7 +284,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
             if not _can_view_group(g, user):
                 raise HTTPException(403, "Grupo privado")
         replies = [reply_pub(r, user["user_id"]) async for r in
-                   db.community_replies.find({"topic_id": tid, "is_removed": {"$ne": True}}, {"_id": 0}).sort("created_at", 1)]
+                   db.community_replies.find({"topic_id": tid, "is_removed": {"$ne": True}, "hidden": {"$ne": True}}, {"_id": 0}).sort("created_at", 1)]
         return {"topic": topic_pub(t, user["user_id"]), "replies": replies}
 
     @router.post("/topics/{tid}/replies")
@@ -462,7 +514,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         async for d in db.community_dm_threads.find({"participants": uid}, {"_id": 0, "unread": 1}):
             dm += (d.get("unread") or {}).get(uid, 0)
         notif = await db.community_notifications.count_documents({"user_id": uid, "read": False})
-        return {"dm": dm, "notifications": notif, "total": dm + notif}
+        mod_open = 0
+        if is_admin(user):
+            mod_open = await db.community_mod.count_documents({"status": "open"})
+        return {"dm": dm, "notifications": notif, "mod_open": mod_open, "total": dm + notif}
 
     @router.get("/notifications")
     async def notifications(user: Dict[str, Any] = Depends(auth_required)):
@@ -474,6 +529,132 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
     @router.post("/notifications/read")
     async def mark_read(user: Dict[str, Any] = Depends(auth_required)):
         await db.community_notifications.update_many({"user_id": user["user_id"], "read": False}, {"$set": {"read": True}})
+        return {"ok": True}
+
+    # ================= SEARCH (Mongo text index) =================
+    @router.get("/search")
+    async def search(q: str = Query(..., min_length=2), user: Dict[str, Any] = Depends(auth_required)):
+        uid = user["user_id"]
+        base = {"$text": {"$search": q}, "is_removed": {"$ne": True}, "hidden": {"$ne": True}}
+        # visible group ids for this user
+        vis_groups = set()
+        async for g in db.community_groups.find({}, {"_id": 0, "id": 1, "visibility": 1, "members": 1}):
+            if g.get("visibility") == "public" or is_admin(user) or uid in (g.get("members") or []):
+                vis_groups.add(g["id"])
+
+        def _visible(t):
+            return t.get("scope") != "group" or t.get("group_id") in vis_groups
+
+        topics, ideas = [], []
+        try:
+            cur = db.community_topics.find(base, {"_id": 0, "score": {"$meta": "textScore"}}).sort([("score", {"$meta": "textScore"})]).limit(40)
+            async for t in cur:
+                if not _visible(t):
+                    continue
+                item = {"id": t["id"], "scope": t.get("scope"), "title": t.get("title"),
+                        "snippet": (t.get("body") or "")[:140], "author_name": t.get("author_name"),
+                        "ticker": t.get("ticker"), "created_at": t.get("created_at")}
+                (ideas if t.get("scope") == "idea" else topics).append(item)
+        except Exception as e:
+            logger.warning(f"search topics failed: {e}")
+
+        replies = []
+        try:
+            cur = db.community_replies.find({"$text": {"$search": q}, "is_removed": {"$ne": True}, "hidden": {"$ne": True}},
+                                            {"_id": 0, "score": {"$meta": "textScore"}}).sort([("score", {"$meta": "textScore"})]).limit(30)
+            async for r in cur:
+                parent = await db.community_topics.find_one({"id": r["topic_id"], "is_removed": {"$ne": True}, "hidden": {"$ne": True}},
+                                                            {"_id": 0, "id": 1, "title": 1, "scope": 1, "group_id": 1})
+                if not parent or not _visible(parent):
+                    continue
+                replies.append({"id": r["id"], "topic_id": parent["id"], "topic_title": parent.get("title"),
+                                "scope": parent.get("scope"), "snippet": (r.get("body") or "")[:140],
+                                "author_name": r.get("author_name"), "created_at": r.get("created_at")})
+        except Exception as e:
+            logger.warning(f"search replies failed: {e}")
+
+        return {"topics": topics[:20], "ideas": ideas[:20], "replies": replies[:20]}
+
+    # ================= REPORTS =================
+    class ReportReq(BaseModel):
+        target_type: str            # topic | reply
+        target_id: str
+        reason: Optional[str] = None
+
+    @router.post("/report")
+    async def report(req: ReportReq, user: Dict[str, Any] = Depends(auth_required)):
+        if req.target_type not in ("topic", "reply"):
+            raise HTTPException(400, "target_type no válido")
+        coll = "community_topics" if req.target_type == "topic" else "community_replies"
+        target = await db[coll].find_one({"id": req.target_id, "is_removed": {"$ne": True}}, {"_id": 0})
+        if not target:
+            raise HTTPException(404, "Contenido no encontrado")
+        uid = user["user_id"]
+        existing = await db.community_mod.find_one({"kind": "report", "target_type": req.target_type, "target_id": req.target_id, "status": "open"}, {"_id": 0})
+        if existing:
+            if uid in (existing.get("reporters") or []):
+                return {"ok": True, "already": True}
+            await db.community_mod.update_one({"id": existing["id"]}, {"$addToSet": {"reporters": uid}})
+            reporters = list(set((existing.get("reporters") or []) + [uid]))
+        else:
+            preview = target.get("title") or (target.get("body") or "")[:80]
+            await db.community_mod.insert_one({
+                "id": uuid.uuid4().hex, "kind": "report", "source": "user",
+                "target_type": req.target_type, "target_id": req.target_id,
+                "ticker": target.get("ticker"), "preview": preview, "author_name": target.get("author_name"),
+                "reporters": [uid], "reason": (req.reason or "").strip()[:300] or "Reporte de la comunidad",
+                "status": "open", "created_at": _now(),
+            })
+            reporters = [uid]
+        # Auto-hide once 3 distinct users report it.
+        if len(reporters) >= 3:
+            await db[coll].update_one({"id": req.target_id}, {"$set": {"hidden": True}})
+        return {"ok": True, "reports": len(reporters)}
+
+    # ================= ADMIN MODERATION QUEUE =================
+    @router.get("/admin/moderation")
+    async def admin_moderation(status: str = Query("open"), user: Dict[str, Any] = Depends(auth_required)):
+        if not is_admin(user):
+            raise HTTPException(403, "Solo administrador")
+        q = {} if status == "all" else {"status": status}
+        out = []
+        async for m in db.community_mod.find(q, {"_id": 0}).sort("created_at", -1).limit(100):
+            coll = "community_topics" if m.get("target_type") == "topic" else "community_replies"
+            tgt = await db[coll].find_one({"id": m.get("target_id")}, {"_id": 0})
+            out.append({
+                "id": m["id"], "kind": m.get("kind"), "source": m.get("source"),
+                "target_type": m.get("target_type"), "target_id": m.get("target_id"),
+                "ticker": m.get("ticker"), "preview": m.get("preview"), "author_name": m.get("author_name"),
+                "reason": m.get("reason"), "reporters": len(m.get("reporters") or []),
+                "status": m.get("status"), "created_at": m.get("created_at"),
+                "content": (tgt or {}).get("title") or (tgt or {}).get("body"),
+                "content_body": (tgt or {}).get("body"),
+                "removed": bool((tgt or {}).get("is_removed")), "hidden": bool((tgt or {}).get("hidden")),
+            })
+        return {"items": out}
+
+    class ModAction(BaseModel):
+        action: str                 # approve | delete
+
+    @router.post("/admin/moderation/{mid}")
+    async def resolve_moderation(mid: str, req: ModAction, user: Dict[str, Any] = Depends(auth_required)):
+        if not is_admin(user):
+            raise HTTPException(403, "Solo administrador")
+        m = await db.community_mod.find_one({"id": mid}, {"_id": 0})
+        if not m:
+            raise HTTPException(404, "No encontrado")
+        coll = "community_topics" if m.get("target_type") == "topic" else "community_replies"
+        if req.action == "delete":
+            await db[coll].update_one({"id": m.get("target_id")}, {"$set": {"is_removed": True}})
+            if m.get("target_type") == "reply":
+                r = await db.community_replies.find_one({"id": m.get("target_id")}, {"_id": 0, "topic_id": 1})
+                if r:
+                    await db.community_topics.update_one({"id": r["topic_id"]}, {"$inc": {"reply_count": -1}})
+        elif req.action == "approve":
+            await db[coll].update_one({"id": m.get("target_id")}, {"$set": {"hidden": False}})
+        else:
+            raise HTTPException(400, "Acción no válida")
+        await db.community_mod.update_one({"id": mid}, {"$set": {"status": "resolved", "resolved_at": _now()}})
         return {"ok": True}
 
     @router.get("/ideas/signal")

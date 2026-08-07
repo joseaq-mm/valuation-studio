@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Loader2, Send, Bug, Lightbulb, Wand2, Plus, X, ShieldCheck, BarChart3, Power } from "lucide-react";
+import { Search, Loader2, Send, Bug, Lightbulb, Wand2, Plus, X, ShieldCheck, BarChart3, Power, Flag, Check, Trash2, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import {
     feedbackAdminThreads, feedbackGetThread, feedbackReply, feedbackScreenshot,
     feedbackAdminUpdateStatus, feedbackSurveys, feedbackCreateSurvey, feedbackToggleSurvey, feedbackUnread,
+    communityAdminModeration, communityResolveModeration,
 } from "@/lib/api";
 
 const TYPE_META = {
@@ -33,6 +34,11 @@ export default function AdminFeedback() {
     }, [user, loading]);
 
     if (loading || isAdmin === null) return <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto" /></div>;
+    return <AdminInner isAdmin={isAdmin} navigate={navigate} />;
+}
+
+function AdminInner({ isAdmin, navigate }) {
+    const [tab, setTab] = useState("feedback");
     if (!isAdmin) return (
         <div className="py-20 text-center" data-testid="admin-feedback-denied">
             <ShieldCheck className="mx-auto mb-3 opacity-30" size={40} />
@@ -47,12 +53,73 @@ export default function AdminFeedback() {
             <div className="flex items-center gap-3 mb-6">
                 <ShieldCheck size={22} />
                 <div>
-                    <h1 className="font-serif text-3xl leading-none">Sugerencias · Administración</h1>
-                    <div className="overline text-[#4A4A4A] mt-1">Gestiona reportes, responde a usuarios y lanza encuestas</div>
+                    <h1 className="font-serif text-3xl leading-none">Comunidad · Administración</h1>
+                    <div className="overline text-[#4A4A4A] mt-1">Sugerencias, encuestas y moderación</div>
                 </div>
             </div>
-            <SurveysAdmin />
-            <ThreadsAdmin />
+            <div className="flex border border-black mb-5 max-w-md">
+                {[["feedback", "Sugerencias y encuestas"], ["moderation", "Moderación"]].map(([k, l]) => (
+                    <button key={k} onClick={() => setTab(k)}
+                        className={`flex-1 py-2.5 text-xs uppercase tracking-[0.12em] font-semibold ${tab === k ? "bg-black text-[#FDF1E6]" : "hover:bg-black/5"}`}
+                        data-testid={`admin-tab-${k}`}>{l}</button>
+                ))}
+            </div>
+            {tab === "feedback" ? (<><SurveysAdmin /><ThreadsAdmin /></>) : <ModerationQueue />}
+        </div>
+    );
+}
+
+function ModerationQueue() {
+    const [items, setItems] = useState(null);
+    const [status, setStatus] = useState("open");
+
+    const load = useCallback(async () => {
+        try { const r = await communityAdminModeration(status); setItems(r.items || []); }
+        catch { setItems([]); }
+    }, [status]);
+    useEffect(() => { load(); }, [load]);
+
+    const act = async (id, action) => {
+        try { await communityResolveModeration(id, action); toast.success(action === "delete" ? "Contenido borrado" : "Aprobado (visible)"); load(); }
+        catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    };
+
+    return (
+        <div className="border border-black bg-white" data-testid="admin-moderation">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-black">
+                <div className="flex items-center gap-2"><Flag size={18} /><span className="font-semibold text-sm uppercase tracking-wide">Cola de moderación</span></div>
+                <select value={status} onChange={(e) => setStatus(e.target.value)} className="border border-black px-2 py-1 text-sm bg-white" data-testid="mod-status-filter">
+                    <option value="open">Abiertos</option>
+                    <option value="resolved">Resueltos</option>
+                    <option value="all">Todos</option>
+                </select>
+            </div>
+            {items === null ? <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto" /></div>
+                : !items.length ? <div className="p-8 text-center text-sm text-[#4A4A4A]" data-testid="mod-empty">Nada pendiente de moderar. 🎉</div>
+                : <div className="divide-y divide-black/10">
+                    {items.map((m) => (
+                        <div key={m.id} className="p-3" data-testid={`mod-item-${m.id}`}>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                {m.source === "ai"
+                                    ? <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 border border-[#052049] text-[#052049]"><Bot size={12} /> IA</span>
+                                    : <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 border border-[#B32A22] text-[#B32A22]"><Flag size={12} /> {m.reporters} reporte{m.reporters !== 1 ? "s" : ""}</span>}
+                                <span className="overline text-[#4A4A4A]">{m.target_type === "topic" ? "Tema/Idea" : "Respuesta"}{m.ticker ? ` · ${m.ticker}` : ""}</span>
+                                {m.hidden && <span className="overline text-[#B32A22]">oculto</span>}
+                                {m.removed && <span className="overline text-[#4A4A4A]">borrado</span>}
+                            </div>
+                            <div className="text-sm font-medium">{m.preview}</div>
+                            {m.content_body && m.content_body !== m.preview && <div className="text-xs text-[#4A4A4A] mt-0.5 line-clamp-2">{m.content_body}</div>}
+                            <div className="text-xs text-[#B32A22] mt-1">Motivo: {m.reason}</div>
+                            <div className="text-[11px] text-[#4A4A4A] mt-0.5">{m.author_name} · {fmtDate(m.created_at)}</div>
+                            {m.status === "open" && (
+                                <div className="flex gap-2 mt-2">
+                                    <button onClick={() => act(m.id, "approve")} className="flex items-center gap-1 text-xs border border-[#1D7044] text-[#1D7044] px-2 py-1 hover:bg-[#1D7044] hover:text-white transition-colors" data-testid={`mod-approve-${m.id}`}><Check size={13} /> Aprobar</button>
+                                    <button onClick={() => act(m.id, "delete")} className="flex items-center gap-1 text-xs border border-[#B32A22] text-[#B32A22] px-2 py-1 hover:bg-[#B32A22] hover:text-white transition-colors" data-testid={`mod-delete-${m.id}`}><Trash2 size={13} /> Borrar</button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>}
         </div>
     );
 }
