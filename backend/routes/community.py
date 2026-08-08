@@ -5,10 +5,13 @@ Moderación: bloquea insultos/odio/spam/publicidad engañosa/estafas al publicar
 Anti-manipulación de mercado y buscador avanzado → Fase 3.
 """
 import os
+import re
 import uuid
 import json
+import hashlib
 import logging
 import asyncio
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -44,6 +47,51 @@ def _strip_json(s: str) -> str:
         s = s.split("```")[1] if "```" in s[3:] else s.strip("`")
         s = s.replace("json", "", 1).strip() if s.lstrip().lower().startswith("json") else s
     return s.strip()
+
+
+# Modelo de moderación más barato posible (clasificación simple).
+MOD_MODEL = ("openai", "gpt-4.1-nano")
+
+# Pre-filtro local (sin IA): decide si un texto es "obviamente limpio" y puede
+# saltarse la IA. NUNCA bloquea por sí solo — bloquear lo decide siempre la IA.
+_URL_RE = re.compile(r"https?://|www\.|t\.me/|@[a-z0-9_]{4,}", re.I)
+# Palabras que, si aparecen, fuerzan la revisión por IA (posible insulto/spam/estafa).
+_RISKY_WORDS = [
+    "puta", "puto", "mierda", "gilipollas", "cabron", "cabrón", "idiota", "imbecil", "imbécil",
+    "estupido", "estúpido", "subnormal", "retrasado", "maricon", "maricón", "zorra", "perra",
+    "coño", "joder", "capullo", "pendejo", "estafa", "estafador", "timo", "gratis", "promo",
+    "promocion", "promoción", "descuento", "regalo", "sorteo", "telegram", "whatsapp", "invierte ya",
+    "gana dinero", "dinero facil", "dinero fácil", "señales de trading", "señales gratis", "vip",
+    "fuck", "shit", "bitch", "scam", "free money", "click aqui", "click aquí", "haz clic",
+]
+# Lenguaje de hype/pump-and-dump que dispara la revisión anti-manipulación por IA.
+_HYPE_RE = re.compile(
+    r"(x\s?\d{1,3}\b|garantiz|asegurad|100\s?%|rentabilidad segura|no puede bajar|no puede subir|"
+    r"pump|a la luna|to the moon|multiplic|chicharro|dinero f[aá]cil|forr[ae]|compra ya|vende ya|"
+    r"antes de que sea tarde|oportunidad [uú]nica|se dispara|explota|va a explotar)",
+    re.I,
+)
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def _hash(s: str) -> str:
+    return hashlib.sha256(_norm(s).encode("utf-8")).hexdigest()
+
+
+def _looks_clean(text: str) -> bool:
+    """True si el texto es corto, sin enlaces y sin palabras de riesgo → se puede
+    aprobar sin gastar IA. La inmensa mayoría de mensajes normales caen aquí."""
+    t = text.strip()
+    if len(t) > 240:
+        return False
+    if _URL_RE.search(t):
+        return False
+    n = _norm(t)
+    return not any(w in n for w in _RISKY_WORDS)
 
 
 class TopicCreate(BaseModel):
@@ -88,22 +136,34 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
 
     # ---------------- Moderation + rate limit ----------------
     async def moderate(text: str):
+        """Devuelve (allow, reason). Ahorro de coste: aprueba localmente el texto
+        obviamente limpio (sin IA), cachea por hash y solo escala a la IA los casos dudosos."""
         text = (text or "").strip()
         if not text:
             return True, None
+        # 1) Fast-path local: texto corto, sin enlaces ni palabras de riesgo → aprobar sin IA.
+        if _looks_clean(text):
+            return True, None
+        # 2) Caché por hash de contenido (evita re-llamar a la IA con el mismo texto).
+        h = _hash(text)
+        cached = await db.community_mod_cache.find_one({"h": h}, {"_id": 0, "allow": 1, "reason": 1})
+        if cached is not None:
+            return bool(cached.get("allow", True)), cached.get("reason")
+        # 3) Escalar solo lo dudoso a la IA (modelo más barato).
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(
                 api_key=os.environ["EMERGENT_LLM_KEY"],
                 session_id=f"mod-{uuid.uuid4().hex[:8]}",
                 system_message=MODERATION_SYS,
-            ).with_model("openai", "gpt-4.1-mini")
-            resp = await asyncio.wait_for(chat.send_message(UserMessage(text=text[:2000])), timeout=12)
+            ).with_model(*MOD_MODEL)
+            resp = await asyncio.wait_for(chat.send_message(UserMessage(text=text[:1200])), timeout=12)
             data = json.loads(_strip_json(resp))
-            if not data.get("allow", True):
-                cat = data.get("category") or "no permitido"
-                return False, data.get("reason") or f"Contenido bloqueado ({cat})."
-            return True, None
+            allow = bool(data.get("allow", True))
+            reason = None if allow else (data.get("reason") or f"Contenido bloqueado ({data.get('category') or 'no permitido'}).")
+            await db.community_mod_cache.update_one(
+                {"h": h}, {"$set": {"h": h, "allow": allow, "reason": reason, "at": _now()}}, upsert=True)
+            return allow, reason
         except Exception as e:
             logger.warning(f"moderation fail-open: {e}")
             return True, None  # fail-open: no bloquear si la IA no responde
@@ -141,7 +201,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
 
     async def assess_idea(title, body, ticker, stance, target_price, metrics):
         """Anti-manipulación: NO bloquea; devuelve (suspicious, reason) para la cola del Admin.
-        Combina reglas (objetivo que contradice fuertemente tus POC/POV) + intención por IA."""
+        Ahorro de coste: la IA SOLO se invoca si hay un disparador local (el objetivo contradice
+        fuertemente tus POC/POV, o hay lenguaje de hype/pump-and-dump). Sin disparador → sin IA."""
         reasons = []
         m = metrics or {}
         poc, pov = m.get("poc"), m.get("pov")
@@ -154,15 +215,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
                 reasons.append(f"Objetivo ({tp}) muy por encima de tu Precio Objetivo de Venta/POV ({pov}).")
             if stance == "bear" and isinstance(poc, (int, float)) and poc > 0 and tp < poc * 0.6:
                 reasons.append(f"Objetivo ({tp}) muy por debajo de tu Precio Objetivo de Compra/POC ({poc}).")
+        has_hype = bool(_HYPE_RE.search(f"{title or ''} {body or ''}"))
+        # Sin señal local (ni divergencia ni hype) → no gastamos IA.
+        if not reasons and not has_hype:
+            return False, ""
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(
                 api_key=os.environ["EMERGENT_LLM_KEY"],
                 session_id=f"idea-{uuid.uuid4().hex[:8]}",
                 system_message=IDEA_ASSESS_SYS,
-            ).with_model("openai", "gpt-4.1-mini")
+            ).with_model(*MOD_MODEL)
             payload = f"Ticker: {ticker} · Postura: {stance} · Objetivo: {target_price}\nTítulo: {title}\n{body}"
-            resp = await asyncio.wait_for(chat.send_message(UserMessage(text=payload[:2000])), timeout=12)
+            resp = await asyncio.wait_for(chat.send_message(UserMessage(text=payload[:1200])), timeout=12)
             data = json.loads(_strip_json(resp))
             if data.get("suspicious"):
                 reasons.append(data.get("reason") or "Posible lenguaje de manipulación.")
@@ -262,18 +327,20 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
             })
         await db.community_topics.insert_one(doc)
         if req.scope == "idea":
-            try:
-                suspicious, reason = await assess_idea(doc["title"], doc["body"], doc["ticker"], doc["stance"], doc.get("target_price"), doc.get("metrics"))
-                if suspicious:
-                    await db.community_mod.insert_one({
-                        "id": uuid.uuid4().hex, "kind": "ai", "source": "ai",
-                        "target_type": "topic", "target_id": tid, "ticker": doc["ticker"],
-                        "preview": doc["title"], "author_name": doc["author_name"],
-                        "reporters": [], "reason": reason or "Posible manipulación de mercado.",
-                        "status": "open", "created_at": now,
-                    })
-            except Exception as e:
-                logger.warning(f"idea anti-manip flag failed: {e}")
+            async def _flag_idea_bg():
+                try:
+                    suspicious, reason = await assess_idea(doc["title"], doc["body"], doc["ticker"], doc["stance"], doc.get("target_price"), doc.get("metrics"))
+                    if suspicious:
+                        await db.community_mod.insert_one({
+                            "id": uuid.uuid4().hex, "kind": "ai", "source": "ai",
+                            "target_type": "topic", "target_id": tid, "ticker": doc["ticker"],
+                            "preview": doc["title"], "author_name": doc["author_name"],
+                            "reporters": [], "reason": reason or "Posible manipulación de mercado.",
+                            "status": "open", "created_at": now,
+                        })
+                except Exception as e:
+                    logger.warning(f"idea anti-manip flag failed: {e}")
+            asyncio.create_task(_flag_idea_bg())  # en segundo plano: no bloquea la respuesta
         return {"id": tid}
 
     @router.get("/topics/{tid}")

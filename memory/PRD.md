@@ -17,6 +17,14 @@
 ## Personas
 - Inversor retail con sistema propio en Excel. Usuario único, sin login.
 
+- **✅ COMUNIDAD · Optimización de coste de MODERACIÓN IA (8 ago 2026, verificado curl):** minimiza el gasto de la Emergent LLM Key en la moderación por publicación (`routes/community.py`).
+  1. **Pre-filtro local sin IA** (`_looks_clean`): un post corto (≤240 chars), sin enlaces y sin palabras de riesgo se **aprueba al instante sin llamar a la IA** (la mayoría de los mensajes normales). Verificado: post limpio → 200 en 0,16s.
+  2. **Caché por hash de contenido** (`community_mod_cache`, índice en `h`): un texto ya moderado no se vuelve a enviar a la IA. Verificado: reintento del mismo insulto → bloqueado desde caché en 0,20s (sin IA).
+  3. **Modelo más barato**: la moderación y la anti-manipulación pasan de `gpt-4.1-mini` a **`gpt-4.1-nano`**; input recortado a 1200 chars.
+  4. **Anti-manipulación (`assess_idea`) con disparador local**: la IA SOLO se invoca si hay señal local (objetivo que contradice fuertemente tus POC/POV **o** lenguaje de hype/pump-and-dump vía `_HYPE_RE`). Una idea normal → **cero IA**. Verificado: idea KO limpia no gasta IA ni se flagea; idea TSLA "x10 garantizado" (obj 5000 vs POV 300) sí se flagea.
+  5. **En segundo plano**: el flag anti-manipulación se ejecuta con `asyncio.create_task` → publicar una idea no espera a la IA (0,5s vs ~12s de timeout). El bloqueo de insultos/spam (que sí debe impedir publicar) sigue siendo síncrono.
+  - Nota: el pre-filtro local nunca bloquea por su cuenta; bloquear sigue siendo decisión de la IA (evita falsos positivos).
+
 - **✅ COMUNIDAD · FASE 4 — IA de conclusiones (7 ago 2026, testing_agent iteration_39 100% · backend 7/7 pytest + frontend e2e · modelo Claude Sonnet 4.6):**
   - **Señal de inversión IA (comunidad)**: en `/comunidad` → pestaña Ideas, el panel "Señal de la comunidad" se amplía con un botón **"Generar/Actualizar análisis IA"** (`signal-generate-btn`) que, para cada acción más debatida, produce un **veredicto** (Alcista/Bajista/**Mixto**) + resumen 2-3 frases en español que **contrasta el consenso de la comunidad con la valoración propia** (POC/POV/Ratios/combinados). Bloque `signal-ai` con tarjetas `signal-ai-<TICKER>` + `verdict-<TICKER>` + marca de tiempo. Verificado live: AAPL → "Mixto" (comunidad 4▲ pero objetivo 727 muy por encima del precio; POC 329,81 / POV 437,40 → cautela).
   - **Insights de negocio IA (admin)**: nueva pestaña **"Insights IA"** (`admin-tab-insights`) en `/admin/feedback`. Resume con IA el **feedback + los temas/ideas de la comunidad** en: pulso del producto, **fricciones repetidas**, **más pedidas**, **bugs frecuentes** (con nº de menciones) y un **mini-roadmap priorizado P0/P1/P2**. Solo admin (403 al resto). Verificado live (3 sugerencias + 12 de comunidad → roadmap con 2×P0).
