@@ -36,7 +36,7 @@ print('User ID: ' + userId);
 
 ## Step 2 — Backend API Smoke Test
 ```bash
-API=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d'=' -f2)
+API=$(grep REACT_APP_BACKEND_URL frontend/.env | cut -d'=' -f2)
 
 # Auth probe (no cookie) — should 401
 curl -i "$API/api/auth/me"

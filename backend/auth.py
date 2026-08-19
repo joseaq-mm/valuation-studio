@@ -26,6 +26,16 @@ EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/
 SESSION_DURATION = timedelta(days=7)
 
 
+def _session_cookie_params() -> dict:
+    """HttpOnly session cookie. On localhost (http) use lax+insecure so Chrome accepts it."""
+    app_url = (os.environ.get("PUBLIC_APP_URL") or "").lower()
+    cors = (os.environ.get("CORS_ORIGINS") or "").lower()
+    local = app_url.startswith("http://localhost") or app_url.startswith("http://127.0.0.1") or "localhost" in cors
+    if local:
+        return {"secure": False, "samesite": "lax"}
+    return {"secure": True, "samesite": "none"}
+
+
 class SessionExchange(BaseModel):
     session_id: str
 
@@ -182,12 +192,13 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             "created_at": datetime.now(timezone.utc),
         })
 
+        ck = _session_cookie_params()
         response.set_cookie(
             key="session_token",
             value=session_token,
             httponly=True,
-            secure=True,
-            samesite="none",
+            secure=ck["secure"],
+            samesite=ck["samesite"],
             max_age=int(SESSION_DURATION.total_seconds()),
             path="/",
         )
@@ -229,9 +240,10 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
             "expires_at": datetime.now(timezone.utc) + SESSION_DURATION,
             "created_at": datetime.now(timezone.utc),
         })
+        ck = _session_cookie_params()
         response.set_cookie(
-            key="session_token", value=session_token, httponly=True, secure=True,
-            samesite="none", max_age=int(SESSION_DURATION.total_seconds()), path="/",
+            key="session_token", value=session_token, httponly=True, secure=ck["secure"],
+            samesite=ck["samesite"], max_age=int(SESSION_DURATION.total_seconds()), path="/",
         )
         user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         # We also return session_token in the body (in addition to the httpOnly cookie)
@@ -297,7 +309,8 @@ def make_router(db: AsyncIOMotorDatabase) -> APIRouter:
         token = _resolve_token(session_token, authorization)
         if token:
             await db.user_sessions.delete_many({"session_token": token})
-        response.delete_cookie("session_token", path="/", samesite="none", secure=True)
+        ck = _session_cookie_params()
+        response.delete_cookie("session_token", path="/", samesite=ck["samesite"], secure=ck["secure"])
         return {"ok": True}
 
     # ---------------- Watchlist sync (per user) ----------------

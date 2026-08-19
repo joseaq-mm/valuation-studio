@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd backend && ./venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload"],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd frontend && npm start"],
+      "port": 3000
+    }
+  ]
+}

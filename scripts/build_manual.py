@@ -1,4 +1,6 @@
 """Builds the comprehensive Valuation Studio user manual (.docx)."""
+from pathlib import Path
+
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -246,5 +248,6 @@ para(
     color=GREY,
 )
 
-doc.save("/app/frontend/public/Valuation_Studio_Manual.docx")
+ROOT = Path(__file__).resolve().parent.parent
+doc.save(ROOT / "frontend" / "public" / "Valuation_Studio_Manual.docx")
 print("saved")

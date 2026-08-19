@@ -28,7 +28,7 @@ async def claude_json(system_message: str, user_text: str, timeout: int = 60,
     """Llama al modelo (Claude Sonnet 4.6 por defecto) y devuelve el JSON parseado."""
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     chat = LlmChat(
-        api_key=os.environ["EMERGENT_LLM_KEY"],
+        api_key=os.environ.get("EMERGENT_LLM_KEY", ""),
         session_id=f"sum-{uuid.uuid4().hex[:8]}",
         system_message=system_message,
     ).with_model(provider, model)

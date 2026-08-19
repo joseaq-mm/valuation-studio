@@ -7,7 +7,11 @@ import { runFullSync } from "@/lib/cloudSync";
 import HoverTip from "@/components/HoverTip";
 import { startGoogleLogin } from "@/lib/googleAuth";
 
-const startLogin = startGoogleLogin;
+const startLogin = () => {
+    if (!startGoogleLogin()) {
+        toast.error("Google OAuth no configurado. Rellena frontend/.env (REACT_APP_GOOGLE_CLIENT_ID) y reinicia npm start.");
+    }
+};
 
 export default function AuthButton() {
     const { user, loading, logout } = useAuth();

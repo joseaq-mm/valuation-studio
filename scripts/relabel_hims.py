@@ -1,12 +1,15 @@
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
-load_dotenv("/app/backend/.env")
-import sys
-sys.path.insert(0, "/app/backend")
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / "backend" / ".env")
+sys.path.insert(0, str(ROOT / "backend"))
 from services.thesis import _llm  # noqa
 
 COMPANY_ID = "thesis_bc2a894ffd8f"  # HIMS

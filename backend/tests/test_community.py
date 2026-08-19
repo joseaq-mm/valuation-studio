@@ -1,16 +1,22 @@
 """Community Fase 1 e2e tests: topics, replies, likes, moderation, rate-limit, groups, DMs, notifications."""
 import os
 import time
+from pathlib import Path
+
 import pytest
 import requests
 
+ROOT = Path(__file__).resolve().parent.parent.parent
+
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE:
-    # fallback (should not happen in CI); read frontend env
-    with open("/app/frontend/.env") as f:
-        for ln in f:
-            if ln.startswith("REACT_APP_BACKEND_URL="):
-                BASE = ln.split("=", 1)[1].strip().rstrip("/")
+    # fallback: read frontend/.env relative to repo root
+    env_path = ROOT / "frontend" / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for ln in f:
+                if ln.startswith("REACT_APP_BACKEND_URL="):
+                    BASE = ln.split("=", 1)[1].strip().rstrip("/")
 
 API = f"{BASE}/api"
 

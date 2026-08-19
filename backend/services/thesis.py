@@ -3,7 +3,7 @@
 Dual-AI architecture over the Emergent LLM Key:
   • GPT-5.2  = "Investigator". The Emergent proxy does NOT expose OpenAI native
     web-search, so we feed the model LIVE web results gathered server-side
-    (DuckDuckGo via the `ddgs` library) and it structures them into a value
+    (Tavily Search API) and it structures them into a value
     chain + leading public companies with canonical tickers, citing sources.
   • Claude Sonnet 4.5 = "Synthesizer/Reasoner". Produces structured qualitative
     scores and a written thesis reasoning over the investigator output.
@@ -22,6 +22,7 @@ import logging
 import contextvars
 from datetime import datetime, timezone
 
+import httpx
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
@@ -32,21 +33,27 @@ logger = logging.getLogger(__name__)
 MODEL_PRESETS = {
     "minimo_coste": {
         "label": "Mínimo coste",
-        "investigator": ("gemini", "gemini-2.5-flash-lite"),
-        "synthesizer": ("gemini", "gemini-2.5-flash-lite"),
+        "investigator": ("gemini", "gemini-3.5-flash-lite"),
+        "synthesizer": ("gemini", "gemini-3.5-flash-lite"),
         "desc": "Investigación y síntesis con Gemini 2.5 Flash-Lite (el modelo más barato). Para alto volumen; calidad correcta.",
     },
     "equilibrado": {
         "label": "Equilibrado",
-        "investigator": ("gemini", "gemini-3-flash-preview"),
+        "investigator": ("gemini", "gemini-3.6-flash"),
         "synthesizer": ("anthropic", "claude-haiku-4-5-20251001"),
         "desc": "Investigación con Gemini 3 Flash + síntesis/scoring con Claude Haiku 4.5. Buen equilibrio coste/calidad.",
     },
     "equilibrado_plus": {
         "label": "Equilibrado +",
-        "investigator": ("gemini", "gemini-3-flash-preview"),
+        "investigator": ("gemini", "gemini-3.6-flash"),
         "synthesizer": ("anthropic", "claude-sonnet-4-5-20250929"),
         "desc": "Investigación con Gemini 3 Flash (igual que Equilibrado) + síntesis/scoring con Claude Sonnet 4.5. Más calidad de razonamiento que Equilibrado, manteniendo barata la investigación.",
+    },
+    "gemini_solo": {
+        "label": "Gemini solo",
+        "investigator": ("gemini", "gemini-3.6-flash"),
+        "synthesizer": ("gemini", "gemini-2.5-pro"),
+        "desc": "Investigación con Gemini 3 Flash + síntesis/scoring con Gemini 2.5 Pro. Un solo proveedor (GEMINI_API_KEY); ~60% más barato que Equilibrado+ con calidad cercana.",
     },
     "pro": {
         "label": "Pro",
@@ -56,9 +63,21 @@ MODEL_PRESETS = {
     },
 }
 
-# If a (provider, model) errors (e.g. the Universal Key has not catalogued it yet),
+# If a (provider, model) errors (rate limit, timeout, model unavailable…),
 # transparently retry once with the mapped fallback so a generation never breaks.
-MODEL_FALLBACK = {}
+# Downgrade path: premium → cheaper sibling → cross-provider Gemini Flash.
+MODEL_FALLBACK = {
+    # --- Tesis: investigadores ---
+    ("openai", "gpt-5.2"): ("gemini", "gemini-3.6-flash"),
+    ("gemini", "gemini-3.6-flash"): ("gemini", "gemini-3.5-flash-lite"),
+    ("gemini", "gemini-3.5-flash-lite"): ("gemini", "gemini-3.6-flash"),
+    # --- Tesis: sintetizadores ---
+    ("anthropic", "claude-sonnet-4-5-20250929"): ("anthropic", "claude-haiku-4-5-20251001"),
+    ("anthropic", "claude-haiku-4-5-20251001"): ("gemini", "gemini-3.6-flash"),
+    ("gemini", "gemini-2.5-pro"): ("gemini", "gemini-3.6-flash"),
+    # --- KPIs (mismo _llm) ---
+    ("gemini", "gemini-3.6-flash"): ("gemini", "gemini-3.5-flash-lite"),
+}
 
 _ACTIVE_PRESET = os.environ.get("THESIS_MODEL_PRESET", "pro")
 if _ACTIVE_PRESET not in MODEL_PRESETS:
@@ -92,8 +111,9 @@ PRICE_EUR_PER_MTOK = {
     ("openai", "gpt-5.2"): (5.0, 15.0),
     ("anthropic", "claude-sonnet-4-5-20250929"): (3.0, 15.0),
     ("anthropic", "claude-haiku-4-5-20251001"): (0.8, 4.0),
-    ("gemini", "gemini-3-flash-preview"): (0.3, 2.5),
-    ("gemini", "gemini-2.5-flash-lite"): (0.10, 0.40),
+    ("gemini", "gemini-3.6-flash"): (0.3, 2.5),
+    ("gemini", "gemini-3.5-flash-lite"): (0.10, 0.40),
+    ("gemini", "gemini-2.5-pro"): (1.15, 4.60),
 }
 
 # Per-generation cost accumulator (ContextVar — shared across awaits within one
@@ -120,34 +140,68 @@ SCORE_DIMENSIONS = [
 ]
 
 
-# ---------------------- Live web search (real-time) ----------------------
+# ---------------------- Live web search (real-time via Tavily) ----------------------
+
+TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+
 
 def _run_searches(queries: list, max_results: int = 5, cap: int = 18) -> list:
-    """Run a set of live DuckDuckGo queries, de-duplicated by URL."""
-    try:
-        from ddgs import DDGS
-    except Exception as e:  # pragma: no cover
-        logger.error(f"ddgs import failed: {e}")
+    """Run live Tavily searches, de-duplicated by URL.
+
+    Same return shape as the old DuckDuckGo helper so thesis/KPI/chat callers
+    stay unchanged: [{title, url, snippet}, ...].
+    """
+    api_key = (os.environ.get("TAVILY_API_KEY") or "").strip()
+    if not api_key:
+        logger.error("TAVILY_API_KEY not configured — web search disabled")
         return []
+
     seen, out = set(), []
     try:
-        with DDGS() as ddgs:
+        with httpx.Client(timeout=30.0) as client:
             for q in queries:
+                q = (q or "").strip()
+                if not q:
+                    continue
                 try:
-                    for r in ddgs.text(q, max_results=max_results):
-                        url = r.get("href") or r.get("url") or ""
+                    resp = client.post(
+                        TAVILY_SEARCH_URL,
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "query": q,
+                            "max_results": max_results,
+                            "search_depth": "basic",
+                            "include_answer": False,
+                        },
+                    )
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "tavily query failed '%s': HTTP %s %s",
+                            q[:80],
+                            resp.status_code,
+                            (resp.text or "")[:200],
+                        )
+                        continue
+                    data = resp.json() or {}
+                    for r in data.get("results") or []:
+                        url = (r.get("url") or "").strip()
                         if not url or url in seen:
                             continue
                         seen.add(url)
                         out.append({
                             "title": (r.get("title") or "").strip(),
                             "url": url,
-                            "snippet": (r.get("body") or "").strip()[:500],
+                            "snippet": (r.get("content") or r.get("snippet") or "").strip()[:500],
                         })
+                        if len(out) >= cap:
+                            return out[:cap]
                 except Exception as e:
-                    logger.warning(f"ddgs query failed '{q}': {e}")
+                    logger.warning("tavily query failed '%s': %s", q[:80], e)
     except Exception as e:
-        logger.warning(f"ddgs session failed: {e}")
+        logger.warning("tavily session failed: %s", e)
     return out[:cap]
 
 
@@ -231,7 +285,7 @@ def _extract_json(text: str) -> dict:
 
 async def _llm(provider, model, session_id, system, user_text) -> str:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
-    api_key = os.environ["EMERGENT_LLM_KEY"]
+    api_key = os.environ.get("EMERGENT_LLM_KEY", "")
 
     async def _send(prov, mod):
         chat = LlmChat(api_key=api_key, session_id=session_id, system_message=system).with_model(prov, mod)

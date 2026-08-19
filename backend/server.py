@@ -3,7 +3,6 @@ from fastapi.concurrency import run_in_threadpool
 import asyncio
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import math
@@ -19,12 +18,13 @@ from screener import run_screener
 from radar import run_radar
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from mongo_client import make_motor_client
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = make_motor_client(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Valuation Studio API")
@@ -56,6 +56,8 @@ api_router.include_router(make_community_router(db, _auth_required))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+TRANSLATE_MODEL = ("gemini", "gemini-3.6-flash")
 
 CACHE_TTL_HOURS = 6
 
@@ -284,6 +286,29 @@ async def admin_preview_radar_status(job_id: str, html: bool = False):
     if html and job.get("status") == "done":
         return HTMLResponse(content=(job.get("result") or {}).get("html") or "")
     return job
+
+
+@api_router.get("/admin/export-database")
+async def admin_export_database(secret: str = Query(...)):
+    """Full MongoDB JSON export (migration off Emergent). Requires EXPORT_SECRET in .env."""
+    from bson import json_util
+    from fastapi.responses import Response
+
+    expected = (os.environ.get("EXPORT_SECRET") or "").strip()
+    if not expected or secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    payload = {"db": os.environ.get("DB_NAME"), "collections": {}}
+    for name in await db.list_collection_names():
+        docs = await db[name].find({}).to_list(None)
+        payload["collections"][name] = docs
+
+    body = json_util.dumps(payload, ensure_ascii=False)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="valuation-studio-export.json"'},
+    )
 
 
 @api_router.post("/company/{ticker}/calculate")
@@ -660,7 +685,7 @@ async def translate_summary(ticker: str):
 
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
-        api_key = os.environ["EMERGENT_LLM_KEY"]
+        api_key = os.environ.get("EMERGENT_LLM_KEY", "")
         chat = LlmChat(
             api_key=api_key,
             session_id=f"translate-{ticker}-{source_hash}",
@@ -670,7 +695,7 @@ async def translate_summary(ticker: str):
                 "free cash flow → flujo de caja libre, etc.). No añadas notas, explicaciones ni comentarios. "
                 "Devuelve únicamente la traducción."
             ),
-        ).with_model("openai", "gpt-4.1-mini")
+        ).with_model(*TRANSLATE_MODEL)
         resp = await chat.send_message(UserMessage(text=f"Traduce este texto al español:\n\n{source_en}"))
         summary_es = (resp or "").strip()
     except Exception as e:

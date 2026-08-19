@@ -1,15 +1,21 @@
 """Community Fase 2 · Ideas de inversión — e2e backend tests."""
 import os
 import time
+from pathlib import Path
+
 import pytest
 import requests
 
+ROOT = Path(__file__).resolve().parent.parent.parent
+
 BASE = (os.environ.get("REACT_APP_BACKEND_URL") or "").rstrip("/")
 if not BASE:
-    with open("/app/frontend/.env") as f:
-        for ln in f:
-            if ln.startswith("REACT_APP_BACKEND_URL="):
-                BASE = ln.split("=", 1)[1].strip().rstrip("/")
+    env_path = ROOT / "frontend" / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for ln in f:
+                if ln.startswith("REACT_APP_BACKEND_URL="):
+                    BASE = ln.split("=", 1)[1].strip().rstrip("/")
 API = f"{BASE}/api"
 
 NORMAL_TOKEN = "test_profile_token_fixed_123"

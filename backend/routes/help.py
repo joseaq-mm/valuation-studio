@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-HELP_MODEL = ("gemini", "gemini-2.5-flash")
+HELP_MODEL = ("gemini", "gemini-3.6-flash")
 
 HELP_SYSTEM = """Eres el asistente de ayuda integrado de "Valuation Studio", una app web de análisis fundamental y valoración de acciones. Tu ÚNICO objetivo es ayudar al usuario a entender y usar la aplicación. Responde SIEMPRE en el mismo idioma en el que te escriba el usuario (español o inglés). Sé claro, cercano y conciso (2-6 frases por defecto; usa listas cortas solo si ayuda). No des consejos de inversión concretos ni recomendaciones de compra/venta: recuerda que la app es educativa.
 
@@ -83,7 +83,7 @@ def make_router() -> APIRouter:
         if chat_obj is None:
             if len(_sessions) > _MAX_SESSIONS:
                 _sessions.clear()
-            api_key = os.environ["EMERGENT_LLM_KEY"]
+            api_key = os.environ.get("EMERGENT_LLM_KEY", "")
             chat_obj = LlmChat(
                 api_key=api_key,
                 session_id=req.session_id,

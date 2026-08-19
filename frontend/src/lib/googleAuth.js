@@ -12,7 +12,11 @@ function inIframe() {
 }
 
 export function startGoogleLogin() {
-    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    const clientId = (process.env.REACT_APP_GOOGLE_CLIENT_ID || "").trim();
+    if (!clientId) {
+        console.error("[auth] REACT_APP_GOOGLE_CLIENT_ID missing — set it in frontend/.env and restart npm start");
+        return false;
+    }
     const redirectUri = window.location.origin + "/auth/google";
     const params = new URLSearchParams({
         client_id: clientId,
@@ -36,7 +40,8 @@ export function startGoogleLogin() {
             // Popup blocked → break out of the iframe by navigating the top window.
             try { window.top.location.href = url; } catch { window.location.href = url; }
         }
-        return;
+        return true;
     }
     window.location.href = url;
+    return true;
 }

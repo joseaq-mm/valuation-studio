@@ -148,5 +148,8 @@ rn.font.size = Pt(9.5)
 rn.font.color.rgb = GREY
 note.paragraph_format.space_before = Pt(8)
 
-doc.save('/app/Valuation_Studio_Guia_Rapida.docx')
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+doc.save(ROOT / "Valuation_Studio_Guia_Rapida.docx")
 print('OK guardado')

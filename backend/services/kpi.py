@@ -29,8 +29,8 @@ from services.thesis import _llm, _run_searches, _extract_json, _sources_block
 logger = logging.getLogger(__name__)
 
 ALPHA = 0.5  # coefficient sensitivity: C ∈ [1-α, 1+α] = [0.5, 1.5]
-KPI_EXTRACTOR_MODEL = ("gemini", "gemini-2.5-flash")
-KPI_JUDGE_MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
+KPI_EXTRACTOR_MODEL = ("gemini", "gemini-3.6-flash")
+KPI_JUDGE_MODEL = ("anthropic", "claude-haiku-4-5-20251001")
 
 
 def gather_kpi_sources(company_name: str, ticker: str, max_results: int = 6) -> list:
@@ -432,7 +432,7 @@ async def extract_document_text(file_path: str, mime_type: str, company: str, fi
     text extraction yields nothing. Retries 2-3 times since long/heavy docs occasionally
     time out, leaving the document unreadable."""
     from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-    api_key = os.environ["EMERGENT_LLM_KEY"]
+    api_key = os.environ.get("EMERGENT_LLM_KEY", "")
     fc = FileContentWithMimeType(file_path=file_path, mime_type=mime_type)
     prompt = (f"EMPRESA: {company}\nDOCUMENTO: {filename}\n\n"
               "Extrae todas las métricas operativas y KPIs con sus cifras y periodos.")

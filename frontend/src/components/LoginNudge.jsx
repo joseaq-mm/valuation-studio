@@ -2,11 +2,16 @@ import React, { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { LogIn, X } from "lucide-react";
 import { startGoogleLogin } from "@/lib/googleAuth";
+import { toast } from "sonner";
 
 const DISMISS_KEY = "vs_login_nudge_dismissed_at";
 const DISMISS_DAYS = 7;
 
-const startLogin = startGoogleLogin;
+const startLogin = () => {
+    if (!startGoogleLogin()) {
+        toast.error("Google OAuth no configurado. Rellena frontend/.env y reinicia npm start.");
+    }
+};
 
 // Slim, dismissible banner shown when the user is not logged in, nudging them to
 // sign in with Google so their saved companies sync across devices.

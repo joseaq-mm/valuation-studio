@@ -379,7 +379,7 @@ KPI_MAX_FILES = 10
 KPI_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 KPI_ALLOWED_EXT = {"pdf", "png", "jpg", "jpeg", "webp", "gif"}
 
-KPI_CHAT_MODEL = ("gemini", "gemini-3-flash-preview")
+KPI_CHAT_MODEL = ("gemini", "gemini-3.6-flash")
 KPI_CHAT_SYSTEM_BASE = """Eres el analista conversacional de KPIs de "Valuation Studio", integrado en la página de KPIs de una empresa concreta. Ayudas al usuario a razonar sobre la calidad operativa de esa empresa, sus tesis de crecimiento y cómo se compara con otras. Responde SIEMPRE en el idioma del usuario (por defecto español), de forma clara y concisa (2-6 frases; listas cortas solo si ayudan).
 
 Dispones de: (1) el CONTEXTO de la empresa (fundamentales, coeficiente KPI actual y sus drivers/tesis), (2) datos de otras empresas del usuario como comparables, y (3) resultados de búsqueda web recientes que se te adjuntan en cada mensaje entre corchetes. Usa la web solo cuando aporte y cita la fuente (dominio) cuando la uses.
@@ -2916,7 +2916,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 _kpi_chat_sessions.clear()
             system = KPI_CHAT_SYSTEM_BASE + "\n\nCONTEXTO ACTUAL:\n" + ctx
             chat_obj = LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"], session_id=key, system_message=system,
+                api_key=os.environ.get("EMERGENT_LLM_KEY", ""), session_id=key, system_message=system,
             ).with_model(*KPI_CHAT_MODEL)
             _kpi_chat_sessions[key] = chat_obj
 
@@ -3096,7 +3096,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         )
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         chat = LlmChat(
-            api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"propose-{uuid.uuid4().hex}",
+            api_key=os.environ.get("EMERGENT_LLM_KEY", ""), session_id=f"propose-{uuid.uuid4().hex}",
             system_message=propose_system,
         ).with_model(*KPI_CHAT_MODEL)
         try:

@@ -6,8 +6,10 @@
 # reconcile retries next minute) and never exits non-zero.
 set -u
 
-YAML="${CRONS_YAML_FILE:-/app/.emergent/crons.yml}"
-APPLIED="${APPLIED_HASH_FILE:-/app/.emergent/cron/applied.hash}"
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+_PROJECT_ROOT="$(cd "$_SCRIPT_DIR/../.." && pwd)"
+YAML="${CRONS_YAML_FILE:-$_PROJECT_ROOT/.emergent/crons.yml}"
+APPLIED="${APPLIED_HASH_FILE:-$_SCRIPT_DIR/applied.hash}"
 JOB_ID="${JOB_ID:-}"
 CRON_API_URL="${CRON_API_URL:-}"
 

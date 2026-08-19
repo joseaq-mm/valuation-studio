@@ -49,8 +49,8 @@ def _strip_json(s: str) -> str:
     return s.strip()
 
 
-# Modelo de moderación más barato posible (clasificación simple).
-MOD_MODEL = ("openai", "gpt-4.1-nano")
+# Modelo de moderación barato (clasificación JSON simple; Gemini, sin OpenAI).
+MOD_MODEL = ("gemini", "gemini-3.5-flash-lite")
 
 # Pre-filtro local (sin IA): decide si un texto es "obviamente limpio" y puede
 # saltarse la IA. NUNCA bloquea por sí solo — bloquear lo decide siempre la IA.
@@ -153,7 +153,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"],
+                api_key=os.environ.get("EMERGENT_LLM_KEY", ""),
                 session_id=f"mod-{uuid.uuid4().hex[:8]}",
                 system_message=MODERATION_SYS,
             ).with_model(*MOD_MODEL)
@@ -222,7 +222,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required) -> APIRouter:
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"],
+                api_key=os.environ.get("EMERGENT_LLM_KEY", ""),
                 session_id=f"idea-{uuid.uuid4().hex[:8]}",
                 system_message=IDEA_ASSESS_SYS,
             ).with_model(*MOD_MODEL)

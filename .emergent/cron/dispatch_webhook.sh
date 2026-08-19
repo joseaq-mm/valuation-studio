@@ -6,7 +6,9 @@ set -eu
 
 : "${CRON_NAME:?}" "${METHOD:?}" "${ENDPOINT_URL_B64:?}"
 JOB_ID="${JOB_ID:-}"
-WEBHOOK_ENV_FILE="${WEBHOOK_ENV_FILE:-/app/backend/.env}"
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+_PROJECT_ROOT="$(cd "$_SCRIPT_DIR/../.." && pwd)"
+WEBHOOK_ENV_FILE="${WEBHOOK_ENV_FILE:-$_PROJECT_ROOT/backend/.env}"
 AT_DATE="${AT_DATE:-}"
 END_DATE="${END_DATE:-}"
 
