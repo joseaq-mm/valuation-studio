@@ -800,6 +800,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    # Cloudflare Pages preview deployments get a fresh subdomain per build (both the
+    # commit-hash URL and the stable branch-alias URL). Matching them by pattern means
+    # PR/preview environments never need a manual CORS_ORIGINS update.
+    allow_origin_regex=os.environ.get('CORS_ORIGIN_REGEX', r'^https://[a-z0-9-]+\.valuation-studio\.pages\.dev$'),
     allow_methods=["*"],
     allow_headers=["*"],
 )
