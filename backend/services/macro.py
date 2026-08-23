@@ -13,6 +13,9 @@ Series chosen (all free, official, public domain):
   - Labor productivity: OPHNFB (index 2017=100) + YoY %
   - M2 money supply: M2SL ($B) → YoY %
   - Oil (WTI): DCOILWTICO ($/barrel)
+  - High yield credit spread: BAMLH0A0HYM2 (ICE BofA US High Yield Index
+    Option-Adjusted Spread, % over Treasuries). Informational only — not part of
+    the market coefficient yet.
 """
 import logging
 import os
@@ -225,7 +228,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 44),
             _observations(client, "GDP", 44),
             _observations(client, "FEDFUNDS", 16),
@@ -239,6 +242,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             _observations(client, "SP500", 400),
             _observations(client, "NASDAQ100", 400),
             _observations(client, "DJIA", 400),
+            _observations(client, "BAMLH0A0HYM2", 1300),
         )
 
     indicators = []
@@ -487,6 +491,23 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             "total_twh": energy["total_twh"],
             "source": "Our World in Data · Energy Institute",
         })
+
+    # 9) High yield credit spread (informational; not part of the market coefficient).
+    hy_hist = [{"date": o["date"], "value": round(o["value"], 2)} for o in reversed(hy_spread)] if hy_spread else []
+    indicators.append({
+        "key": "high_yield_spread",
+        "label": "Spread de high yield (EEUU)",
+        "value": hy_spread[0]["value"] if hy_spread else None,
+        "unit": "p.p. sobre Treasuries",
+        "as_of": hy_spread[0]["date"] if hy_spread else None,
+        "frequency": "Diaria",
+        "description": ("Diferencial (spread) que exige el mercado a los bonos corporativos estadounidenses de "
+                        "alto rendimiento ('high yield' o 'bonos basura') frente a la deuda del Tesoro de EEUU, "
+                        "libre de riesgo. Es un termómetro directo del apetito por el riesgo crediticio."),
+        "interpretation": "↑ más estrés/aversión al riesgo (spreads se ensanchan) · ↓ más apetito por riesgo (spreads se estrechan)",
+        "history": hy_hist,
+        "source": "FRED · BAMLH0A0HYM2",
+    })
 
     return {
         "indicators": indicators,

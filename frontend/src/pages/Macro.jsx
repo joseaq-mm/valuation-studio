@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
+import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, ShieldAlert, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
 import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
 import { macroIndicators, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
@@ -16,6 +16,7 @@ const ICONS = {
     productivity: Gauge,
     m3_proxy: Layers,
     oil: Droplet,
+    high_yield_spread: ShieldAlert,
 };
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
@@ -318,6 +319,71 @@ const EnergyMixCard = ({ ind }) => {
             <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
                 <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
                 <span className="tabular-nums text-[#052049] font-semibold">Datos: {ind.as_of}</span>
+            </div>
+        </div>
+    );
+};
+
+const HYSpreadTip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="hy-spread-tooltip">
+            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="tabular-nums">Spread: {nf.format(p.value)} p.p.</div>
+        </div>
+    );
+};
+
+const HighYieldSpreadChart = ({ history, height }) => {
+    if (!history?.length) return null;
+    return (
+        <ResponsiveContainer width="100%" height={height}>
+            <LineChart data={history} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+                <CartesianGrid stroke="#00000010" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: 8, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / 4) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={12} />
+                <YAxis tick={{ fontSize: 8, fill: "#7A7A7A" }} width={26} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
+                <RTooltip content={<HYSpreadTip />} />
+                <Line type="monotone" dataKey="value" stroke="#B32A22" strokeWidth={2} dot={false} isAnimationActive={false} />
+            </LineChart>
+        </ResponsiveContainer>
+    );
+};
+
+const HighYieldSpreadCard = ({ ind }) => {
+    const Icon = ICONS[ind.key] || ShieldAlert;
+    const history = ind.history || [];
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Icon size={13} className="text-[#052049]" /> {ind.label}
+                </div>
+                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                        <Info size={14} />
+                    </button>
+                </HoverTip>
+            </div>
+
+            <div className="flex items-baseline gap-1.5">
+                <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid={`macro-value-${ind.key}`}>
+                    {fmtVal(ind.value)}
+                </span>
+                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}</span>
+            </div>
+            <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
+
+            {history.length > 1 && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
+                    <HighYieldSpreadChart history={history} height={90} />
+                </div>
+            )}
+
+            <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
+                <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
+                <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
             </div>
         </div>
     );
@@ -706,7 +772,9 @@ export default function Macro() {
                                     ? <OilAverageCard key={ind.key} ind={ind} years={oilYears} onYearsChange={setOilYears} />
                                     : ind.key === "energy_mix"
                                         ? <EnergyMixCard key={ind.key} ind={ind} />
-                                        : <MacroCard key={ind.key} ind={ind} />
+                                        : ind.key === "high_yield_spread"
+                                            ? <HighYieldSpreadCard key={ind.key} ind={ind} />
+                                            : <MacroCard key={ind.key} ind={ind} />
                         ))}
                         {data.trend?.points?.length > 0 && (
                             <TrendCard
