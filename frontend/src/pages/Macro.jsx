@@ -335,14 +335,14 @@ const HYSpreadTip = ({ active, payload }) => {
     );
 };
 
-const HighYieldSpreadChart = ({ history, height }) => {
+const HighYieldSpreadChart = ({ history, height, small }) => {
     if (!history?.length) return null;
     return (
         <ResponsiveContainer width="100%" height={height}>
-            <LineChart data={history} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+            <LineChart data={history} margin={{ top: 4, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
                 <CartesianGrid stroke="#00000010" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: 8, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / 4) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={12} />
-                <YAxis tick={{ fontSize: 8, fill: "#7A7A7A" }} width={26} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
+                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <YAxis tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
                 <RTooltip content={<HYSpreadTip />} />
                 <Line type="monotone" dataKey="value" stroke="#B32A22" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
@@ -350,9 +350,46 @@ const HighYieldSpreadChart = ({ history, height }) => {
     );
 };
 
+const HighYieldSpreadModal = ({ ind, history, onClose }) => {
+    const ref = React.useRef(null);
+    const [busy, setBusy] = useState(false);
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, "spread-high-yield-evolucion"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="hy-spread-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <ShieldAlert size={22} className="shrink-0" /> <span className="truncate">Spread de high yield · Evolución</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title="Spread de high yield · Valuation Studio" testidPrefix="hy-spread-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Spread de high yield")} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="hy-spread-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="hy-spread-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                <div ref={ref}>
+                    <HighYieldSpreadChart history={history} height={420} />
+                </div>
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                    {ind.description} Fuente: {ind.source} · {ind.frequency}.
+                </p>
+            </div>
+        </div>
+    );
+};
+
 const HighYieldSpreadCard = ({ ind }) => {
     const Icon = ICONS[ind.key] || ShieldAlert;
     const history = ind.history || [];
+    const [histOpen, setHistOpen] = useState(false);
     return (
         <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
             <div className="flex items-start justify-between gap-2 mb-2">
@@ -376,8 +413,13 @@ const HighYieldSpreadCard = ({ ind }) => {
 
             {history.length > 1 && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
-                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
-                    <HighYieldSpreadChart history={history} height={90} />
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Evolución</span>
+                        <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="hy-spread-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                            <Maximize2 size={13} />
+                        </button>
+                    </div>
+                    <HighYieldSpreadChart history={history} height={90} small />
                 </div>
             )}
 
@@ -385,6 +427,7 @@ const HighYieldSpreadCard = ({ ind }) => {
                 <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
                 <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
             </div>
+            {histOpen && <HighYieldSpreadModal ind={ind} history={history} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
