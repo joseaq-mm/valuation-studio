@@ -787,7 +787,7 @@ const qLabel = (iso) => {
     if (iso === "est") return "Est.";
     const [y, m] = iso.split("-");
     const q = { "01": "1T", "04": "2T", "07": "3T", "10": "4T" }[m] || "";
-    return `${q} ${y}`;
+    return `${q}${y.slice(2)}`;
 };
 
 const TREND_SERIES = [
