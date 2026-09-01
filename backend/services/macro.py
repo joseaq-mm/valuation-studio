@@ -18,6 +18,7 @@ Series chosen (all free, official, public domain):
     the market coefficient yet.
 """
 import logging
+import math
 import os
 import asyncio
 from datetime import datetime, timezone
@@ -570,6 +571,51 @@ def _ind(data: dict, key: str) -> dict | None:
     return None
 
 
+HY_NEUTRAL = 3.0    # p.p. — coefficient unaffected here (curve always passes through it)
+HY_CAP = 3.5        # p.p. — steepest DECLINE happens here
+HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP  # 2.5 p.p. — mirror image: steepest RISE happens here
+HY_MAX_EFFECT = 0.15  # asymptotic ±15% swing on the coefficient, on par with the other factors
+HY_K_MIN = 1.1      # curve steepness for an isolated one-day spike (gentle S-curve)
+HY_K_MAX = 5.5      # curve steepness once sustained a full 5-day trading week (near-step)
+
+
+def _hy_right_half(spread: float, k: float) -> float:
+    """Sigmoid centered on HY_CAP, zeroed so it reads 0 at HY_NEUTRAL."""
+    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    s = 1 / (1 + math.exp(-k * (spread - HY_CAP)))
+    return s0 - s
+
+
+def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
+    """Effect of the high-yield credit spread on the market coefficient — continuous,
+    S-shaped, and symmetric around HY_NEUTRAL (3.0 p.p., where it's exactly 0).
+
+    Moving right (spread rising), the coefficient falls, accelerating until HY_CAP
+    (3.5 p.p.) — its steepest point — then keeps falling but decelerating. Moving left
+    (spread falling) mirrors this exactly: the coefficient rises, accelerating until
+    HY_FLOOR (2.5 p.p.), then decelerating.
+
+    How sharp the transition is (at both HY_CAP and HY_FLOOR) depends on how many of
+    the last 5 trading days the spread spent above HY_CAP: a single-day spike gives a
+    gentle S-curve; a full sustained week gives a near-vertical step.
+
+    Returns (effect in (-1, 1) — positive = reward, negative = penalty,
+    days_of_last_5_above_cap).
+    """
+    if not hy or hy.get("value") is None:
+        return 0.0, 0
+    value = hy["value"]
+    hist = hy.get("history") or []
+    last5 = [h["value"] for h in hist[-5:]]
+    days_above = sum(1 for x in last5 if x >= HY_CAP)
+    k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (days_above / 5)
+    raw = _hy_right_half(value, k) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value, k)
+    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    bound = max(1 - s0, 1e-9)  # natural symmetric saturation magnitude as spread → ±∞
+    effect = max(-1.0, min(1.0, raw / bound))
+    return effect, days_above
+
+
 def _compute_coef_default(data: dict) -> float | None:
     """Server-side coefficient with the DEFAULT choices (equities live vía S&P 500,
     media del petróleo a 4 años). Mirrors the frontend formula so the stored history
@@ -578,6 +624,7 @@ def _compute_coef_default(data: dict) -> float | None:
     m3, fed = _ind(data, "m3_proxy"), _ind(data, "fed_rate")
     infl, prod = _ind(data, "inflation"), _ind(data, "productivity")
     oil, en = _ind(data, "oil_avg"), _ind(data, "energy_mix")
+    hy = _ind(data, "high_yield_spread")
     v = lambda x: x.get("value") if x else None
     m70 = (eq.get("live") or {}).get("by_index", {}).get("SP500", {}).get("value") if eq and eq.get("live") else None
     if m70 is None:
@@ -591,14 +638,17 @@ def _compute_coef_default(data: dict) -> float | None:
         sl = hist[-min(48, len(hist)):]
         if sl:
             m77 = sum(h["value"] for h in sl) / len(sl)
-    vals = [m70, m71, m72, m73, m74, m75, m76, m77, m78]
+    m79 = v(hy)
+    vals = [m70, m71, m72, m73, m74, m75, m76, m77, m78, m79]
     if any(x is None for x in vals) or (m70 - m72) == 0:
         return None
     t1 = m71 / (m70 - m72)
     t2 = 1 - (m73 + m74) / 100
     t3 = m75 / 100
     t4 = 1 - ((m76 - m77) * (m78 / 10000))
-    return round(t1 * t2 * t3 * t4, 4)
+    hy_effect, _ = _hy_spread_effect(hy)
+    t5 = 1 + HY_MAX_EFFECT * hy_effect
+    return round(t1 * t2 * t3 * t4 * t5, 4)
 
 
 async def _store_coef_point(db, c: float) -> None:

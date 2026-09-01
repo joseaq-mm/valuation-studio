@@ -43,23 +43,57 @@ const oilAverage = (history, years) => {
 const liveEquities = (ind, idx) => ind?.live?.by_index?.[idx]?.value ?? ind?.value;
 const liveGdp = (ind) => ind?.live?.value ?? ind?.value;
 
+// High-yield credit spread → continuous, S-shaped effect on the coefficient (see
+// backend services/macro.py::_hy_spread_effect for the mirrored, authoritative
+// version). Symmetric around HY_NEUTRAL (3.0 p.p., exactly 0 there): moving right,
+// the coefficient falls, accelerating until HY_CAP (3.5 p.p. — steepest point), then
+// keeps falling but decelerating; moving left mirrors this exactly, accelerating
+// until HY_FLOOR (2.5 p.p.). How sharp the transition is (at both ends) depends on
+// how many of the last 5 trading days the spread spent above HY_CAP — a single-day
+// spike gives a gentle S-curve, a full sustained week gives a near-vertical step.
+const HY_NEUTRAL = 3.0, HY_CAP = 3.5, HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP, HY_MAX_EFFECT = 0.15;
+const HY_K_MIN = 1.1, HY_K_MAX = 5.5;
+
+const hyRightHalf = (spread, k) => {
+    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
+    const s = 1 / (1 + Math.exp(-k * (spread - HY_CAP)));
+    return s0 - s;
+};
+
+const hySpreadEffect = (hy) => {
+    const value = hy?.value;
+    if (value == null) return { effect: 0, value: null, daysAbove: 0 };
+    const last5 = (hy?.history || []).slice(-5).map((h) => h.value);
+    const daysAbove = last5.filter((v) => v >= HY_CAP).length;
+    const k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (daysAbove / 5);
+    const raw = value >= HY_NEUTRAL ? hyRightHalf(value, k) : -hyRightHalf(2 * HY_NEUTRAL - value, k);
+    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
+    const bound = Math.max(1 - s0, 1e-9);
+    const effect = Math.max(-1, Math.min(1, raw / bound));
+    return { effect, value, daysAbove };
+};
+
 // Coefficient formula (user-defined):
-// C = (m71/(m70-m72)) * (1-(m73+m74)/100) * (m75/100) * (1-((m76-m77)*(m78/10000)))
+// C = (m71/(m70-m72)) * (1-(m73+m74)/100) * (m75/100) * (1-((m76-m77)*(m78/10000))) * t5
 // m70 Renta variable · m71 PIB · m72 M3 proxy · m73 Tipo FED · m74 Inflación
 // m75 Productividad · m76 Precio petróleo · m77 Media petróleo (dial) · m78 Mix petróleo+gas
+// m79 Spread high yield (t5, no lineal — ver hySpreadEffect)
 const computeCoefficient = (byKey, oilYears, selectedIndex) => {
     const g = (k) => byKey[k]?.value;
     const m70 = liveEquities(byKey["equities"], selectedIndex), m71 = liveGdp(byKey["gdp"]),
         m72 = g("m3_proxy"), m73 = g("fed_rate"),
         m74 = g("inflation"), m75 = g("productivity"), m76 = g("oil_avg"), m78 = g("energy_mix");
     const m77 = oilAverage(byKey["oil_avg"]?.history, oilYears);
-    const vals = { m70, m71, m72, m73, m74, m75, m76, m77, m78 };
+    const hy = hySpreadEffect(byKey["high_yield_spread"]);
+    const m79 = hy.value;
+    const vals = { m70, m71, m72, m73, m74, m75, m76, m77, m78, m79 };
     if (Object.values(vals).some((v) => v == null) || m70 - m72 === 0) return null;
     const t1 = m71 / (m70 - m72);
     const t2 = 1 - (m73 + m74) / 100;
     const t3 = m75 / 100;
     const t4 = 1 - ((m76 - m77) * (m78 / 10000));
-    return { C: t1 * t2 * t3 * t4, terms: { t1, t2, t3, t4 }, vals };
+    const t5 = 1 + HY_MAX_EFFECT * hy.effect;
+    return { C: t1 * t2 * t3 * t4 * t5, terms: { t1, t2, t3, t4, t5 }, vals, hy };
 };
 
 // Per-indicator secondary line (context value, in its native unit/currency).
@@ -542,26 +576,36 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
             </div>
         );
     }
-    const { C, terms, vals } = res;
+    const { C, terms, vals, hy } = res;
     const cheap = C > 1, expensive = C < 1;
     const pctToOne = (C - 1) * 100;
     const absPct = `${nf.format(Math.abs(pctToOne))}%`;
     const zoneColor = expensive ? "#B32A22" : cheap ? "#1F7A3D" : "#6A6A6A";
     const verdict = expensive ? "Mercado CARO" : cheap ? "Mercado BARATO" : "Neutral";
     const advice = expensive ? "Sesgo defensivo / efectivo" : cheap ? "Sesgo crecimiento / agresivo" : "Equilibrado";
+    const hyStressed = hy?.value != null && hy.value >= HY_CAP;
 
     const factorRows = [
         ["m70", "Renta variable (est.)", vals.m70], ["m71", "PIB (est.)", vals.m71], ["m72", "M3 proxy", vals.m72],
         ["m73", "Tipo FED", vals.m73], ["m74", "Inflación", vals.m74], ["m75", "Productividad", vals.m75],
         ["m76", "Precio petróleo", vals.m76], ["m77", `Media petróleo (${oilYears}a)`, vals.m77],
-        ["m78", "Mix petróleo+gas", vals.m78],
+        ["m78", "Mix petróleo+gas", vals.m78], ["m79", "Spread high yield", vals.m79],
     ];
 
     return (
         <div className="border-2 border-[#052049] bg-white p-5 mb-4" data-testid="coef-card">
             <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="overline text-[#B32A22]">Coeficiente de mercado</div>
-                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000)))\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
+                <div className="overline text-[#B32A22] flex items-center gap-2">
+                    Coeficiente de mercado
+                    {hyStressed && (
+                        <HoverTip text={`Spread de high yield en ${nf.format(hy.value)} p.p., por encima del umbral de estrés (${nf.format(HY_CAP)} p.p.).\n\nLleva ${hy.daysAbove} de los últimos 5 días de mercado por encima de ese nivel. Cuantos más días se mantenga, más brusca es la caída del coeficiente alrededor de este umbral — con un pico aislado de un solo día, la caída es mucho más suave que si se sostiene una semana completa (5/5 días).`}>
+                            <span className="inline-flex items-center gap-1 text-[#B32A22] font-semibold normal-case tracking-normal text-[11px] animate-pulse cursor-help" data-testid="coef-hy-warning">
+                                <AlertTriangle size={13} /> Estrés crediticio
+                            </span>
+                        </HoverTip>
+                    )}
+                </div>
+                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000))) × t5\n\nt5 (spread high yield): curva continua y simétrica alrededor de 3,0 p.p. (ahí no afecta). Hacia spreads más altos el coeficiente baja, acelerando hasta 3,5 p.p. (su punto más brusco) y después sigue bajando pero más despacio. Hacia spreads más bajos sube igual de rápido, con el máximo en 2,5 p.p. Cuanto más días seguidos lleve el spread por encima de 3,5, más pronunciado es el giro en ambos umbrales.\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
                     <button className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-info" aria-label="Fórmula"><Info size={15} /></button>
                 </HoverTip>
             </div>
