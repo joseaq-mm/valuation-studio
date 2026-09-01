@@ -17,6 +17,7 @@ const ICONS = {
     m3_proxy: Layers,
     oil: Droplet,
     high_yield_spread: ShieldAlert,
+    debt_to_gdp: Landmark,
 };
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
@@ -359,7 +360,7 @@ const HYSpreadTip = ({ active, payload }) => {
     const p = payload[0].payload;
     return (
         <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="hy-spread-tooltip">
-            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="font-semibold">{dLabel(p.date, { full: true })}</div>
             <div className="tabular-nums">Spread: {nf.format(p.value)} p.p.</div>
         </div>
     );
@@ -462,6 +463,123 @@ const HighYieldSpreadCard = ({ ind }) => {
     );
 };
 
+const DEBT_SERIES = [
+    { key: "debt", label: "Deuda pública", color: "#B32A22", axis: "left" },
+    { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
+    { key: "ratio", label: "Deuda/PIB", color: "#052049", axis: "right" },
+];
+
+const DebtTip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="debt-tooltip">
+            <div className="font-semibold mb-1">{qLabel(label)}</div>
+            {payload.map((p) => (
+                <div key={p.dataKey} className="flex justify-between gap-3 tabular-nums">
+                    <span style={{ color: p.color }}>{p.name}</span>
+                    <span>{p.value == null ? "—" : nf.format(p.value)}<span className="text-[#9CA3AF]"> {p.dataKey === "ratio" ? "%" : "mM$"}</span></span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const DebtChart = ({ data, height, small }) => (
+    <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={data} margin={{ top: 8, right: small ? 4 : 6, left: small ? -14 : 4, bottom: 0 }}>
+            <CartesianGrid stroke="#00000010" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} interval={small ? 6 : 3} axisLine={{ stroke: "#00000022" }} tickLine={false} />
+            <YAxis yAxisId="left" tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} width={small ? 32 : 48} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "#052049" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
+            <RTooltip content={<DebtTip />} />
+            {!small && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            {DEBT_SERIES.map((s) => (
+                <Line key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+            ))}
+        </ComposedChart>
+    </ResponsiveContainer>
+);
+
+const DebtModal = ({ points, onClose }) => {
+    const ref = React.useRef(null);
+    const [busy, setBusy] = useState(false);
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, "deuda-publica-pib-eeuu"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={onClose} data-testid="debt-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-4 sm:p-5 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <Landmark size={22} className="text-[#052049] shrink-0" /> <span className="truncate">Deuda pública vs PIB · 10 años</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title="Deuda pública vs PIB · Valuation Studio" testidPrefix="debt-modal-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Deuda pública vs PIB")} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="debt-modal-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="debt-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                <div ref={ref} className="w-full h-[50vh] min-h-[240px] max-h-[460px] shrink-0">
+                    <DebtChart data={points} height="100%" />
+                </div>
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed shrink-0">
+                    Deuda pública total y PIB nominal de EEUU (<strong>eje izquierdo</strong>, miles de M$), y su ratio Deuda/PIB (<strong>eje derecho</strong>, %). Datos trimestrales oficiales, sin extrapolar.
+                </p>
+            </div>
+        </div>
+    );
+};
+
+const DebtCard = ({ ind }) => {
+    const [open, setOpen] = useState(false);
+    const points = ind.history || [];
+    if (!points.length) return null;
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Landmark size={13} className="text-[#052049]" /> {ind.label}
+                </div>
+                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                        <Info size={14} />
+                    </button>
+                </HoverTip>
+            </div>
+
+            <div className="flex items-baseline gap-1.5">
+                <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid={`macro-value-${ind.key}`}>
+                    {fmtVal(ind.value)}
+                </span>
+                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}</span>
+            </div>
+            <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
+
+            <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Evolución · 10 años</span>
+                    <button onClick={() => setOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="debt-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                        <Maximize2 size={13} />
+                    </button>
+                </div>
+                <DebtChart data={points} height={110} small />
+            </div>
+
+            <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
+                <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
+                <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
+            </div>
+            {open && <DebtModal points={points} onClose={() => setOpen(false)} />}
+        </div>
+    );
+};
+
 const DEFENSIVE = ["KO", "PG", "JNJ", "WM"];
 const GROWTH = ["NVDA", "PLTR", "TSLA", "SHOP"];
 
@@ -492,10 +610,11 @@ const CoefficientGauge = ({ c }) => {
     );
 };
 
-const dLabel = (iso) => {
+const dLabel = (iso, opts) => {
     if (!iso) return "";
-    try { return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }); }
-    catch { return iso; }
+    try {
+        return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: opts?.full ? "numeric" : "2-digit" });
+    } catch { return iso; }
 };
 
 const CoefHistTip = ({ active, payload }) => {
@@ -503,7 +622,7 @@ const CoefHistTip = ({ active, payload }) => {
     const p = payload[0].payload;
     return (
         <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="coef-hist-tooltip">
-            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="font-semibold">{dLabel(p.date, { full: true })}</div>
             <div className="tabular-nums">Coef.: {nf.format(p.c)} · {p.c > 1 ? "barato" : p.c < 1 ? "caro" : "neutro"}</div>
         </div>
     );
@@ -668,7 +787,7 @@ const qLabel = (iso) => {
     if (iso === "est") return "Est.";
     const [y, m] = iso.split("-");
     const q = { "01": "1T", "04": "2T", "07": "3T", "10": "4T" }[m] || "";
-    return `${q}${y.slice(2)}`;
+    return `${q} ${y}`;
 };
 
 const TREND_SERIES = [
@@ -857,7 +976,9 @@ export default function Macro() {
                                         ? <EnergyMixCard key={ind.key} ind={ind} />
                                         : ind.key === "high_yield_spread"
                                             ? <HighYieldSpreadCard key={ind.key} ind={ind} />
-                                            : <MacroCard key={ind.key} ind={ind} />
+                                            : ind.key === "debt_to_gdp"
+                                                ? <DebtCard key={ind.key} ind={ind} />
+                                                : <MacroCard key={ind.key} ind={ind} />
                         ))}
                         {data.trend?.points?.length > 0 && (
                             <TrendCard

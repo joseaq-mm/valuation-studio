@@ -229,7 +229,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread, debt = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 44),
             _observations(client, "GDP", 44),
             _observations(client, "FEDFUNDS", 16),
@@ -244,6 +244,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             _observations(client, "NASDAQ100", 400),
             _observations(client, "DJIA", 400),
             _observations(client, "BAMLH0A0HYM2", 1300),
+            _observations(client, "GFDEBTN", 44),
         )
 
     indicators = []
@@ -510,6 +511,25 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "source": "FRED · BAMLH0A0HYM2",
     })
 
+    # 10) US federal debt vs GDP (informational; not part of the market coefficient).
+    debt_trend = _build_debt_trend(debt, gdp)
+    debt_points = debt_trend["points"]
+    last_debt = debt_points[-1] if debt_points else None
+    indicators.append({
+        "key": "debt_to_gdp",
+        "label": "Deuda pública vs PIB (EEUU)",
+        "value": last_debt["ratio"] if last_debt else None,
+        "unit": "% del PIB",
+        "as_of": last_debt["date"] if last_debt else None,
+        "frequency": "Trimestral",
+        "description": ("Deuda pública total de EEUU (Tesoro) comparada con el PIB nominal, en los últimos 10 "
+                        "años. El ratio deuda/PIB mide cuántas veces la economía anual del país cabe en su deuda "
+                        "acumulada — cuanto más alto, mayor es la carga de deuda relativa al tamaño de la economía."),
+        "interpretation": "↑ más carga de deuda relativa a la economía · ↓ posición fiscal más desahogada",
+        "history": debt_points,
+        "source": "FRED · GFDEBTN / GDP",
+    })
+
     return {
         "indicators": indicators,
         "trend": _build_trend(equities, gdp, prod),
@@ -532,6 +552,21 @@ def _build_trend(equities: list, gdp: list, prod: list) -> dict:
             "date": d, "equities": e, "gdp": g,
             "diff": round(e - g, 1), "productivity": prod_map.get(d),
         })
+    return {"points": points[-40:]}
+
+
+def _build_debt_trend(debt: list, gdp: list) -> dict:
+    """Quarterly time series (last 10 years) of US federal debt (miles de M$), PIB
+    (miles de M$) and the debt/GDP ratio (%). GFDEBTN is in millions of dollars;
+    GDP is already in billions ('miles de M$'), so debt is converted to match."""
+    debt_map = {o["date"]: round(o["value"] / 1000.0, 1) for o in debt}
+    gdp_map = {o["date"]: round(o["value"], 1) for o in gdp}
+    dates = sorted(set(debt_map) & set(gdp_map))
+    points = []
+    for d in dates:
+        deuda, pib = debt_map[d], gdp_map[d]
+        if pib:
+            points.append({"date": d, "debt": deuda, "gdp": pib, "ratio": round(deuda / pib * 100, 1)})
     return {"points": points[-40:]}
 
 
