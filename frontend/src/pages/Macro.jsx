@@ -372,7 +372,7 @@ const HighYieldSpreadChart = ({ history, height, small }) => {
         <ResponsiveContainer width="100%" height={height}>
             <LineChart data={history} margin={{ top: 4, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
                 <CartesianGrid stroke="#00000010" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
                 <RTooltip content={<HYSpreadTip />} />
                 <Line type="monotone" dataKey="value" stroke="#B32A22" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -466,7 +466,7 @@ const HighYieldSpreadCard = ({ ind }) => {
 const DEBT_SERIES = [
     { key: "debt", label: "Deuda pública", color: "#B32A22", axis: "left" },
     { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
-    { key: "ratio", label: "Deuda/PIB", color: "#052049", axis: "right" },
+    { key: "ratio", label: "Deuda/PIB", color: "var(--brand)", axis: "right" },
 ];
 
 const DebtTip = ({ active, payload, label }) => {
@@ -490,7 +490,7 @@ const DebtChart = ({ data, height, small }) => (
             <CartesianGrid stroke="#00000010" vertical={false} />
             <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} interval={small ? 6 : 3} axisLine={{ stroke: "#00000022" }} tickLine={false} />
             <YAxis yAxisId="left" tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} width={small ? 32 : 48} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "#052049" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "var(--brand)" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
             <RTooltip content={<DebtTip />} />
             {!small && <Legend wrapperStyle={{ fontSize: 12 }} />}
             {DEBT_SERIES.map((s) => (
@@ -603,9 +603,9 @@ const CoefficientGauge = ({ c }) => {
             <text x={cx} y="18" textAnchor="middle" className="fill-[#6A6A6A]" fontSize="10" fontWeight="700">1</text>
             <text x={cx + R} y={cy + 16} textAnchor="middle" className="fill-[#1F7A3D]" fontSize="10" fontWeight="700">2 · barato</text>
             <g transform={`rotate(${rot} ${cx} ${cy})`}>
-                <line x1={cx} y1={cy} x2={cx} y2={cy - R + 8} stroke="#052049" strokeWidth="3" strokeLinecap="round" />
+                <line x1={cx} y1={cy} x2={cx} y2={cy - R + 8} stroke="var(--brand)" strokeWidth="3" strokeLinecap="round" />
             </g>
-            <circle cx={cx} cy={cy} r="6" fill="#052049" />
+            <circle cx={cx} cy={cy} r="6" fill="var(--brand)" />
         </svg>
     );
 };
@@ -640,7 +640,7 @@ const CoefHistoryChart = ({ history, height, small }) => {
                 <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
                 <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
                 <RTooltip content={<CoefHistTip />} />
-                <Line type="monotone" dataKey="c" stroke="#052049" strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="c" stroke="var(--brand)" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
         </ResponsiveContainer>
     );
@@ -786,12 +786,12 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
 const qLabel = (iso) => {
     if (iso === "est") return "Est.";
     const [y, m] = iso.split("-");
-    const q = { "01": "1T", "04": "2T", "07": "3T", "10": "4T" }[m] || "";
-    return `${q}${y.slice(2)}`;
+    const q = Math.ceil(parseInt(m, 10) / 3);
+    return `${q}T${y.slice(2)}`;
 };
 
 const TREND_SERIES = [
-    { key: "equities", label: "Renta variable", color: "#052049", axis: "left" },
+    { key: "equities", label: "Renta variable", color: "var(--brand)", axis: "left" },
     { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
     { key: "diff", label: "RV − PIB", color: "#B8860B", axis: "left" },
     { key: "productivity", label: "Productividad", color: "#B32A22", axis: "right" },
