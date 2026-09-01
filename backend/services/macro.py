@@ -575,18 +575,17 @@ HY_NEUTRAL = 3.0    # p.p. — coefficient unaffected here (curve always passes 
 HY_CAP = 3.5        # p.p. — steepest DECLINE happens here
 HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP  # 2.5 p.p. — mirror image: steepest RISE happens here
 HY_MAX_EFFECT = 0.15  # asymptotic ±15% swing on the coefficient, on par with the other factors
-HY_K_MIN = 1.1      # curve steepness for an isolated one-day spike (gentle S-curve)
-HY_K_MAX = 5.5      # curve steepness once sustained a full 5-day trading week (near-step)
+HY_K = 5.5          # fixed curve steepness (the sharpest "sustained a week" shape)
 
 
-def _hy_right_half(spread: float, k: float) -> float:
+def _hy_right_half(spread: float) -> float:
     """Sigmoid centered on HY_CAP, zeroed so it reads 0 at HY_NEUTRAL."""
-    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
-    s = 1 / (1 + math.exp(-k * (spread - HY_CAP)))
+    s0 = 1 / (1 + math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)))
+    s = 1 / (1 + math.exp(-HY_K * (spread - HY_CAP)))
     return s0 - s
 
 
-def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
+def _hy_spread_effect(hy: dict | None) -> float:
     """Effect of the high-yield credit spread on the market coefficient — continuous,
     S-shaped, and symmetric around HY_NEUTRAL (3.0 p.p., where it's exactly 0).
 
@@ -595,25 +594,18 @@ def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
     (spread falling) mirrors this exactly: the coefficient rises, accelerating until
     HY_FLOOR (2.5 p.p.), then decelerating.
 
-    How sharp the transition is (at both HY_CAP and HY_FLOOR) depends on how many of
-    the last 5 trading days the spread spent above HY_CAP: a single-day spike gives a
-    gentle S-curve; a full sustained week gives a near-vertical step.
+    Depends only on the current spread value (no persistence/history — a fixed,
+    steep S-curve).
 
-    Returns (effect in (-1, 1) — positive = reward, negative = penalty,
-    days_of_last_5_above_cap).
+    Returns effect in (-1, 1) — positive = reward, negative = penalty.
     """
     if not hy or hy.get("value") is None:
-        return 0.0, 0
+        return 0.0
     value = hy["value"]
-    hist = hy.get("history") or []
-    last5 = [h["value"] for h in hist[-5:]]
-    days_above = sum(1 for x in last5 if x >= HY_CAP)
-    k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (days_above / 5)
-    raw = _hy_right_half(value, k) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value, k)
-    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    raw = _hy_right_half(value) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value)
+    s0 = 1 / (1 + math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)))
     bound = max(1 - s0, 1e-9)  # natural symmetric saturation magnitude as spread → ±∞
-    effect = max(-1.0, min(1.0, raw / bound))
-    return effect, days_above
+    return max(-1.0, min(1.0, raw / bound))
 
 
 def _compute_coef_default(data: dict) -> float | None:
@@ -646,7 +638,7 @@ def _compute_coef_default(data: dict) -> float | None:
     t2 = 1 - (m73 + m74) / 100
     t3 = m75 / 100
     t4 = 1 - ((m76 - m77) * (m78 / 10000))
-    hy_effect, _ = _hy_spread_effect(hy)
+    hy_effect = _hy_spread_effect(hy)
     t5 = 1 + HY_MAX_EFFECT * hy_effect
     return round(t1 * t2 * t3 * t4 * t5, 4)
 

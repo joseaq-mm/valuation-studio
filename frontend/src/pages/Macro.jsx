@@ -48,29 +48,25 @@ const liveGdp = (ind) => ind?.live?.value ?? ind?.value;
 // version). Symmetric around HY_NEUTRAL (3.0 p.p., exactly 0 there): moving right,
 // the coefficient falls, accelerating until HY_CAP (3.5 p.p. — steepest point), then
 // keeps falling but decelerating; moving left mirrors this exactly, accelerating
-// until HY_FLOOR (2.5 p.p.). How sharp the transition is (at both ends) depends on
-// how many of the last 5 trading days the spread spent above HY_CAP — a single-day
-// spike gives a gentle S-curve, a full sustained week gives a near-vertical step.
+// until HY_FLOOR (2.5 p.p.). Depends only on the current spread value — a fixed,
+// steep S-curve (no persistence/history).
 const HY_NEUTRAL = 3.0, HY_CAP = 3.5, HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP, HY_MAX_EFFECT = 0.15;
-const HY_K_MIN = 1.1, HY_K_MAX = 5.5;
+const HY_K = 5.5;
 
-const hyRightHalf = (spread, k) => {
-    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
-    const s = 1 / (1 + Math.exp(-k * (spread - HY_CAP)));
+const hyRightHalf = (spread) => {
+    const s0 = 1 / (1 + Math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)));
+    const s = 1 / (1 + Math.exp(-HY_K * (spread - HY_CAP)));
     return s0 - s;
 };
 
 const hySpreadEffect = (hy) => {
     const value = hy?.value;
-    if (value == null) return { effect: 0, value: null, daysAbove: 0 };
-    const last5 = (hy?.history || []).slice(-5).map((h) => h.value);
-    const daysAbove = last5.filter((v) => v >= HY_CAP).length;
-    const k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (daysAbove / 5);
-    const raw = value >= HY_NEUTRAL ? hyRightHalf(value, k) : -hyRightHalf(2 * HY_NEUTRAL - value, k);
-    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
+    if (value == null) return { effect: 0, value: null };
+    const raw = value >= HY_NEUTRAL ? hyRightHalf(value) : -hyRightHalf(2 * HY_NEUTRAL - value);
+    const s0 = 1 / (1 + Math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)));
     const bound = Math.max(1 - s0, 1e-9);
     const effect = Math.max(-1, Math.min(1, raw / bound));
-    return { effect, value, daysAbove };
+    return { effect, value };
 };
 
 // Coefficient formula (user-defined):
@@ -598,14 +594,14 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                 <div className="overline text-[#B32A22] flex items-center gap-2">
                     Coeficiente de mercado
                     {hyStressed && (
-                        <HoverTip text={`Spread de high yield en ${nf.format(hy.value)} p.p., por encima del umbral de estrés (${nf.format(HY_CAP)} p.p.).\n\nLleva ${hy.daysAbove} de los últimos 5 días de mercado por encima de ese nivel. Cuantos más días se mantenga, más brusca es la caída del coeficiente alrededor de este umbral — con un pico aislado de un solo día, la caída es mucho más suave que si se sostiene una semana completa (5/5 días).`}>
+                        <HoverTip text={`Spread de high yield en ${nf.format(hy.value)} p.p., por encima del umbral de estrés (${nf.format(HY_CAP)} p.p.).\n\nA partir de aquí el coeficiente cae con más fuerza; pasado este punto sigue bajando pero ya más despacio.`}>
                             <span className="inline-flex items-center gap-1 text-[#B32A22] font-semibold normal-case tracking-normal text-[11px] animate-pulse cursor-help" data-testid="coef-hy-warning">
                                 <AlertTriangle size={13} /> Estrés crediticio
                             </span>
                         </HoverTip>
                     )}
                 </div>
-                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000))) × t5\n\nt5 (spread high yield): curva continua y simétrica alrededor de 3,0 p.p. (ahí no afecta). Hacia spreads más altos el coeficiente baja, acelerando hasta 3,5 p.p. (su punto más brusco) y después sigue bajando pero más despacio. Hacia spreads más bajos sube igual de rápido, con el máximo en 2,5 p.p. Cuanto más días seguidos lleve el spread por encima de 3,5, más pronunciado es el giro en ambos umbrales.\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
+                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000))) × t5\n\nt5 (spread high yield): curva continua y simétrica alrededor de 3,0 p.p. (ahí no afecta). Hacia spreads más altos el coeficiente baja, acelerando hasta 3,5 p.p. (su punto más brusco) y después sigue bajando pero más despacio. Hacia spreads más bajos sube igual de rápido, con el máximo en 2,5 p.p. Depende solo del valor actual del spread.\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
                     <button className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-info" aria-label="Fórmula"><Info size={15} /></button>
                 </HoverTip>
             </div>
