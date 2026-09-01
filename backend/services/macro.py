@@ -570,6 +570,38 @@ def _ind(data: dict, key: str) -> dict | None:
     return None
 
 
+HY_NEUTRAL = 3.0   # p.p. — no effect on the coefficient
+HY_CAP = 3.5       # p.p. — non-linear penalty saturates here (once sustained)
+HY_BAND = 0.5      # p.p. — width of the neutral→cap (and neutral→floor) ramp
+HY_MAX_EFFECT = 0.15  # max ±15% swing on the coefficient, on par with the other factors
+
+
+def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
+    """Non-linear effect of the high-yield credit spread on the market coefficient.
+
+    Neutral at HY_NEUTRAL (3.0 p.p.): no effect. The effect grows quadratically
+    (accelerating) as the spread approaches HY_CAP (3.5 p.p.), symmetric below
+    neutral (a low spread is rewarded the same way, floored at 2.5 p.p.).
+
+    Above HY_CAP the *maximum* penalty only applies once sustained: it's scaled by
+    how many of the last 5 trading days were also above HY_CAP, so a single-day
+    spike doesn't fully swing the coefficient — only a week of sustained stress does.
+
+    Returns (effect in [-1, 1], days_of_last_5_above_cap).
+    """
+    if not hy or hy.get("value") is None:
+        return 0.0, 0
+    value = hy["value"]
+    dist = max(-1.0, min(1.0, (value - HY_NEUTRAL) / HY_BAND))
+    level = (1.0 if dist >= 0 else -1.0) * dist * dist
+    hist = hy.get("history") or []
+    last5 = [h["value"] for h in hist[-5:]]
+    days_above = sum(1 for x in last5 if x >= HY_CAP)
+    if value >= HY_CAP:
+        level *= days_above / 5
+    return level, days_above
+
+
 def _compute_coef_default(data: dict) -> float | None:
     """Server-side coefficient with the DEFAULT choices (equities live vía S&P 500,
     media del petróleo a 4 años). Mirrors the frontend formula so the stored history
@@ -578,6 +610,7 @@ def _compute_coef_default(data: dict) -> float | None:
     m3, fed = _ind(data, "m3_proxy"), _ind(data, "fed_rate")
     infl, prod = _ind(data, "inflation"), _ind(data, "productivity")
     oil, en = _ind(data, "oil_avg"), _ind(data, "energy_mix")
+    hy = _ind(data, "high_yield_spread")
     v = lambda x: x.get("value") if x else None
     m70 = (eq.get("live") or {}).get("by_index", {}).get("SP500", {}).get("value") if eq and eq.get("live") else None
     if m70 is None:
@@ -591,14 +624,17 @@ def _compute_coef_default(data: dict) -> float | None:
         sl = hist[-min(48, len(hist)):]
         if sl:
             m77 = sum(h["value"] for h in sl) / len(sl)
-    vals = [m70, m71, m72, m73, m74, m75, m76, m77, m78]
+    m79 = v(hy)
+    vals = [m70, m71, m72, m73, m74, m75, m76, m77, m78, m79]
     if any(x is None for x in vals) or (m70 - m72) == 0:
         return None
     t1 = m71 / (m70 - m72)
     t2 = 1 - (m73 + m74) / 100
     t3 = m75 / 100
     t4 = 1 - ((m76 - m77) * (m78 / 10000))
-    return round(t1 * t2 * t3 * t4, 4)
+    hy_effect, _ = _hy_spread_effect(hy)
+    t5 = 1 - HY_MAX_EFFECT * hy_effect
+    return round(t1 * t2 * t3 * t4 * t5, 4)
 
 
 async def _store_coef_point(db, c: float) -> None:
