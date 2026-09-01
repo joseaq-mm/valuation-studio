@@ -18,6 +18,7 @@ Series chosen (all free, official, public domain):
     the market coefficient yet.
 """
 import logging
+import math
 import os
 import asyncio
 from datetime import datetime, timezone
@@ -570,36 +571,49 @@ def _ind(data: dict, key: str) -> dict | None:
     return None
 
 
-HY_NEUTRAL = 3.0   # p.p. — no effect on the coefficient
-HY_CAP = 3.5       # p.p. — non-linear penalty saturates here (once sustained)
-HY_BAND = 0.5      # p.p. — width of the neutral→cap (and neutral→floor) ramp
-HY_MAX_EFFECT = 0.15  # max ±15% swing on the coefficient, on par with the other factors
+HY_NEUTRAL = 3.0    # p.p. — coefficient unaffected here (curve always passes through it)
+HY_CAP = 3.5        # p.p. — steepest DECLINE happens here
+HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP  # 2.5 p.p. — mirror image: steepest RISE happens here
+HY_MAX_EFFECT = 0.15  # asymptotic ±15% swing on the coefficient, on par with the other factors
+HY_K_MIN = 1.1      # curve steepness for an isolated one-day spike (gentle S-curve)
+HY_K_MAX = 5.5      # curve steepness once sustained a full 5-day trading week (near-step)
+
+
+def _hy_right_half(spread: float, k: float) -> float:
+    """Sigmoid centered on HY_CAP, zeroed so it reads 0 at HY_NEUTRAL."""
+    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    s = 1 / (1 + math.exp(-k * (spread - HY_CAP)))
+    return s0 - s
 
 
 def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
-    """Non-linear effect of the high-yield credit spread on the market coefficient.
+    """Effect of the high-yield credit spread on the market coefficient — continuous,
+    S-shaped, and symmetric around HY_NEUTRAL (3.0 p.p., where it's exactly 0).
 
-    Neutral at HY_NEUTRAL (3.0 p.p.): no effect. The effect grows quadratically
-    (accelerating) as the spread approaches HY_CAP (3.5 p.p.), symmetric below
-    neutral (a low spread is rewarded the same way, floored at 2.5 p.p.).
+    Moving right (spread rising), the coefficient falls, accelerating until HY_CAP
+    (3.5 p.p.) — its steepest point — then keeps falling but decelerating. Moving left
+    (spread falling) mirrors this exactly: the coefficient rises, accelerating until
+    HY_FLOOR (2.5 p.p.), then decelerating.
 
-    Above HY_CAP the *maximum* penalty only applies once sustained: it's scaled by
-    how many of the last 5 trading days were also above HY_CAP, so a single-day
-    spike doesn't fully swing the coefficient — only a week of sustained stress does.
+    How sharp the transition is (at both HY_CAP and HY_FLOOR) depends on how many of
+    the last 5 trading days the spread spent above HY_CAP: a single-day spike gives a
+    gentle S-curve; a full sustained week gives a near-vertical step.
 
-    Returns (effect in [-1, 1], days_of_last_5_above_cap).
+    Returns (effect in (-1, 1) — positive = reward, negative = penalty,
+    days_of_last_5_above_cap).
     """
     if not hy or hy.get("value") is None:
         return 0.0, 0
     value = hy["value"]
-    dist = max(-1.0, min(1.0, (value - HY_NEUTRAL) / HY_BAND))
-    level = (1.0 if dist >= 0 else -1.0) * dist * dist
     hist = hy.get("history") or []
     last5 = [h["value"] for h in hist[-5:]]
     days_above = sum(1 for x in last5 if x >= HY_CAP)
-    if value >= HY_CAP:
-        level *= days_above / 5
-    return level, days_above
+    k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (days_above / 5)
+    raw = _hy_right_half(value, k) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value, k)
+    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    bound = max(1 - s0, 1e-9)  # natural symmetric saturation magnitude as spread → ±∞
+    effect = max(-1.0, min(1.0, raw / bound))
+    return effect, days_above
 
 
 def _compute_coef_default(data: dict) -> float | None:
@@ -633,7 +647,7 @@ def _compute_coef_default(data: dict) -> float | None:
     t3 = m75 / 100
     t4 = 1 - ((m76 - m77) * (m78 / 10000))
     hy_effect, _ = _hy_spread_effect(hy)
-    t5 = 1 - HY_MAX_EFFECT * hy_effect
+    t5 = 1 + HY_MAX_EFFECT * hy_effect
     return round(t1 * t2 * t3 * t4 * t5, 4)
 
 
