@@ -833,8 +833,8 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
     pts = []
     for p in points:
         d = p["date"]
-        m70, m71, m74 = p.get("equities"), p.get("gdp"), p.get("productivity")
-        if m70 is None or m71 is None or m74 is None:
+        m70, m71, m75 = p.get("equities"), p.get("gdp"), p.get("productivity")
+        if m70 is None or m71 is None or m75 is None:
             continue
 
         m73 = _asof(series["fed"], d)
@@ -844,7 +844,7 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
         except ValueError:
             prior_iso = None
         cpi_prior = _asof(series["cpi"], prior_iso) if prior_iso else None
-        m75 = round((cpi_now - cpi_prior) / cpi_prior * 100, 2) if cpi_now and cpi_prior else None
+        m74 = round((cpi_now - cpi_prior) / cpi_prior * 100, 2) if cpi_now and cpi_prior else None
 
         m2_h, ltd_h, cp_h = _asof(series["m2"], d), _asof(series["ltd"], d), _asof(series["cp"], d)
         if m2_h is None or ltd_h is None or cp_h is None:
@@ -866,7 +866,7 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
         m78 = energy_by_year.get(int(d[:4]), m78_fallback)
         m79 = _asof(series["hy"], d)
 
-        if any(x is None for x in (m73, m75, m76, m77, m78, m79)) or (m70 - m72) == 0:
+        if any(x is None for x in (m73, m74, m76, m77, m78, m79)) or (m70 - m72) == 0:
             continue
 
         t1 = m71 / (m70 - m72)
