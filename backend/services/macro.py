@@ -777,10 +777,10 @@ async def _fetch_coef_backfill_series(client: httpx.AsyncClient) -> dict:
 
 
 async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> None:
-    """One-off: if the history is empty, reconstruct ~10 years of QUARTERLY coefficient
-    points (mirroring `_compute_coef_default`) from the actually-official quarterly
-    series (equities/GDP/productivity, already in `data['trend']`), plus monthly/weekly
-    FRED history fetched here for the other terms.
+    """One-off: reconstruct ~10 years of QUARTERLY coefficient points (mirroring
+    `_compute_coef_default`) from the actually-official quarterly series (equities/GDP/
+    productivity, already in `data['trend']`), plus monthly/weekly FRED history fetched
+    here for the other terms.
 
     The one blocker is the ICI institutional-MMF component: it only has a live snapshot,
     no history. Per explicit product decision, instead of dropping it for the backfill we
@@ -789,9 +789,18 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
     convert the assumed weight back into an assumed dollar figure for each historical
     quarter and add it into that quarter's M2 + large time deposits + commercial paper.
     If the ICI value itself was never available, the institutional term is simply omitted
-    for the backfill (same graceful degradation as the live formula)."""
-    if await db.macro_coef_history.count_documents({}) > 0:
-        return
+    for the backfill (same graceful degradation as the live formula).
+
+    Idempotent by date range rather than by mere presence of data: if the oldest stored
+    point is already ~10 years old, a real backfill has already run — skip. Otherwise
+    (empty, or only the old shallow ~90-day synthetic seed from before this backfill
+    existed) wipe whatever is there and do the real one."""
+    oldest = await db.macro_coef_history.find({}, {"_id": 0, "date": 1}).sort("date", 1).to_list(length=1)
+    if oldest:
+        cutoff_8y = (datetime.now(timezone.utc) - timedelta(days=365 * 8)).date().isoformat()
+        if oldest[0]["date"] <= cutoff_8y:
+            return  # already has a real long-range backfill
+        await db.macro_coef_history.delete_many({})  # stale shallow seed — replace it
     points = (data.get("trend") or {}).get("points") or []
     if not points:
         return
