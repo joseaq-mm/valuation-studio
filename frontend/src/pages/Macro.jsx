@@ -632,7 +632,7 @@ const CoefHistoryChart = ({ history, height, small }) => {
                 <CartesianGrid stroke="#00000010" vertical={false} />
                 <ReferenceArea y1={1} y2={100} fill="#1F7A3D" fillOpacity={0.07} />
                 <ReferenceArea y1={0} y2={1} fill="#B32A22" fillOpacity={0.07} />
-                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
                 <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
                 <RTooltip content={<CoefHistTip />} />
@@ -655,7 +655,7 @@ const CoefHistoryModal = ({ history, onClose }) => {
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="coef-history-modal">
         <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-3">
-                <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0"><LineChartIcon size={22} className="shrink-0" /> <span className="truncate">Histórico del coeficiente</span></h2>
+                <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0"><LineChartIcon size={22} className="shrink-0" /> <span className="truncate">Histórico del coeficiente · 10 años</span></h2>
                 <div className="flex items-center gap-3 shrink-0">
                     <ShareMenu size="md" title="Histórico del coeficiente · Valuation Studio" testidPrefix="coef-history-share"
                         createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Histórico del coeficiente")} />
@@ -669,7 +669,7 @@ const CoefHistoryModal = ({ history, onClose }) => {
                 <CoefHistoryChart history={history} height={420} />
             </div>
             <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
-                Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro. El histórico crece cada día al refrescar los datos macro.
+                Los años más antiguos son una reconstrucción trimestral con los mismos supuestos que la fórmula en vivo (el peso de los fondos monetarios institucionales, sin archivo histórico propio, se extrapola de forma geométrica a partir de su peso actual). Desde hoy en adelante, el histórico crece con un punto real cada día. <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro.
             </p>
         </div>
     </div>
@@ -734,7 +734,7 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                     {coefHistory?.length > 1 && (
                         <div className="w-full mt-3 border-t border-black/10 pt-2" data-testid="coef-history-mini">
                             <div className="flex items-center justify-between mb-0.5">
-                                <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Histórico · {coefHistory.length}d</span>
+                                <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Histórico · 10 años</span>
                                 <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-history-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
                                     <Maximize2 size={13} />
                                 </button>
