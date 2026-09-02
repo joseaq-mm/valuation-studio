@@ -426,12 +426,15 @@ const HighYieldSpreadCard = ({ ind }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Icon size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
-                    </button>
-                </HoverTip>
+                <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="hy-spread-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                    <Maximize2 size={14} />
+                </button>
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -444,12 +447,7 @@ const HighYieldSpreadCard = ({ ind }) => {
 
             {history.length > 1 && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Evolución</span>
-                        <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="hy-spread-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
-                            <Maximize2 size={13} />
-                        </button>
-                    </div>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
                     <HighYieldSpreadChart history={history} height={90} small />
                 </div>
             )}
@@ -545,12 +543,15 @@ const DebtCard = ({ ind }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Landmark size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
-                    </button>
-                </HoverTip>
+                <button onClick={() => setOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="debt-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                    <Maximize2 size={14} />
+                </button>
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -562,12 +563,7 @@ const DebtCard = ({ ind }) => {
             <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
 
             <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
-                <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Evolución · 10 años</span>
-                    <button onClick={() => setOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="debt-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
-                        <Maximize2 size={13} />
-                    </button>
-                </div>
+                <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución · 10 años</div>
                 <DebtChart data={points} height={110} small />
             </div>
 
@@ -855,6 +851,11 @@ const TrendCard = ({ points, byKey, selectedIndex, onExpand }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <LineChartIcon size={13} className="text-[#052049]" /> Evolución · 10 años
+                    <HoverTip text={"Renta variable corporativa de EEUU, PIB y su resta (RV − PIB) en el eje izquierdo (miles de M$); productividad laboral en el eje derecho (índice 2017=100). El último punto (Est.) usa las estimaciones en vivo de renta variable y PIB.\n\nFuente: FRED · NCBEILQ027S, GDP, OPHNFB · Trimestral"}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-trend" aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
                 <button onClick={onExpand} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="trend-expand-btn" aria-label="Ampliar gráfico" title="Ampliar">
                     <Maximize2 size={14} />

@@ -116,3 +116,13 @@ curl -X POST http://127.0.0.1:8000/api/admin/run-radar
 | `ADMIN_EMAIL` | Panel admin feedback/comunidad |
 
 Detalle paso a paso: `docs/CONNECTION_GUIDE.md`.
+
+## Convención de tarjetas de gráficos (frontend)
+
+Toda tarjeta cuyo contenido principal sea un gráfico (Recharts u otro) debe seguir esta cabecera, sin necesidad de que se pida cada vez:
+
+- **Fila de cabecera**: icono + título, y **justo a continuación del título** (mismo renglón, pegado) el icono de información (ⓘ) con su tooltip explicativo — no al otro extremo de la fila.
+- **Esquina superior derecha**: el icono de ampliar (⛶ `Maximize2`), separado, como única acción en ese lado.
+- **Al ampliar (modal)**: debe ofrecer **compartir** (`ShareMenu`) y **descargar en JPG** (`downloadSvgJpg`/`getSvgJpgBlob`), además de cerrar — igual que `HighYieldSpreadModal`/`DebtModal`/`TrendModal`/`CoefHistoryModal` en `frontend/src/pages/Macro.jsx`.
+
+Esto aplica a tarjetas cuyo contenido principal ES un gráfico (p. ej. spread de high yield, deuda/PIB, evolución 10 años). No aplica a tarjetas sin gráfico (valor simple, dial/slider, desglose en barras) ni a mini-gráficos incrustados como sub-widget dentro de una tarjeta mayor (p. ej. el histórico dentro de la tarjeta del coeficiente), que mantienen su propio patrón anidado salvo que se indique lo contrario.
