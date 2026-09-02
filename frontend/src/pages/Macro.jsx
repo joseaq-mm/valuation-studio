@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, ShieldAlert, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
+import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
 import { macroIndicators, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
 import ShareMenu from "@/components/ShareMenu";
@@ -625,19 +625,31 @@ const CoefHistTip = ({ active, payload }) => {
 };
 
 const CoefHistoryChart = ({ history, height, small }) => {
+    const gid = React.useId();
     if (!history?.length) return null;
+    const data = history.map((h) => ({ ...h, above: h.c >= 1 ? h.c : 1, below: h.c <= 1 ? h.c : 1 }));
     return (
         <ResponsiveContainer width="100%" height={height}>
-            <LineChart data={history} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+            <ComposedChart data={data} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+                <defs>
+                    <linearGradient id={`coefGreen-${gid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--cheap)" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="var(--cheap)" stopOpacity={0.04} />
+                    </linearGradient>
+                    <linearGradient id={`coefRed-${gid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--expensive)" stopOpacity={0.04} />
+                        <stop offset="100%" stopColor="var(--expensive)" stopOpacity={0.5} />
+                    </linearGradient>
+                </defs>
                 <CartesianGrid stroke="#00000010" vertical={false} />
-                <ReferenceArea y1={1} y2={100} fill="#1F7A3D" fillOpacity={0.07} />
-                <ReferenceArea y1={0} y2={1} fill="#B32A22" fillOpacity={0.07} />
+                <Area type="monotone" dataKey="above" baseValue={1} stroke="none" fill={`url(#coefGreen-${gid})`} isAnimationActive={false} dot={false} activeDot={false} />
+                <Area type="monotone" dataKey="below" baseValue={1} stroke="none" fill={`url(#coefRed-${gid})`} isAnimationActive={false} dot={false} activeDot={false} />
                 <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
                 <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
                 <RTooltip content={<CoefHistTip />} />
                 <Line type="monotone" dataKey="c" stroke="var(--brand)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
+            </ComposedChart>
         </ResponsiveContainer>
     );
 };
