@@ -761,6 +761,11 @@ def _trailing_avg(hist_asc: list, target_iso: str, months: int = 48):
 # geométrica/compuesta: peso(año-n) = peso_actual × (1 − tasa)^n.
 INST_WEIGHT_ANNUAL_GROWTH = 0.05
 
+# Bump this whenever `_backfill_coef_history_10y`'s formula/inputs change, so a stale
+# backfill (written by a since-fixed/changed version) gets recomputed automatically
+# instead of silently sticking around just because it "looks" like a full 10y backfill.
+COEF_BACKFILL_VERSION = 2
+
 
 async def _fetch_coef_backfill_series(client: httpx.AsyncClient) -> dict:
     """Extra FRED history (only needed for the one-off 10y coefficient backfill —
@@ -791,16 +796,19 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
     If the ICI value itself was never available, the institutional term is simply omitted
     for the backfill (same graceful degradation as the live formula).
 
-    Idempotent by date range rather than by mere presence of data: if the oldest stored
-    point is already ~10 years old, a real backfill has already run — skip. Otherwise
-    (empty, or only the old shallow ~90-day synthetic seed from before this backfill
-    existed) wipe whatever is there and do the real one."""
+    Guarded by a version marker (`macro_coef_history_meta`), not just by whether data is
+    present: a bare emptiness/date-range check can't tell a correct backfill apart from a
+    *wrong* one already sitting there with plausible-looking old dates (exactly what
+    happened when this formula had a bug — fixing the bug alone didn't reprocess anything,
+    because the buggy run had already written real 10-year-old dates). Bump
+    `COEF_BACKFILL_VERSION` whenever this function's formula/inputs change, and it
+    recomputes and replaces the history automatically on the next refresh."""
+    meta = await db.macro_coef_history_meta.find_one({"id": "backfill"})
     oldest = await db.macro_coef_history.find({}, {"_id": 0, "date": 1}).sort("date", 1).to_list(length=1)
-    if oldest:
-        cutoff_8y = (datetime.now(timezone.utc) - timedelta(days=365 * 8)).date().isoformat()
-        if oldest[0]["date"] <= cutoff_8y:
-            return  # already has a real long-range backfill
-        await db.macro_coef_history.delete_many({})  # stale shallow seed — replace it
+    cutoff_8y = (datetime.now(timezone.utc) - timedelta(days=365 * 8)).date().isoformat()
+    if (meta and meta.get("version") == COEF_BACKFILL_VERSION
+            and oldest and oldest[0]["date"] <= cutoff_8y):
+        return  # already has a real long-range backfill from the current formula version
     points = (data.get("trend") or {}).get("points") or []
     if not points:
         return
@@ -878,5 +886,9 @@ async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> N
         c = round(t1 * t2 * t3 * t4 * t5, 4)
         pts.append({"date": d, "c": c})
 
-    if pts:
-        await db.macro_coef_history.insert_many(pts)
+    if not pts:
+        return
+    await db.macro_coef_history.delete_many({})  # drop whatever was there (empty/stale/wrong-version)
+    await db.macro_coef_history.insert_many(pts)
+    await db.macro_coef_history_meta.update_one(
+        {"id": "backfill"}, {"$set": {"id": "backfill", "version": COEF_BACKFILL_VERSION}}, upsert=True)
