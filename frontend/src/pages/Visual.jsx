@@ -13,6 +13,7 @@ import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
 import PinchZoomPane from "@/components/PinchZoomPane";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
+import { freshnessInfo } from "@/lib/freshness";
 import { signalFor } from "@/lib/thresholds";
 import { toast } from "sonner";
 
@@ -918,11 +919,14 @@ export default function Visual() {
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
                             const incomplete = r.ratio_compra_pct == null || r.avg_overall_score == null;
+                            const stale = freshnessInfo(r.thesis_updated_at, r.last_earnings_date, r.next_earnings_date)?.stale;
                             return (
                                 <tr key={r.ticker} className={`border-t border-black/10 ${incomplete ? "text-[#9ca3af]" : "hover:bg-[#FAF6EE]"}`} data-testid={`visual-row-${r.ticker}`}>
                                     <td className="p-2 w-[29px] sticky left-0 z-20 bg-white"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
                                     <td className="p-2 font-semibold sticky left-[29px] z-20 bg-white border-r border-black/10"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
-                                    <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5"><span>{r.name}</span><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
+                                    <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5">
+                                        <Link to={`/thesis?company=${encodeURIComponent(r.ticker)}`} className="hover:underline" style={stale ? { color: "#B32A22", fontWeight: 700 } : undefined} title="Generar/actualizar tesis" data-testid={`visual-name-link-${r.ticker}`}>{r.name}</Link>
+                                        <AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
                                     <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><LastEarningsBadge date={r.last_earnings_date} testid={`visual-last-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
