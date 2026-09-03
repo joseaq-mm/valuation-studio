@@ -21,7 +21,7 @@ import logging
 import math
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -86,6 +86,40 @@ async def fetch_owid_energy_mix() -> dict:
         r.raise_for_status()
         data = r.content
     return await asyncio.to_thread(_parse_owid_energy, data)
+
+
+def _parse_owid_energy_history(data: bytes) -> dict:
+    """Parse the OWID energy CSV → {year: oil_gas_pct} for 'World', every year available.
+    Used only for the one-off 10y coefficient backfill (the live card only needs the
+    latest year, handled by `_parse_owid_energy`)."""
+    import csv
+    import io
+    reader = csv.DictReader(io.StringIO(data.decode("utf-8")))
+    by_year = {}
+    for row in reader:
+        if row.get("country") != "World":
+            continue
+        try:
+            year = int(row["year"])
+            vals = {}
+            for _label, col in ENERGY_SOURCES:
+                v = row.get(col)
+                vals[col] = float(v) if v not in (None, "", "NA") else 0.0
+        except (ValueError, TypeError):
+            continue
+        if vals["oil_consumption"] > 0 and vals["gas_consumption"] > 0 and vals["coal_consumption"] > 0:
+            total = sum(vals.values())
+            if total:
+                by_year[year] = round((vals["oil_consumption"] + vals["gas_consumption"]) / total * 100, 1)
+    return by_year
+
+
+async def fetch_owid_energy_history() -> dict:
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.get(OWID_ENERGY_URL)
+        r.raise_for_status()
+        data = r.content
+    return await asyncio.to_thread(_parse_owid_energy_history, data)
 
 
 async def resolve_energy_mix(db) -> dict | None:
@@ -229,7 +263,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
-        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread = await asyncio.gather(
+        equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread, debt = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 44),
             _observations(client, "GDP", 44),
             _observations(client, "FEDFUNDS", 16),
@@ -244,6 +278,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             _observations(client, "NASDAQ100", 400),
             _observations(client, "DJIA", 400),
             _observations(client, "BAMLH0A0HYM2", 1300),
+            _observations(client, "GFDEBTN", 44),
         )
 
     indicators = []
@@ -510,6 +545,25 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "source": "FRED · BAMLH0A0HYM2",
     })
 
+    # 10) US federal debt vs GDP (informational; not part of the market coefficient).
+    debt_trend = _build_debt_trend(debt, gdp)
+    debt_points = debt_trend["points"]
+    last_debt = debt_points[-1] if debt_points else None
+    indicators.append({
+        "key": "debt_to_gdp",
+        "label": "Deuda pública vs PIB (EEUU)",
+        "value": last_debt["ratio"] if last_debt else None,
+        "unit": "% del PIB",
+        "as_of": last_debt["date"] if last_debt else None,
+        "frequency": "Trimestral",
+        "description": ("Deuda pública total de EEUU (Tesoro) comparada con el PIB nominal, en los últimos 10 "
+                        "años. El ratio deuda/PIB mide cuántas veces la economía anual del país cabe en su deuda "
+                        "acumulada — cuanto más alto, mayor es la carga de deuda relativa al tamaño de la economía."),
+        "interpretation": "↑ más carga de deuda relativa a la economía · ↓ posición fiscal más desahogada",
+        "history": debt_points,
+        "source": "FRED · GFDEBTN / GDP",
+    })
+
     return {
         "indicators": indicators,
         "trend": _build_trend(equities, gdp, prod),
@@ -535,6 +589,21 @@ def _build_trend(equities: list, gdp: list, prod: list) -> dict:
     return {"points": points[-40:]}
 
 
+def _build_debt_trend(debt: list, gdp: list) -> dict:
+    """Quarterly time series (last 10 years) of US federal debt (miles de M$), PIB
+    (miles de M$) and the debt/GDP ratio (%). GFDEBTN is in millions of dollars;
+    GDP is already in billions ('miles de M$'), so debt is converted to match."""
+    debt_map = {o["date"]: round(o["value"] / 1000.0, 1) for o in debt}
+    gdp_map = {o["date"]: round(o["value"], 1) for o in gdp}
+    dates = sorted(set(debt_map) & set(gdp_map))
+    points = []
+    for d in dates:
+        deuda, pib = debt_map[d], gdp_map[d]
+        if pib:
+            points.append({"date": d, "debt": deuda, "gdp": pib, "ratio": round(deuda / pib * 100, 1)})
+    return {"points": points[-40:]}
+
+
 async def get_macro_indicators(db, refresh: bool = False) -> dict:
     """Cached accessor: returns the cached payload if younger than CACHE_TTL_HOURS,
     otherwise refetches from FRED and stores it. Always attaches the daily coefficient
@@ -557,7 +626,7 @@ async def get_macro_indicators(db, refresh: bool = False) -> dict:
     await db.macro_cache.update_one({"id": "us_macro"}, {"$set": {"id": "us_macro", **data}}, upsert=True)
     c_now = _compute_coef_default(data)
     if c_now is not None:
-        await _seed_coef_history(db, c_now)
+        await _backfill_coef_history_10y(db, data, ici_inst)
         await _store_coef_point(db, c_now)
     data["coef_history"] = await _get_coef_history(db)
     data["cached"] = False
@@ -575,18 +644,17 @@ HY_NEUTRAL = 3.0    # p.p. — coefficient unaffected here (curve always passes 
 HY_CAP = 3.5        # p.p. — steepest DECLINE happens here
 HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP  # 2.5 p.p. — mirror image: steepest RISE happens here
 HY_MAX_EFFECT = 0.15  # asymptotic ±15% swing on the coefficient, on par with the other factors
-HY_K_MIN = 1.1      # curve steepness for an isolated one-day spike (gentle S-curve)
-HY_K_MAX = 5.5      # curve steepness once sustained a full 5-day trading week (near-step)
+HY_K = 5.5          # fixed curve steepness (the sharpest "sustained a week" shape)
 
 
-def _hy_right_half(spread: float, k: float) -> float:
+def _hy_right_half(spread: float) -> float:
     """Sigmoid centered on HY_CAP, zeroed so it reads 0 at HY_NEUTRAL."""
-    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
-    s = 1 / (1 + math.exp(-k * (spread - HY_CAP)))
+    s0 = 1 / (1 + math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)))
+    s = 1 / (1 + math.exp(-HY_K * (spread - HY_CAP)))
     return s0 - s
 
 
-def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
+def _hy_spread_effect(hy: dict | None) -> float:
     """Effect of the high-yield credit spread on the market coefficient — continuous,
     S-shaped, and symmetric around HY_NEUTRAL (3.0 p.p., where it's exactly 0).
 
@@ -595,25 +663,18 @@ def _hy_spread_effect(hy: dict | None) -> tuple[float, int]:
     (spread falling) mirrors this exactly: the coefficient rises, accelerating until
     HY_FLOOR (2.5 p.p.), then decelerating.
 
-    How sharp the transition is (at both HY_CAP and HY_FLOOR) depends on how many of
-    the last 5 trading days the spread spent above HY_CAP: a single-day spike gives a
-    gentle S-curve; a full sustained week gives a near-vertical step.
+    Depends only on the current spread value (no persistence/history — a fixed,
+    steep S-curve).
 
-    Returns (effect in (-1, 1) — positive = reward, negative = penalty,
-    days_of_last_5_above_cap).
+    Returns effect in (-1, 1) — positive = reward, negative = penalty.
     """
     if not hy or hy.get("value") is None:
-        return 0.0, 0
+        return 0.0
     value = hy["value"]
-    hist = hy.get("history") or []
-    last5 = [h["value"] for h in hist[-5:]]
-    days_above = sum(1 for x in last5 if x >= HY_CAP)
-    k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (days_above / 5)
-    raw = _hy_right_half(value, k) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value, k)
-    s0 = 1 / (1 + math.exp(-k * (HY_NEUTRAL - HY_CAP)))
+    raw = _hy_right_half(value) if value >= HY_NEUTRAL else -_hy_right_half(2 * HY_NEUTRAL - value)
+    s0 = 1 / (1 + math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)))
     bound = max(1 - s0, 1e-9)  # natural symmetric saturation magnitude as spread → ±∞
-    effect = max(-1.0, min(1.0, raw / bound))
-    return effect, days_above
+    return max(-1.0, min(1.0, raw / bound))
 
 
 def _compute_coef_default(data: dict) -> float | None:
@@ -646,7 +707,7 @@ def _compute_coef_default(data: dict) -> float | None:
     t2 = 1 - (m73 + m74) / 100
     t3 = m75 / 100
     t4 = 1 - ((m76 - m77) * (m78 / 10000))
-    hy_effect, _ = _hy_spread_effect(hy)
+    hy_effect = _hy_spread_effect(hy)
     t5 = 1 + HY_MAX_EFFECT * hy_effect
     return round(t1 * t2 * t3 * t4 * t5, 4)
 
@@ -658,23 +719,176 @@ async def _store_coef_point(db, c: float) -> None:
         {"date": today}, {"$set": {"date": today, "c": c}}, upsert=True)
 
 
-async def _get_coef_history(db, limit: int = 180) -> list:
-    pts = await db.macro_coef_history.find({}, {"_id": 0}).sort("date", 1).to_list(length=1000)
-    return pts[-limit:]
+async def _get_coef_history(db, years: int = 10) -> list:
+    """Full coefficient history for the last `years` years — the quarterly 10y backfill
+    plus every real daily point collected since. Filtered by date (not by point count):
+    with the backfill's mixed quarterly/daily granularity, a fixed count would eventually
+    push the oldest (quarterly) points out as daily points keep accumulating."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=365 * years)).date().isoformat()
+    return await db.macro_coef_history.find(
+        {"date": {"$gte": cutoff}}, {"_id": 0}).sort("date", 1).to_list(length=10000)
 
 
-async def _seed_coef_history(db, current_c: float) -> None:
-    """One-off: if history is empty, backfill ~90 daily example points ending near the
-    current coefficient (gentle random walk) so the chart isn't empty on first use."""
-    import random
-    from datetime import timedelta
-    if await db.macro_coef_history.count_documents({}) > 0:
+def _asof(obs: list, target_iso: str, ascending: bool = False):
+    """Value of the observation on/before `target_iso`. Pass ascending=True if `obs`
+    is sorted oldest→newest (e.g. the `history` lists built for the frontend);
+    FRED's raw `_observations()` lists are newest→oldest (ascending=False, default)."""
+    if not obs or not target_iso:
+        return None
+    seq = list(reversed(obs)) if ascending else obs
+    for o in seq:
+        if o["date"] <= target_iso:
+            return o["value"]
+    return seq[-1]["value"]
+
+
+def _trailing_avg(hist_asc: list, target_iso: str, months: int = 48):
+    """Average of up to `months` most recent monthly values on/before target_iso.
+    `hist_asc` must be sorted oldest→newest."""
+    window = [h["value"] for h in hist_asc if h["date"] <= target_iso]
+    if not window:
+        return None
+    window = window[-months:]
+    return sum(window) / len(window)
+
+
+# Peso asumido del componente "fondos monetarios institucionales" dentro del proxy de M3,
+# y su tendencia. La ICI solo publica el valor EN VIVO (sin archivo histórico), así que para
+# reconstruir 10 años hacia atrás asumimos que ese peso ha venido SUBIENDO ~5%/año (relativo)
+# — coherente con la reforma de fondos monetarios de la SEC (2016), que desplazó activos hacia
+# fondos institucionales de gobierno, y con el auge de tesorería corporativa hacia MMF
+# institucionales durante el ciclo de subidas de tipos 2022-23. Se aplica hacia atrás de forma
+# geométrica/compuesta: peso(año-n) = peso_actual × (1 − tasa)^n.
+INST_WEIGHT_ANNUAL_GROWTH = 0.05
+
+# Bump this whenever `_backfill_coef_history_10y`'s formula/inputs change, so a stale
+# backfill (written by a since-fixed/changed version) gets recomputed automatically
+# instead of silently sticking around just because it "looks" like a full 10y backfill.
+COEF_BACKFILL_VERSION = 2
+
+
+async def _fetch_coef_backfill_series(client: httpx.AsyncClient) -> dict:
+    """Extra FRED history (only needed for the one-off 10y coefficient backfill —
+    not part of the regular 6h live refresh)."""
+    fed, cpi, m2, ltd, cp, hy = await asyncio.gather(
+        _observations(client, "FEDFUNDS", 150),
+        _observations(client, "CPIAUCSL", 165),
+        _observations(client, "M2SL", 150),
+        _observations(client, "LTDACBW027SBOG", 600),
+        _observations(client, "COMPOUT", 600),
+        _observations(client, "BAMLH0A0HYM2", 2800),
+    )
+    return {"fed": fed, "cpi": cpi, "m2": m2, "ltd": ltd, "cp": cp, "hy": hy}
+
+
+async def _backfill_coef_history_10y(db, data: dict, ici_inst: dict | None) -> None:
+    """One-off: reconstruct ~10 years of QUARTERLY coefficient points (mirroring
+    `_compute_coef_default`) from the actually-official quarterly series (equities/GDP/
+    productivity, already in `data['trend']`), plus monthly/weekly FRED history fetched
+    here for the other terms.
+
+    The one blocker is the ICI institutional-MMF component: it only has a live snapshot,
+    no history. Per explicit product decision, instead of dropping it for the backfill we
+    EXTRAPOLATE it: derive its current % weight within the M3 proxy and project that weight
+    backward with `INST_WEIGHT_ANNUAL_GROWTH` (geometric decay — see comment above), then
+    convert the assumed weight back into an assumed dollar figure for each historical
+    quarter and add it into that quarter's M2 + large time deposits + commercial paper.
+    If the ICI value itself was never available, the institutional term is simply omitted
+    for the backfill (same graceful degradation as the live formula).
+
+    Guarded by a version marker (`macro_coef_history_meta`), not just by whether data is
+    present: a bare emptiness/date-range check can't tell a correct backfill apart from a
+    *wrong* one already sitting there with plausible-looking old dates (exactly what
+    happened when this formula had a bug — fixing the bug alone didn't reprocess anything,
+    because the buggy run had already written real 10-year-old dates). Bump
+    `COEF_BACKFILL_VERSION` whenever this function's formula/inputs change, and it
+    recomputes and replaces the history automatically on the next refresh."""
+    meta = await db.macro_coef_history_meta.find_one({"id": "backfill"})
+    oldest = await db.macro_coef_history.find({}, {"_id": 0, "date": 1}).sort("date", 1).to_list(length=1)
+    cutoff_8y = (datetime.now(timezone.utc) - timedelta(days=365 * 8)).date().isoformat()
+    if (meta and meta.get("version") == COEF_BACKFILL_VERSION
+            and oldest and oldest[0]["date"] <= cutoff_8y):
+        return  # already has a real long-range backfill from the current formula version
+    points = (data.get("trend") or {}).get("points") or []
+    if not points:
         return
+
+    m3 = _ind(data, "m3_proxy")
+    proxy_now = m3.get("value") if m3 else None
+    inst_now = ici_inst.get("value_busd") if ici_inst else None
+    weight_now = None
+    if inst_now is not None and proxy_now:
+        weight_now = inst_now / proxy_now
+
+    oil_hist = (_ind(data, "oil_avg") or {}).get("history") or []  # ascending
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            series = await _fetch_coef_backfill_series(client)
+    except Exception as e:
+        logger.warning(f"Coefficient 10y backfill: FRED fetch failed, skipping: {e}")
+        return
+
+    try:
+        energy_by_year = await fetch_owid_energy_history()
+    except Exception as e:
+        logger.warning(f"Coefficient 10y backfill: OWID history fetch failed, using latest year flat: {e}")
+        energy_by_year = {}
+    en = _ind(data, "energy_mix")
+    m78_fallback = en.get("value") if en else None
+
     today = datetime.now(timezone.utc).date()
-    c = current_c
     pts = []
-    for d in range(1, 91):  # d=1 → yesterday (near current) … d=90 → oldest
-        c = max(0.6, min(1.5, c + random.uniform(-0.014, 0.014)))
-        pts.append({"date": (today - timedelta(days=d)).isoformat(), "c": round(c, 4)})
-    if pts:
-        await db.macro_coef_history.insert_many(pts)
+    for p in points:
+        d = p["date"]
+        m70, m71, m75 = p.get("equities"), p.get("gdp"), p.get("productivity")
+        if m70 is None or m71 is None or m75 is None:
+            continue
+
+        m73 = _asof(series["fed"], d)
+        cpi_now = _asof(series["cpi"], d)
+        try:
+            prior_iso = (datetime.strptime(d, "%Y-%m-%d") - timedelta(days=365)).date().isoformat()
+        except ValueError:
+            prior_iso = None
+        cpi_prior = _asof(series["cpi"], prior_iso) if prior_iso else None
+        m74 = round((cpi_now - cpi_prior) / cpi_prior * 100, 2) if cpi_now and cpi_prior else None
+
+        m2_h, ltd_h, cp_h = _asof(series["m2"], d), _asof(series["ltd"], d), _asof(series["cp"], d)
+        if m2_h is None or ltd_h is None or cp_h is None:
+            continue
+        core_h = m2_h + ltd_h + cp_h
+        if weight_now is not None:
+            try:
+                years_back = max(0.0, (today - datetime.strptime(d, "%Y-%m-%d").date()).days / 365.25)
+            except ValueError:
+                years_back = 0.0
+            weight_h = weight_now * (1 - INST_WEIGHT_ANNUAL_GROWTH) ** years_back
+            inst_h = weight_h * core_h / (1 - weight_h) if weight_h < 1 else 0.0
+            m72 = core_h + inst_h
+        else:
+            m72 = core_h
+
+        m76 = _asof(oil_hist, d, ascending=True)
+        m77 = _trailing_avg(oil_hist, d)
+        m78 = energy_by_year.get(int(d[:4]), m78_fallback)
+        m79 = _asof(series["hy"], d)
+
+        if any(x is None for x in (m73, m74, m76, m77, m78, m79)) or (m70 - m72) == 0:
+            continue
+
+        t1 = m71 / (m70 - m72)
+        t2 = 1 - (m73 + m74) / 100
+        t3 = m75 / 100
+        t4 = 1 - ((m76 - m77) * (m78 / 10000))
+        hy_effect = _hy_spread_effect({"value": m79})
+        t5 = 1 + HY_MAX_EFFECT * hy_effect
+        c = round(t1 * t2 * t3 * t4 * t5, 4)
+        pts.append({"date": d, "c": c})
+
+    if not pts:
+        return
+    await db.macro_coef_history.delete_many({})  # drop whatever was there (empty/stale/wrong-version)
+    await db.macro_coef_history.insert_many(pts)
+    await db.macro_coef_history_meta.update_one(
+        {"id": "backfill"}, {"$set": {"id": "backfill", "version": COEF_BACKFILL_VERSION}}, upsert=True)

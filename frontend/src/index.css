@@ -31,7 +31,7 @@ html[data-theme="dark"] {
     --text-primary: #E8E2D8;
     --text-secondary: #A89E8E;
     --text-on-dark: #14110D;
-    --brand: #7AA0E3;
+    --brand: #3B9EFF;
     --crimson: #E8675E;
     --cheap: #2FA86B;
     --neutral: #E69238;
@@ -48,6 +48,11 @@ html[data-theme="dark"] .hover\:bg-\[\#F5E4D4\]:hover { background-color: var(--
 html[data-theme="dark"] .text-\[\#4A4A4A\] { color: var(--text-secondary) !important; }
 html[data-theme="dark"] .text-\[\#111111\] { color: var(--text-primary) !important; }
 html[data-theme="dark"] .text-\[\#052049\] { color: var(--brand) !important; }
+html[data-theme="dark"] .hover\:text-\[\#052049\]:hover { color: var(--brand) !important; }
+html[data-theme="dark"] .border-\[\#052049\] { border-color: var(--brand) !important; }
+html[data-theme="dark"] .hover\:border-\[\#052049\]:hover { border-color: var(--brand) !important; }
+html[data-theme="dark"] .focus\:border-\[\#052049\]:focus { border-color: var(--brand) !important; }
+html[data-theme="dark"] .bg-\[\#052049\] { background-color: var(--brand) !important; }
 html[data-theme="dark"] .text-\[\#B32A22\] { color: var(--crimson) !important; }
 html[data-theme="dark"] .text-\[\#1D7044\] { color: var(--cheap) !important; }
 html[data-theme="dark"] .text-\[\#D97706\] { color: var(--neutral) !important; }

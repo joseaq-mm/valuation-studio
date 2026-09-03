@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe2, Info, RefreshCw, Loader2, TrendingUp, Percent, Flame, Gauge, Landmark, Droplet, Layers, Zap, AlertTriangle, ShieldAlert, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
+import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend, ResponsiveContainer, LineChart, ReferenceLine, ReferenceArea } from "recharts";
 import { macroIndicators, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
 import ShareMenu from "@/components/ShareMenu";
@@ -17,6 +17,7 @@ const ICONS = {
     m3_proxy: Layers,
     oil: Droplet,
     high_yield_spread: ShieldAlert,
+    debt_to_gdp: Landmark,
 };
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
@@ -48,29 +49,25 @@ const liveGdp = (ind) => ind?.live?.value ?? ind?.value;
 // version). Symmetric around HY_NEUTRAL (3.0 p.p., exactly 0 there): moving right,
 // the coefficient falls, accelerating until HY_CAP (3.5 p.p. — steepest point), then
 // keeps falling but decelerating; moving left mirrors this exactly, accelerating
-// until HY_FLOOR (2.5 p.p.). How sharp the transition is (at both ends) depends on
-// how many of the last 5 trading days the spread spent above HY_CAP — a single-day
-// spike gives a gentle S-curve, a full sustained week gives a near-vertical step.
+// until HY_FLOOR (2.5 p.p.). Depends only on the current spread value — a fixed,
+// steep S-curve (no persistence/history).
 const HY_NEUTRAL = 3.0, HY_CAP = 3.5, HY_FLOOR = 2 * HY_NEUTRAL - HY_CAP, HY_MAX_EFFECT = 0.15;
-const HY_K_MIN = 1.1, HY_K_MAX = 5.5;
+const HY_K = 5.5;
 
-const hyRightHalf = (spread, k) => {
-    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
-    const s = 1 / (1 + Math.exp(-k * (spread - HY_CAP)));
+const hyRightHalf = (spread) => {
+    const s0 = 1 / (1 + Math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)));
+    const s = 1 / (1 + Math.exp(-HY_K * (spread - HY_CAP)));
     return s0 - s;
 };
 
 const hySpreadEffect = (hy) => {
     const value = hy?.value;
-    if (value == null) return { effect: 0, value: null, daysAbove: 0 };
-    const last5 = (hy?.history || []).slice(-5).map((h) => h.value);
-    const daysAbove = last5.filter((v) => v >= HY_CAP).length;
-    const k = HY_K_MIN + (HY_K_MAX - HY_K_MIN) * (daysAbove / 5);
-    const raw = value >= HY_NEUTRAL ? hyRightHalf(value, k) : -hyRightHalf(2 * HY_NEUTRAL - value, k);
-    const s0 = 1 / (1 + Math.exp(-k * (HY_NEUTRAL - HY_CAP)));
+    if (value == null) return { effect: 0, value: null };
+    const raw = value >= HY_NEUTRAL ? hyRightHalf(value) : -hyRightHalf(2 * HY_NEUTRAL - value);
+    const s0 = 1 / (1 + Math.exp(-HY_K * (HY_NEUTRAL - HY_CAP)));
     const bound = Math.max(1 - s0, 1e-9);
     const effect = Math.max(-1, Math.min(1, raw / bound));
-    return { effect, value, daysAbove };
+    return { effect, value };
 };
 
 // Coefficient formula (user-defined):
@@ -363,7 +360,7 @@ const HYSpreadTip = ({ active, payload }) => {
     const p = payload[0].payload;
     return (
         <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="hy-spread-tooltip">
-            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="font-semibold">{dLabel(p.date, { full: true })}</div>
             <div className="tabular-nums">Spread: {nf.format(p.value)} p.p.</div>
         </div>
     );
@@ -375,7 +372,7 @@ const HighYieldSpreadChart = ({ history, height, small }) => {
         <ResponsiveContainer width="100%" height={height}>
             <LineChart data={history} margin={{ top: 4, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
                 <CartesianGrid stroke="#00000010" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
                 <RTooltip content={<HYSpreadTip />} />
                 <Line type="monotone" dataKey="value" stroke="#B32A22" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -429,12 +426,15 @@ const HighYieldSpreadCard = ({ ind }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Icon size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
-                    </button>
-                </HoverTip>
+                <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="hy-spread-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                    <Maximize2 size={14} />
+                </button>
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -447,12 +447,7 @@ const HighYieldSpreadCard = ({ ind }) => {
 
             {history.length > 1 && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Evolución</span>
-                        <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="hy-spread-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
-                            <Maximize2 size={13} />
-                        </button>
-                    </div>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
                     <HighYieldSpreadChart history={history} height={90} small />
                 </div>
             )}
@@ -462,6 +457,121 @@ const HighYieldSpreadCard = ({ ind }) => {
                 <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
             </div>
             {histOpen && <HighYieldSpreadModal ind={ind} history={history} onClose={() => setHistOpen(false)} />}
+        </div>
+    );
+};
+
+const DEBT_SERIES = [
+    { key: "debt", label: "Deuda pública", color: "#B32A22", axis: "left" },
+    { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
+    { key: "ratio", label: "Deuda/PIB", color: "var(--brand)", axis: "right" },
+];
+
+const DebtTip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="debt-tooltip">
+            <div className="font-semibold mb-1">{qLabel(label)}</div>
+            {payload.map((p) => (
+                <div key={p.dataKey} className="flex justify-between gap-3 tabular-nums">
+                    <span style={{ color: p.color }}>{p.name}</span>
+                    <span>{p.value == null ? "—" : nf.format(p.value)}<span className="text-[#9CA3AF]"> {p.dataKey === "ratio" ? "%" : "mM$"}</span></span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const DebtChart = ({ data, height, small }) => (
+    <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={data} margin={{ top: 8, right: small ? 4 : 6, left: small ? -14 : 4, bottom: 0 }}>
+            <CartesianGrid stroke="#00000010" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} interval={small ? 6 : 3} axisLine={{ stroke: "#00000022" }} tickLine={false} />
+            <YAxis yAxisId="left" tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} width={small ? 32 : 48} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "var(--brand)" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
+            <RTooltip content={<DebtTip />} />
+            {!small && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            {DEBT_SERIES.map((s) => (
+                <Line key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 3 }} connectNulls isAnimationActive={false} />
+            ))}
+        </ComposedChart>
+    </ResponsiveContainer>
+);
+
+const DebtModal = ({ points, onClose }) => {
+    const ref = React.useRef(null);
+    const [busy, setBusy] = useState(false);
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, "deuda-publica-pib-eeuu"); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={onClose} data-testid="debt-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-4 sm:p-5 flex flex-col max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <Landmark size={22} className="text-[#052049] shrink-0" /> <span className="truncate">Deuda pública vs PIB · 10 años</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title="Deuda pública vs PIB · Valuation Studio" testidPrefix="debt-modal-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Deuda pública vs PIB")} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="debt-modal-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="debt-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                <div ref={ref} className="w-full h-[50vh] min-h-[240px] max-h-[460px] shrink-0">
+                    <DebtChart data={points} height="100%" />
+                </div>
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed shrink-0">
+                    Deuda pública total y PIB nominal de EEUU (<strong>eje izquierdo</strong>, miles de M$), y su ratio Deuda/PIB (<strong>eje derecho</strong>, %). Datos trimestrales oficiales, sin extrapolar.
+                </p>
+            </div>
+        </div>
+    );
+};
+
+const DebtCard = ({ ind }) => {
+    const [open, setOpen] = useState(false);
+    const points = ind.history || [];
+    if (!points.length) return null;
+    return (
+        <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
+                    <Landmark size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
+                </div>
+                <button onClick={() => setOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="debt-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
+                    <Maximize2 size={14} />
+                </button>
+            </div>
+
+            <div className="flex items-baseline gap-1.5">
+                <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid={`macro-value-${ind.key}`}>
+                    {fmtVal(ind.value)}
+                </span>
+                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}</span>
+            </div>
+            <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
+
+            <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución · 10 años</div>
+                <DebtChart data={points} height={110} small />
+            </div>
+
+            <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
+                <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
+                <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
+            </div>
+            {open && <DebtModal points={points} onClose={() => setOpen(false)} />}
         </div>
     );
 };
@@ -489,17 +599,18 @@ const CoefficientGauge = ({ c }) => {
             <text x={cx} y="18" textAnchor="middle" className="fill-[#6A6A6A]" fontSize="10" fontWeight="700">1</text>
             <text x={cx + R} y={cy + 16} textAnchor="middle" className="fill-[#1F7A3D]" fontSize="10" fontWeight="700">2 · barato</text>
             <g transform={`rotate(${rot} ${cx} ${cy})`}>
-                <line x1={cx} y1={cy} x2={cx} y2={cy - R + 8} stroke="#052049" strokeWidth="3" strokeLinecap="round" />
+                <line x1={cx} y1={cy} x2={cx} y2={cy - R + 8} stroke="var(--brand)" strokeWidth="3" strokeLinecap="round" />
             </g>
-            <circle cx={cx} cy={cy} r="6" fill="#052049" />
+            <circle cx={cx} cy={cy} r="6" fill="var(--brand)" />
         </svg>
     );
 };
 
-const dLabel = (iso) => {
+const dLabel = (iso, opts) => {
     if (!iso) return "";
-    try { return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }); }
-    catch { return iso; }
+    try {
+        return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: opts?.full ? "numeric" : "2-digit" });
+    } catch { return iso; }
 };
 
 const CoefHistTip = ({ active, payload }) => {
@@ -507,26 +618,38 @@ const CoefHistTip = ({ active, payload }) => {
     const p = payload[0].payload;
     return (
         <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="coef-hist-tooltip">
-            <div className="font-semibold">{dLabel(p.date)}</div>
+            <div className="font-semibold">{dLabel(p.date, { full: true })}</div>
             <div className="tabular-nums">Coef.: {nf.format(p.c)} · {p.c > 1 ? "barato" : p.c < 1 ? "caro" : "neutro"}</div>
         </div>
     );
 };
 
 const CoefHistoryChart = ({ history, height, small }) => {
+    const gid = React.useId();
     if (!history?.length) return null;
+    const data = history.map((h) => ({ ...h, above: h.c >= 1 ? h.c : 1, below: h.c <= 1 ? h.c : 1 }));
     return (
         <ResponsiveContainer width="100%" height={height}>
-            <LineChart data={history} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+            <ComposedChart data={data} margin={{ top: 6, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+                <defs>
+                    <linearGradient id={`coefGreen-${gid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--cheap)" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="var(--cheap)" stopOpacity={0.04} />
+                    </linearGradient>
+                    <linearGradient id={`coefRed-${gid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--expensive)" stopOpacity={0.04} />
+                        <stop offset="100%" stopColor="var(--expensive)" stopOpacity={0.5} />
+                    </linearGradient>
+                </defs>
                 <CartesianGrid stroke="#00000010" vertical={false} />
-                <ReferenceArea y1={1} y2={100} fill="#1F7A3D" fillOpacity={0.07} />
-                <ReferenceArea y1={0} y2={1} fill="#B32A22" fillOpacity={0.07} />
-                <XAxis dataKey="date" tickFormatter={dLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <Area type="monotone" dataKey="above" baseValue={1} stroke="none" fill={`url(#coefGreen-${gid})`} isAnimationActive={false} dot={false} activeDot={false} />
+                <Area type="monotone" dataKey="below" baseValue={1} stroke="none" fill={`url(#coefRed-${gid})`} isAnimationActive={false} dot={false} activeDot={false} />
+                <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis domain={[(min) => Math.min(0.9, min), (max) => Math.max(1.1, max)]} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 26 : 40} axisLine={false} tickLine={false} tickFormatter={(v) => nf.format(v)} />
                 <ReferenceLine y={1} stroke="#6A6A6A" strokeDasharray="4 3" label={small ? null : { value: "1 · neutro", position: "right", fontSize: 10, fill: "#6A6A6A" }} />
                 <RTooltip content={<CoefHistTip />} />
-                <Line type="monotone" dataKey="c" stroke="#052049" strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
+                <Line type="monotone" dataKey="c" stroke="var(--brand)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            </ComposedChart>
         </ResponsiveContainer>
     );
 };
@@ -544,7 +667,7 @@ const CoefHistoryModal = ({ history, onClose }) => {
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="coef-history-modal">
         <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-3">
-                <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0"><LineChartIcon size={22} className="shrink-0" /> <span className="truncate">Histórico del coeficiente</span></h2>
+                <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0"><LineChartIcon size={22} className="shrink-0" /> <span className="truncate">Histórico del coeficiente · 10 años</span></h2>
                 <div className="flex items-center gap-3 shrink-0">
                     <ShareMenu size="md" title="Histórico del coeficiente · Valuation Studio" testidPrefix="coef-history-share"
                         createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", "Histórico del coeficiente")} />
@@ -558,7 +681,7 @@ const CoefHistoryModal = ({ history, onClose }) => {
                 <CoefHistoryChart history={history} height={420} />
             </div>
             <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
-                Un punto por día (valores por defecto: renta variable vía S&amp;P 500 y media del petróleo a 4 años). <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro. El histórico crece cada día al refrescar los datos macro.
+                Los años más antiguos son una reconstrucción trimestral con los mismos supuestos que la fórmula en vivo (el peso de los fondos monetarios institucionales, sin archivo histórico propio, se extrapola de forma geométrica a partir de su peso actual). Desde hoy en adelante, el histórico crece con un punto real cada día. <span className="text-[#1F7A3D] font-semibold">Zona verde</span> (por encima de 1) = mercado barato; <span className="text-[#B32A22] font-semibold">zona roja</span> (por debajo de 1) = caro.
             </p>
         </div>
     </div>
@@ -598,14 +721,14 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                 <div className="overline text-[#B32A22] flex items-center gap-2">
                     Coeficiente de mercado
                     {hyStressed && (
-                        <HoverTip text={`Spread de high yield en ${nf.format(hy.value)} p.p., por encima del umbral de estrés (${nf.format(HY_CAP)} p.p.).\n\nLleva ${hy.daysAbove} de los últimos 5 días de mercado por encima de ese nivel. Cuantos más días se mantenga, más brusca es la caída del coeficiente alrededor de este umbral — con un pico aislado de un solo día, la caída es mucho más suave que si se sostiene una semana completa (5/5 días).`}>
+                        <HoverTip text={`Spread de high yield en ${nf.format(hy.value)} p.p., por encima del umbral de estrés (${nf.format(HY_CAP)} p.p.).\n\nA partir de aquí el coeficiente cae con más fuerza; pasado este punto sigue bajando pero ya más despacio.`}>
                             <span className="inline-flex items-center gap-1 text-[#B32A22] font-semibold normal-case tracking-normal text-[11px] animate-pulse cursor-help" data-testid="coef-hy-warning">
                                 <AlertTriangle size={13} /> Estrés crediticio
                             </span>
                         </HoverTip>
                     )}
                 </div>
-                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000))) × t5\n\nt5 (spread high yield): curva continua y simétrica alrededor de 3,0 p.p. (ahí no afecta). Hacia spreads más altos el coeficiente baja, acelerando hasta 3,5 p.p. (su punto más brusco) y después sigue bajando pero más despacio. Hacia spreads más bajos sube igual de rápido, con el máximo en 2,5 p.p. Cuanto más días seguidos lleve el spread por encima de 3,5, más pronunciado es el giro en ambos umbrales.\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
+                <HoverTip text={"C = (PIB / (Renta variable − M3 proxy)) × (1 − (Tipo FED + Inflación)/100) × (Productividad/100) × (1 − ((Precio petróleo − Media petróleo) × (Mix petróleo+gas/10000))) × t5\n\nt5 (spread high yield): curva continua y simétrica alrededor de 3,0 p.p. (ahí no afecta). Hacia spreads más altos el coeficiente baja, acelerando hasta 3,5 p.p. (su punto más brusco) y después sigue bajando pero más despacio. Hacia spreads más bajos sube igual de rápido, con el máximo en 2,5 p.p. Depende solo del valor actual del spread.\n\nPor debajo de 1 = mercado caro (defensivas/efectivo). Por encima de 1 = mercado barato (crecimiento/agresivas). La media del petróleo (m77) usa los años del dial de la ficha de Petróleo."}>
                     <button className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-info" aria-label="Fórmula"><Info size={15} /></button>
                 </HoverTip>
             </div>
@@ -623,7 +746,7 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
                     {coefHistory?.length > 1 && (
                         <div className="w-full mt-3 border-t border-black/10 pt-2" data-testid="coef-history-mini">
                             <div className="flex items-center justify-between mb-0.5">
-                                <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Histórico · {coefHistory.length}d</span>
+                                <span className="text-[10px] uppercase tracking-wide text-[#9A9A9A]">Histórico · 10 años</span>
                                 <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049]" data-testid="coef-history-expand-btn" aria-label="Ampliar histórico" title="Ampliar">
                                     <Maximize2 size={13} />
                                 </button>
@@ -671,12 +794,12 @@ const CoefficientCard = ({ byKey, oilYears, selectedIndex, coefHistory }) => {
 const qLabel = (iso) => {
     if (iso === "est") return "Est.";
     const [y, m] = iso.split("-");
-    const q = { "01": "1T", "04": "2T", "07": "3T", "10": "4T" }[m] || "";
-    return `${q}${y.slice(2)}`;
+    const q = Math.ceil(parseInt(m, 10) / 3);
+    return `${q}T${y.slice(2)}`;
 };
 
 const TREND_SERIES = [
-    { key: "equities", label: "Renta variable", color: "#052049", axis: "left" },
+    { key: "equities", label: "Renta variable", color: "var(--brand)", axis: "left" },
     { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
     { key: "diff", label: "RV − PIB", color: "#B8860B", axis: "left" },
     { key: "productivity", label: "Productividad", color: "#B32A22", axis: "right" },
@@ -740,6 +863,11 @@ const TrendCard = ({ points, byKey, selectedIndex, onExpand }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <LineChartIcon size={13} className="text-[#052049]" /> Evolución · 10 años
+                    <HoverTip text={"Renta variable corporativa de EEUU, PIB y su resta (RV − PIB) en el eje izquierdo (miles de M$); productividad laboral en el eje derecho (índice 2017=100). El último punto (Est.) usa las estimaciones en vivo de renta variable y PIB.\n\nFuente: FRED · NCBEILQ027S, GDP, OPHNFB · Trimestral"}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-trend" aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
                 <button onClick={onExpand} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="trend-expand-btn" aria-label="Ampliar gráfico" title="Ampliar">
                     <Maximize2 size={14} />
@@ -861,7 +989,9 @@ export default function Macro() {
                                         ? <EnergyMixCard key={ind.key} ind={ind} />
                                         : ind.key === "high_yield_spread"
                                             ? <HighYieldSpreadCard key={ind.key} ind={ind} />
-                                            : <MacroCard key={ind.key} ind={ind} />
+                                            : ind.key === "debt_to_gdp"
+                                                ? <DebtCard key={ind.key} ind={ind} />
+                                                : <MacroCard key={ind.key} ind={ind} />
                         ))}
                         {data.trend?.points?.length > 0 && (
                             <TrendCard
