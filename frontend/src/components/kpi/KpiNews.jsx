@@ -12,7 +12,7 @@ const SENT_TIP = "Indicador de sentimiento: cómo afecta la noticia a la tesis. 
 // Qualitative news per company. INFORMS the scores (fed to the judge on Reanalyze),
 // capped to the 15 most recent (oldest dropped past that), incorporates Radar news,
 // has its own search.
-export default function KpiNews({ companyId, onChanged }) {
+export default function KpiNews({ companyId, refreshKey, onChanged }) {
     const [news, setNews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searching, setSearching] = useState(false);
@@ -34,7 +34,8 @@ export default function KpiNews({ companyId, onChanged }) {
         catch { setIrUrls([]); }
     }, [companyId]);
 
-    useEffect(() => { load(); loadIr(); setOpen(false); }, [load, loadIr]);
+    useEffect(() => { setOpen(false); }, [companyId]);
+    useEffect(() => { load(); loadIr(); }, [load, loadIr, refreshKey]);
 
     const saveIr = async (urls) => {
         setIrSaving(true);

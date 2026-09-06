@@ -99,6 +99,7 @@ export default function Kpis() {
     const [companies, setCompanies] = useState([]);
     const [selId, setSelId] = useState(null);
     const [docsRefresh, setDocsRefresh] = useState(0);  // bump → KpiDocuments reloads (show auto-fetched docs after analysis)
+    const [newsRefresh, setNewsRefresh] = useState(0);  // bump → KpiNews reloads (show news refreshed during a full Reanalizar)
     const [snap, setSnap] = useState(null);
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null);   // analysis progress text
@@ -177,6 +178,7 @@ export default function Kpis() {
             setStale(null);
             await loadCompanies();
             setDocsRefresh((n) => n + 1);  // reveal auto-fetched docs (SEC/deck/página) added during the analysis
+            if (!incr) setNewsRefresh((n) => n + 1);  // reveal news refreshed during a full Reanalizar
             toast.success(incr ? "KPIs actualizados" : "KPIs analizados");
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Error analizando KPIs");
@@ -334,8 +336,8 @@ export default function Kpis() {
             {/* Conversational KPI analyst — save chat as a document that feeds the coefficient */}
             {selId && <KpiChat companyId={selId} onSaved={() => setDocsRefresh((n) => n + 1)} onChanged={refreshStale} />}
 
-            {/* Qualitative news (informs scores; aged out over time) */}
-            {selId && <KpiNews companyId={selId} onChanged={refreshStale} />}
+            {/* Qualitative news (informs scores; capped to the 15 most recent) */}
+            {selId && <KpiNews companyId={selId} refreshKey={newsRefresh} onChanged={refreshStale} />}
 
             {/* Pending-reanalyze banner (new docs, chat, thesis, news…) */}
             {selId && stale && snap && !status && (
