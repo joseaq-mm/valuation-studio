@@ -452,6 +452,15 @@ export default function Kpis() {
                         </div>
                     )}
 
+                    {snap.news_refresh_error && (
+                        <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-3 mb-4 flex items-start gap-2 max-w-3xl" data-testid="kpi-news-refresh-error">
+                            <AlertTriangle size={16} className="text-[#B8860B] shrink-0 mt-0.5" />
+                            <div className="text-[13px] text-[#7a5a10] leading-snug">
+                                No se pudieron buscar noticias nuevas en este análisis (fallo de búsqueda o de la IA); se han mantenido las que ya había guardadas. Prueba con «Buscar noticias» en la sección de noticias de abajo.
+                            </div>
+                        </div>
+                    )}
+
                     {snap.note && <div className="border border-[#B8860B]/50 bg-[#FBF3E0] p-3 text-sm text-[#7a5a10] mb-4">{snap.note}</div>}
 
                     {/* Targeted KPI search — adds a specific datapoint and recomputes the coefficient */}

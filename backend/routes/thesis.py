@@ -281,6 +281,12 @@ def _news_sync(company: str, ticker: str, drivers: list, query: str = None) -> l
         sources = gather_news_search_sources(company, ticker, query)
     else:
         sources = gather_news_sources(company, ticker)
+    if not sources:
+        # The search provider itself returned nothing (quota/rate-limit/outage are the
+        # usual causes) — without any source the LLM step below always finds zero news
+        # regardless of the real world, so surface this as an error instead of a
+        # silent, indistinguishable-from-genuinely-quiet empty result.
+        raise RuntimeError("La búsqueda web no devolvió resultados (posible fallo del proveedor de búsqueda)")
     result, _cost = run_costed(run_company_news(company, ticker, drivers, sources))
     return result if isinstance(result, list) else []
 
@@ -2470,9 +2476,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     try:
                         fresh = await asyncio.to_thread(_news_sync, company, ticker, drivers, None)
                         await _news_merge_prune(company_id, user_id, ticker, fresh, "analysis")
+                        return None
                     except Exception as ne:
                         logger.warning(f"kpi news refresh failed ({company_id}): {ne}")
-                web_sources, _ = await asyncio.gather(
+                        return str(ne)
+                web_sources, news_refresh_error = await asyncio.gather(
                     _auto_fetch_for_kpis(company_id, user_id, company, ticker),
                     _refresh_news(),
                 )
@@ -2486,6 +2494,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             snap["generated_at"] = datetime.now(timezone.utc).isoformat()
             snap["ticker"] = ticker
             snap["no_source_doc"] = not files  # E: no official/source document available → UI shows a notice
+            # News refresh runs alongside the doc fetch on a full Reanalizar; surface a
+            # failure instead of silently keeping whatever news was already stored (the
+            # old behaviour made a search/LLM hiccup indistinguishable from "no news").
+            if not incremental and news_refresh_error:
+                snap["news_refresh_error"] = news_refresh_error
             # Trend history of the global coefficient across (re)analyses (one point per day).
             history = [h for h in (prev.get("coef_history") or []) if h.get("date") != snap["generated_at"][:10]]
             if snap.get("coef_global") is not None:
