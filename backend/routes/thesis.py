@@ -3347,13 +3347,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         return Response(content=out, media_type=media,
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
 
-    # ----- KPI qualitative news (inform scores; aged out, refreshed on reanalyze) -----
+    # ----- KPI qualitative news (inform scores; capped to the 15 most recent) -----
     def _news_public(n):
         return {
             "id": n.get("id"), "headline": n.get("headline"), "summary": n.get("summary"),
             "why_it_matters": n.get("why_it_matters"), "url": n.get("url"),
             "published_at": n.get("published_at"), "sentiment": n.get("sentiment"),
-            "relevance": n.get("relevance"), "effective_relevance": n.get("effective_relevance"),
+            "relevance": n.get("relevance"),
             "driver": n.get("driver"), "origin": n.get("origin"), "created_at": n.get("created_at"),
         }
 
@@ -3363,7 +3363,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def _load_company_news(company_id, user_id):
         alln = await db.kpi_news.find(
             {"company_id": company_id, "user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(length=200)
-        kept, _ = prune_news(alln, datetime.now(timezone.utc))
+        kept, _ = prune_news(alln)
         return kept
 
     @router.get("/{company_id}/kpis/news")

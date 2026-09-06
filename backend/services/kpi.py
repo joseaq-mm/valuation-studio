@@ -510,11 +510,9 @@ async def run_kpi_search(company: str, ticker: str, drivers: list, query: str, s
     return {"kpis": kpis, "note": None, "judged_drivers": judged.get("drivers") or []}
 
 
-# ---------------------- Qualitative news (inform scores; aged out over time) ----------------------
+# ---------------------- Qualitative news (inform scores; capped by count) ----------------------
 
-NEWS_HALF_LIFE_DAYS = 45
 NEWS_MAX_ITEMS = 15
-NEWS_MIN_EFF = 0.04  # below this effective relevance a news item is "forgotten"
 
 NEWS_EXTRACTOR_SYS = """Eres un analista de equity research. A partir de RESULTADOS DE BÚSQUEDA en vivo, extrae las NOTICIAS materiales y recientes sobre una empresa que puedan afectar a su tesis (cualitativamente): resultados, regulación, demandas, alianzas, lanzamientos, guidance, dirección, competencia.
 
@@ -576,45 +574,17 @@ async def run_company_news(company: str, ticker: str, drivers: list, sources: li
     return out
 
 
-def _age_days(item: dict, now: datetime) -> float:
-    raw = item.get("published_at") or item.get("created_at") or ""
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
-        try:
-            dt = datetime.strptime(raw[:26] if "T" in raw else raw[:10], fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return max(0.0, (now - dt).total_seconds() / 86400.0)
-        except (ValueError, TypeError):
-            continue
-    # Unknown date → treat as moderately old so it ages out unless re-found.
-    return 21.0
+def _news_sort_key(item: dict) -> str:
+    """Recency key: published date if known, else when we first saw it. ISO strings
+    sort correctly as text, so no parsing is needed."""
+    return item.get("published_at") or item.get("created_at") or ""
 
 
-def news_effective_relevance(item: dict, now: datetime = None) -> float:
-    now = now or datetime.now(timezone.utc)
-    rel = _clampf(item.get("relevance"), 0, 1)
-    rel = 0.6 if rel is None else rel
-    decay = 0.5 ** (_age_days(item, now) / NEWS_HALF_LIFE_DAYS)
-    return round(rel * decay, 4)
-
-
-def prune_news(items: list, now: datetime = None) -> tuple:
-    """Apply 45-day half-life decay; keep the top NEWS_MAX_ITEMS above NEWS_MIN_EFF.
-    Returns (kept, dropped) — `dropped` are 'forgotten' (older/less relevant)."""
-    now = now or datetime.now(timezone.utc)
-    scored = []
-    for it in items:
-        eff = news_effective_relevance(it, now)
-        scored.append((eff, it))
-    scored.sort(key=lambda x: -x[0])
-    kept, dropped = [], []
-    for i, (eff, it) in enumerate(scored):
-        it = dict(it)
-        it["effective_relevance"] = eff
-        if i < NEWS_MAX_ITEMS and eff >= NEWS_MIN_EFF:
-            kept.append(it)
-        else:
-            dropped.append(it)
+def prune_news(items: list) -> tuple:
+    """Keep only the NEWS_MAX_ITEMS most recent items; the rest are dropped as the
+    oldest once the cap is exceeded. No relevance/age-based forgetting."""
+    scored = sorted(items, key=_news_sort_key, reverse=True)
+    kept, dropped = scored[:NEWS_MAX_ITEMS], scored[NEWS_MAX_ITEMS:]
     return kept, dropped
 
 
@@ -623,9 +593,9 @@ def news_dedupe_key(headline: str, url: str = None) -> str:
 
 
 async def merge_prune_news(db, company_id, user_id, ticker, new_items, origin):
-    """Upsert news into `kpi_news` (dedupe by normalized headline), then apply the
-    45-day decay/cap so old, low-relevance items are 'forgotten'. Shared by the KPI
-    analysis, the news button, and the weekly Radar. Returns the kept list."""
+    """Upsert news into `kpi_news` (dedupe by normalized headline), then cap to the
+    NEWS_MAX_ITEMS most recent (oldest dropped once the cap is exceeded). Shared by the
+    KPI analysis, the news button, and the weekly Radar. Returns the kept list."""
     now = datetime.now(timezone.utc)
     nowiso = now.isoformat()
     for n in (new_items or []):
@@ -654,7 +624,7 @@ async def merge_prune_news(db, company_id, user_id, ticker, new_items, origin):
         })
     alln = await db.kpi_news.find(
         {"company_id": company_id, "user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(length=200)
-    kept, dropped = prune_news(alln, now)
+    kept, dropped = prune_news(alln)
     for d in dropped:
         if d.get("id"):
             await db.kpi_news.update_one({"id": d["id"]}, {"$set": {"is_deleted": True}})
