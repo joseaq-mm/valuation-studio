@@ -193,9 +193,11 @@ const monthLabel = (m) => {
 };
 
 // Day-precision label ("5 ene '26") for the per-company classic history chart.
+// Accepts either a bare "YYYY-MM-DD" or a full ISO timestamp (points recorded the same
+// day get distinct timestamps so they don't collapse into one, but still share a label).
 const dayLabel = (iso) => {
     if (!iso) return "";
-    const [y, mo, d] = iso.split("-").map(Number);
+    const [y, mo, d] = iso.slice(0, 10).split("-").map(Number);
     return `${d} ${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
 };
 

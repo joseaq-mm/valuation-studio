@@ -2069,12 +2069,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     continue
                 prev = await db.visual_metric_events.find_one(
                     {"user_id": user_id, "ticker": tk, "metric": metric},
-                    {"_id": 0}, sort=[("date", -1)],
+                    {"_id": 0}, sort=[("date", -1), ("recorded_at", -1)],
                 )
                 if prev is not None and prev.get("value") == val:
                     continue  # unchanged → skip, this is the whole point
+                # Keyed by recorded_at (not date): a second genuine change the SAME day
+                # (e.g. reanalyzing twice) must insert a new point, not overwrite today's —
+                # the history chart plots by recorded_at precisely so both are visible.
                 await db.visual_metric_events.update_one(
-                    {"user_id": user_id, "ticker": tk, "metric": metric, "date": today_iso},
+                    {"user_id": user_id, "ticker": tk, "metric": metric, "recorded_at": now_iso},
                     {"$set": {"user_id": user_id, "ticker": tk, "metric": metric,
                               "date": today_iso, "value": val, "recorded_at": now_iso}},
                     upsert=True,
@@ -2112,11 +2115,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         tickers = [r["ticker"] for r in usable]
         closes = await get_monthly_closes_bulk(db, tickers, run_in_threadpool=run_in_threadpool)
 
-        # Recorded events: (ticker, metric) → [events asc by date]
+        # Recorded events: (ticker, metric) → [events asc by date]. Secondary sort by
+        # recorded_at so that when a metric changed twice the same day, _forward_fill's
+        # "last event <= month" walk lands on the truly latest value, not an arbitrary one.
         events: Dict[tuple, list] = {}
         evt_docs = await db.visual_metric_events.find(
             {"user_id": uid, "ticker": {"$in": tickers}}, {"_id": 0}
-        ).sort("date", 1).to_list(length=200000)
+        ).sort([("date", 1), ("recorded_at", 1)]).to_list(length=200000)
         for e in evt_docs:
             events.setdefault((e["ticker"], e["metric"]), []).append(e)
 
@@ -2179,25 +2184,28 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         tk = (ticker or "").upper().strip()
         docs = await db.visual_metric_events.find(
             {"user_id": uid, "ticker": tk}, {"_id": 0}
-        ).sort("date", 1).to_list(length=5000)
+        ).sort("recorded_at", 1).to_list(length=5000)
+        # The plotted "date" is the full recorded_at TIMESTAMP, not the day-only `date`
+        # field — two genuine changes recorded on the same calendar day (e.g. reanalyzing
+        # twice today) must still land on distinct x-axis points instead of collapsing
+        # into one (the frontend still labels the axis at day precision).
         series: Dict[str, list] = {m: [] for m in (*VISUAL_QUAL_METRICS, *VISUAL_RATIO_METRICS)}
         for d in docs:
             if d.get("metric") in series:
-                series[d["metric"]].append({"date": d["date"], "value": d["value"]})
+                series[d["metric"]].append({"date": d.get("recorded_at") or d["date"], "value": d["value"]})
 
         rows = (await visual_data({"user_id": uid})).get("rows", [])
         row = next((r for r in rows if r.get("ticker") == tk), None)
         live = {m: _visual_metric_value(row, m) for m in series} if row else {}
         if row:
-            today = datetime.now(timezone.utc).date().isoformat()
+            now_iso = datetime.now(timezone.utc).isoformat()
             for metric, val in live.items():
                 if val is None:
                     continue
                 pts = series[metric]
-                if pts and pts[-1]["date"] == today:
-                    pts[-1]["value"] = val  # today's live value always wins
-                else:
-                    pts.append({"date": today, "value": val})
+                if pts and pts[-1]["value"] == val:
+                    continue  # already reflected by the last recorded point — nothing to anchor
+                pts.append({"date": now_iso, "value": val})
         # `live` is also returned as-is (raw current value per metric, independent of
         # the anchoring above) so the frontend can fall back to it directly if a metric
         # somehow has no series point yet, and so a mismatch between the two is visible.
@@ -2228,7 +2236,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             # Last recorded point per (ticker, metric) — sorted desc, first hit wins.
             last_docs = await db.visual_metric_events.find(
                 {"user_id": uid, "ticker": {"$in": tickers}}, {"_id": 0}
-            ).sort("date", -1).to_list(length=20000)
+            ).sort([("date", -1), ("recorded_at", -1)]).to_list(length=20000)
             last_seen: Dict[tuple, dict] = {}
             for d in last_docs:
                 key = (d["ticker"], d["metric"])
@@ -2245,8 +2253,11 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     prev = last_seen.get((tk, metric))
                     if prev is not None and prev.get("value") == val:
                         continue  # unchanged → skip, this is the whole point
+                    # Keyed by recorded_at, not date: a value that already changed again
+                    # today (via an on-demand reanalysis) must get its own point rather
+                    # than overwrite that one.
                     await db.visual_metric_events.update_one(
-                        {"user_id": uid, "ticker": tk, "metric": metric, "date": today_iso},
+                        {"user_id": uid, "ticker": tk, "metric": metric, "recorded_at": now_iso},
                         {"$set": {"user_id": uid, "ticker": tk, "metric": metric,
                                   "date": today_iso, "value": val, "recorded_at": now_iso}},
                         upsert=True,
