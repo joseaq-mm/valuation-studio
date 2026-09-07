@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download } from "lucide-react";
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized, LineChart, Line, Legend } from "recharts";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
+import { thesisVisualData, thesisVisualTimeline, thesisVisualHistory, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
 import ShareMenu from "@/components/ShareMenu";
 import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
@@ -192,6 +192,13 @@ const monthLabel = (m) => {
     return `${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
 };
 
+// Day-precision label ("5 ene '26") for the per-company classic history chart.
+const dayLabel = (iso) => {
+    if (!iso) return "";
+    const [y, mo, d] = iso.split("-").map(Number);
+    return `${d} ${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
+};
+
 // Trail layer: draws each visible company's path through the quadrant up to the
 // current step. Rendered via recharts <Customized> so we can use the live axis
 // scales (xAxisMap/yAxisMap) to map data coords → pixels.
@@ -258,6 +265,7 @@ export default function Visual() {
     const [kpiMean, setKpiMean] = useState(null);
     const [noKpiCount, setNoKpiCount] = useState(0);
     const [alerts, setAlerts] = useState({});  // ticker -> alert config
+    const [historyRow, setHistoryRow] = useState(null); // {ticker, name} → opens the classic history modal
 
     // --- Timeline (time dial) ---
     const [tlMode, setTlMode] = useState(false);
@@ -923,23 +931,23 @@ export default function Visual() {
                             return (
                                 <tr key={r.ticker} className={`border-t border-black/10 ${incomplete ? "text-[#9ca3af]" : "hover:bg-[#FAF6EE]"}`} data-testid={`visual-row-${r.ticker}`}>
                                     <td className="p-2 w-[29px] sticky left-0 z-20 bg-white"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
-                                    <td className="p-2 font-semibold sticky left-[29px] z-20 bg-white border-r border-black/10"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
+                                    <td className="p-2 font-semibold sticky left-[29px] z-20 bg-white border-r border-black/10">{r.ticker}</td>
                                     <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5">
                                         <Link to={`/thesis?company=${encodeURIComponent(r.ticker)}`} className="hover:underline" style={stale ? { color: "#B32A22", fontWeight: 700 } : undefined} title="Generar/actualizar tesis" data-testid={`visual-name-link-${r.ticker}`}>{r.name}</Link>
                                         <AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
-                                    <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
+                                    <td className="p-2 text-right"><Link to={`/company/${r.ticker}`} className="hover:underline" title="Ver ficha de la empresa" data-testid={`visual-fresh-link-${r.ticker}`}><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></Link></td>
                                     <td className="p-2 text-right"><LastEarningsBadge date={r.last_earnings_date} testid={`visual-last-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
-                                    <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
-                                    <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
-                                    <td className="p-2 text-right" data-testid={`visual-kpi-${r.ticker}`}>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-score-${r.ticker}`}>{fmtN(r.avg_overall_score)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-tam-${r.ticker}`}>{fmtN(r.sum_tam_score, 2)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-kpi-${r.ticker}`}>
                                         {typeof r.kpi_coef === "number"
                                             ? <span style={{ color: coefColor(r.kpi_coef) }} className="font-semibold">{r.kpi_coef.toFixed(2)}</span>
                                             : <span className="text-[#9ca3af]">—</span>}
                                     </td>
                                     <td className="p-2 text-right">{(r.combined_qual * 100).toFixed(1)}%</td>
-                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
-                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }} title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-rc-${r.ticker}`}>{fmtPct(r.ratio_compra_pct)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }} title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-rv-${r.ticker}`}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
                                 </tr>
                             );
@@ -992,9 +1000,144 @@ export default function Visual() {
                     <div className="text-[10px] text-[#7A7A7A] px-4 py-0.5 -mt-1 text-center shrink-0">Pellizca para hacer zoom · arrastra para desplazar · doble toque para restablecer · gira el móvil para más ancho</div>
                 </div>
             )}
+
+            {historyRow && <VisualHistoryModal ticker={historyRow.ticker} name={historyRow.name} onClose={() => setHistoryRow(null)} />}
         </div>
     );
 }
+
+// ---------- Classic per-company history chart (opened from any of the 5 columns) ----------
+const VISUAL_METRIC_META = {
+    score: { label: "Score", color: "#052049", fmt: (v) => fmtN(v, 1) },
+    tam: { label: "TAM Score", color: "#1D7044", fmt: (v) => fmtN(v, 2) },
+    kpi_coef: { label: "Coef KPI", color: "#B8860B", fmt: (v) => fmtN(v, 2) },
+    rc: { label: "Ratio Compra %", color: "#2E6F9E", fmt: (v) => fmtPct(v) },
+    rv: { label: "Ratio Venta %", color: "#B32A22", fmt: (v) => fmtPct(v) },
+};
+const VISUAL_METRIC_ORDER = ["score", "tam", "kpi_coef", "rc", "rv"];
+
+// Min-max normalize a metric's own points to 0-100 so wildly different-scale metrics
+// (an index, a $ figure, a ratio, two percentages) can share one Y-axis; the tooltip
+// always shows the real value.
+const normalizeSeries = (points) => {
+    if (!points.length) return [];
+    const vals = points.map((p) => p.value);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = max - min;
+    return points.map((p) => ({ ...p, norm: span > 0 ? ((p.value - min) / span) * 100 : 50 }));
+};
+
+const VisualHistoryTip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="visual-history-tooltip">
+            <div className="font-semibold mb-1">{dayLabel(label)}</div>
+            {VISUAL_METRIC_ORDER.map((m) => {
+                const v = row[`${m}_val`];
+                if (v == null) return null;
+                const meta = VISUAL_METRIC_META[m];
+                return <div key={m} style={{ color: meta.color }} className="tabular-nums">{meta.label}: {meta.fmt(v)}</div>;
+            })}
+        </div>
+    );
+};
+
+const VisualHistoryModal = ({ ticker, name, onClose }) => {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [hidden, setHidden] = useState(new Set());
+    const [busy, setBusy] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        thesisVisualHistory(ticker).then((d) => { if (alive) setData(d); })
+            .catch(() => { if (alive) setData(null); })
+            .finally(() => { if (alive) setLoading(false); });
+        return () => { alive = false; };
+    }, [ticker]);
+
+    const rows = useMemo(() => {
+        if (!data?.series) return [];
+        const normed = {};
+        for (const m of VISUAL_METRIC_ORDER) normed[m] = normalizeSeries(data.series[m] || []);
+        const dateSet = new Set();
+        for (const m of VISUAL_METRIC_ORDER) for (const p of normed[m]) dateSet.add(p.date);
+        const byDateMetric = {};
+        for (const m of VISUAL_METRIC_ORDER) {
+            byDateMetric[m] = {};
+            for (const p of normed[m]) byDateMetric[m][p.date] = p;
+        }
+        return Array.from(dateSet).sort().map((d) => {
+            const row = { date: d };
+            for (const m of VISUAL_METRIC_ORDER) {
+                const p = byDateMetric[m][d];
+                row[`${m}_norm`] = p ? p.norm : null;
+                row[`${m}_val`] = p ? p.value : null;
+            }
+            return row;
+        });
+    }, [data]);
+
+    const toggle = (dataKey) => {
+        const m = dataKey.replace("_norm", "");
+        setHidden((h) => { const n = new Set(h); n.has(m) ? n.delete(m) : n.add(m); return n; });
+    };
+
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, `historico-${ticker}`); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="visual-history-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <LineChartIcon size={22} className="shrink-0" /> <span className="truncate">{name || ticker} · Histórico</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title={`Histórico ${ticker} · Valuation Studio`} testidPrefix="visual-history-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", `Histórico ${ticker}`)} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="visual-history-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="visual-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                {loading ? (
+                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A]"><Loader2 className="animate-spin" size={24} /></div>
+                ) : rows.length === 0 ? (
+                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A] text-sm" data-testid="visual-history-empty">Sin histórico todavía para {ticker}.</div>
+                ) : (
+                    <div ref={ref}>
+                        <ResponsiveContainer width="100%" height={420}>
+                            <LineChart data={rows} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                                <CartesianGrid stroke="#00000010" vertical={false} />
+                                <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
+                                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: "#7A7A7A" }} width={34} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                                <Tooltip content={<VisualHistoryTip />} />
+                                <Legend onClick={(o) => toggle(o.dataKey)} wrapperStyle={{ fontSize: 11, cursor: "pointer" }} />
+                                {VISUAL_METRIC_ORDER.map((m) => (
+                                    <Line key={m} type="monotone" dataKey={`${m}_norm`} name={VISUAL_METRIC_META[m].label}
+                                        stroke={VISUAL_METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} connectNulls
+                                        hide={hidden.has(m)} isAnimationActive={false} />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                        <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                            Eje Y normalizado (0-100% del rango histórico de cada métrica en esta empresa, para poder compararlas en un mismo gráfico) — el valor real de cada punto aparece en el tooltip. Score/TAM/Coef KPI se registran solo cuando cambian; Ratio Compra/Venta cada 15 días. Haz clic en la leyenda para mostrar/ocultar una serie.
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 // ---------- Small subcomponents ----------
 const AlertBell = ({ ticker, alert, onSaved }) => {

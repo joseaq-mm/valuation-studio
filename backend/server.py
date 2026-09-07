@@ -912,6 +912,7 @@ async def _ensure_indexes():
         "community_notifications": [[("user_id", 1), ("read", 1), ("created_at", -1)]],
         "community_mod": [[("status", 1), ("created_at", -1)], [("target_type", 1), ("target_id", 1), ("status", 1)]],
         "community_mod_cache": [[("h", 1)]],
+        "visual_metric_events": [[("user_id", 1), ("ticker", 1), ("metric", 1), ("date", 1)]],
     }
     created = 0
     for coll, keys_list in index_map.items():

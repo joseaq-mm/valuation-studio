@@ -2006,18 +2006,55 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
 
     # ---------------------- Visual time dial (evolution over time) ----------------------
+    # Metrics tracked as a per-ticker event history (`visual_metric_events`), one document
+    # per (user, ticker, metric, date). Two different cadences, per explicit product
+    # decision: qualitative metrics only get a new point when the value actually CHANGES
+    # (score/tam/kpi_coef move rarely — on reanalysis — so recording every night would
+    # just be noise); the price ratios (rc/rv) get a new point every VISUAL_RATIO_CADENCE_DAYS
+    # regardless of change (prices drift continuously, so "unchanged" isn't meaningful the
+    # same way, and 15 days gives a steady cadence without a point every single day).
+    VISUAL_QUAL_METRICS = ("score", "tam", "kpi_coef")
+    VISUAL_RATIO_METRICS = ("rc", "rv")
+    VISUAL_RATIO_CADENCE_DAYS = 15
+
+    def _visual_metric_value(r: dict, metric: str):
+        if metric == "score":
+            return round(r["avg_overall_score"], 1) if r.get("avg_overall_score") is not None else None
+        if metric == "tam":
+            return round(r["sum_tam_score"], 2) if r.get("sum_tam_score") is not None else None
+        if metric == "kpi_coef":
+            return round(r["kpi_coef"], 2) if isinstance(r.get("kpi_coef"), (int, float)) else None
+        if metric == "rc":
+            return round(r["ratio_compra_pct"], 1) if r.get("ratio_compra_pct") is not None else None
+        if metric == "rv":
+            return round(r["ratio_venta_pct"], 1) if r.get("ratio_venta_pct") is not None else None
+        return None
+
     def _clamp_ratio(v):
         # Projecting today's POC/POV onto much older (split-adjusted, tiny) prices can
         # yield absurd ratios; clamp to a readable band so the chart axis stays sane.
         return max(-99.0, min(500.0, v))
+
+    def _forward_fill(events_asc: list, upto_month: str):
+        """Value of the last event with date <= the end of `upto_month` (YYYY-MM).
+        `events_asc` must be sorted ascending by date. None if no event qualifies."""
+        val = None
+        limit = f"{upto_month}-31"  # ISO strings sort correctly; any day in-month <= this
+        for e in events_asc:
+            if e["date"] <= limit:
+                val = e["value"]
+            else:
+                break
+        return val
 
     async def _build_timeline(uid: str, months_back: int = 120) -> Dict[str, Any]:
         """Per-company monthly series of the 4 Visual axes + KPI coef, for the time
         dial. Price axes (Ratio Compra/Venta) are reconstructed backwards by projecting
         today's implied POC/POV onto each month's close; qualitative axes (Score, TAM,
         Coef KPI) are FROZEN at their current value in the reconstructed past. Recorded
-        nightly snapshots (visual_snapshots) overlay the exact 4-axis + KPI where present,
-        so the past becomes progressively accurate going forward."""
+        events (`visual_metric_events`) overlay the exact value per metric where present
+        (forward-filled month by month), so the past becomes progressively accurate over
+        time — independently per metric, since each has its own recording cadence."""
         rows = (await visual_data({"user_id": uid})).get("rows", [])
         usable = [r for r in rows if r.get("ticker") and r.get("current_price")
                   and r.get("ratio_compra_pct") is not None and r.get("ratio_venta_pct") is not None
@@ -2025,19 +2062,21 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         tickers = [r["ticker"] for r in usable]
         closes = await get_monthly_closes_bulk(db, tickers, run_in_threadpool=run_in_threadpool)
 
-        # Recorded snapshots: (ticker → {month → [s,t,rc,rv,k]})
-        snaps: Dict[str, Dict[str, list]] = {}
-        snap_docs = await db.visual_snapshots.find(
+        # Recorded events: (ticker, metric) → [events asc by date]
+        events: Dict[tuple, list] = {}
+        evt_docs = await db.visual_metric_events.find(
             {"user_id": uid, "ticker": {"$in": tickers}}, {"_id": 0}
-        ).to_list(length=100000)
-        for s in snap_docs:
-            snaps.setdefault(s["ticker"], {})[s["month"]] = [
-                s.get("score"), s.get("tam"), s.get("rc"), s.get("rv"), s.get("kpi_coef"),
-            ]
+        ).sort("date", 1).to_list(length=200000)
+        for e in evt_docs:
+            events.setdefault((e["ticker"], e["metric"]), []).append(e)
+
+        def _ff_or(tk, metric, month, fallback):
+            v = _forward_fill(events.get((tk, metric), []), month)
+            return v if v is not None else fallback
 
         now = datetime.now(timezone.utc)
         cur_month = now.strftime("%Y-%m")
-        # Earliest reconstructed month = now - months_back (snapshots may still be older).
+        # Earliest reconstructed month = now - months_back (events may still be older).
         cutoff = (now.replace(day=1) - timedelta(days=months_back * 31)).strftime("%Y-%m")
         all_months = set()
         series = []
@@ -2058,13 +2097,16 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     continue
                 c = p["close"]
                 if c and c > 0:
-                    pts[p["d"]] = [score, tam,
-                                   _clamp_ratio(round((poc / c - 1) * 100, 1)),
-                                   _clamp_ratio(round((pov / c - 1) * 100, 1)),
-                                   kcoef]
-            # Overlay recorded nightly snapshots (exact 4-axis + KPI), always kept.
-            for m, arr in (snaps.get(tk) or {}).items():
-                pts[m] = arr
+                    m = p["d"]
+                    rc_base = _clamp_ratio(round((poc / c - 1) * 100, 1))
+                    rv_base = _clamp_ratio(round((pov / c - 1) * 100, 1))
+                    pts[m] = [
+                        _ff_or(tk, "score", m, score),
+                        _ff_or(tk, "tam", m, tam),
+                        _ff_or(tk, "rc", m, rc_base),
+                        _ff_or(tk, "rv", m, rv_base),
+                        _ff_or(tk, "kpi_coef", m, kcoef),
+                    ]
             # Anchor the present month at the exact current values.
             pts[cur_month] = [score, tam, round(rc, 1), round(rv, 1), kcoef]
             if not pts:
@@ -2079,14 +2121,46 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
     async def visual_timeline(months_back: int = 120, user: Dict[str, Any] = Depends(auth_required)):
         return await _build_timeline(user["user_id"], months_back=max(12, min(240, months_back)))
 
+    @router.get("/visual-history/{ticker}")
+    async def visual_metric_history(ticker: str, user: Dict[str, Any] = Depends(auth_required)):
+        """Full-resolution (not month-bucketed) event history per metric for one company,
+        for the classic line chart opened from any of the 5 Visual columns."""
+        uid = user["user_id"]
+        tk = (ticker or "").upper().strip()
+        docs = await db.visual_metric_events.find(
+            {"user_id": uid, "ticker": tk}, {"_id": 0}
+        ).sort("date", 1).to_list(length=5000)
+        series: Dict[str, list] = {m: [] for m in (*VISUAL_QUAL_METRICS, *VISUAL_RATIO_METRICS)}
+        for d in docs:
+            if d.get("metric") in series:
+                series[d["metric"]].append({"date": d["date"], "value": d["value"]})
+
+        rows = (await visual_data({"user_id": uid})).get("rows", [])
+        row = next((r for r in rows if r.get("ticker") == tk), None)
+        if row:
+            today = datetime.now(timezone.utc).date().isoformat()
+            for metric in series:
+                val = _visual_metric_value(row, metric)
+                if val is None:
+                    continue
+                pts = series[metric]
+                if pts and pts[-1]["date"] == today:
+                    pts[-1]["value"] = val  # today's live value always wins
+                else:
+                    pts.append({"date": today, "value": val})
+        return {"ticker": tk, "name": row.get("name") if row else tk, "series": series}
+
     async def run_visual_snapshots() -> Dict[str, Any]:
-        """Nightly: record one snapshot per (user, ticker, current-month) of the exact
-        Visual coordinates so the time dial gains a precise qualitative history over time.
-        Upsert on (user, ticker, month) → one point per month, latest wins."""
-        summary = {"users": 0, "snapshots": 0}
+        """Nightly: record a new point per (user, ticker, metric) in `visual_metric_events`
+        only when it's real new information — qualitative metrics (score/tam/kpi_coef)
+        only when the value CHANGED since the last recorded point for that metric; price
+        ratios (rc/rv) every VISUAL_RATIO_CADENCE_DAYS regardless of change. Upsert keyed
+        by (user, ticker, metric, date) — idempotent if run more than once the same day."""
+        summary = {"users": 0, "points": 0}
         uids = await db.theses.distinct("user_id")
-        month = datetime.now(timezone.utc).strftime("%Y-%m")
-        iso = datetime.now(timezone.utc).isoformat()
+        today = datetime.now(timezone.utc).date()
+        today_iso = today.isoformat()
+        now_iso = datetime.now(timezone.utc).isoformat()
         for uid in uids:
             if not uid:
                 continue
@@ -2095,30 +2169,62 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             except Exception as e:
                 logger.warning(f"visual snapshot: visual_data failed for {uid}: {e}")
                 continue
+            tickers = [r.get("ticker") for r in rows if r.get("ticker")]
+            if not tickers:
+                continue
+            # Last recorded point per (ticker, metric) — sorted desc, first hit wins.
+            last_docs = await db.visual_metric_events.find(
+                {"user_id": uid, "ticker": {"$in": tickers}}, {"_id": 0}
+            ).sort("date", -1).to_list(length=20000)
+            last_seen: Dict[tuple, dict] = {}
+            for d in last_docs:
+                key = (d["ticker"], d["metric"])
+                last_seen.setdefault(key, d)
             wrote = False
             for r in rows:
                 tk = r.get("ticker")
-                if not tk or r.get("avg_overall_score") is None or r.get("ratio_compra_pct") is None:
+                if not tk:
                     continue
-                await db.visual_snapshots.update_one(
-                    {"user_id": uid, "ticker": tk, "month": month},
-                    {"$set": {
-                        "user_id": uid, "ticker": tk, "month": month,
-                        "score": round(r["avg_overall_score"], 1),
-                        "tam": round(r["sum_tam_score"], 2) if r.get("sum_tam_score") is not None else None,
-                        "rc": round(r["ratio_compra_pct"], 1),
-                        "rv": round(r["ratio_venta_pct"], 1) if r.get("ratio_venta_pct") is not None else None,
-                        "kpi_coef": r.get("kpi_coef") if isinstance(r.get("kpi_coef"), (int, float)) else None,
-                        "price": r.get("current_price"),
-                        "recorded_at": iso,
-                    }},
-                    upsert=True,
-                )
-                summary["snapshots"] += 1
-                wrote = True
+                for metric in VISUAL_QUAL_METRICS:
+                    val = _visual_metric_value(r, metric)
+                    if val is None:
+                        continue
+                    prev = last_seen.get((tk, metric))
+                    if prev is not None and prev.get("value") == val:
+                        continue  # unchanged → skip, this is the whole point
+                    await db.visual_metric_events.update_one(
+                        {"user_id": uid, "ticker": tk, "metric": metric, "date": today_iso},
+                        {"$set": {"user_id": uid, "ticker": tk, "metric": metric,
+                                  "date": today_iso, "value": val, "recorded_at": now_iso}},
+                        upsert=True,
+                    )
+                    summary["points"] += 1
+                    wrote = True
+                for metric in VISUAL_RATIO_METRICS:
+                    val = _visual_metric_value(r, metric)
+                    if val is None:
+                        continue
+                    prev = last_seen.get((tk, metric))
+                    due = True
+                    if prev is not None:
+                        try:
+                            prev_date = datetime.strptime(prev["date"], "%Y-%m-%d").date()
+                            due = (today - prev_date).days >= VISUAL_RATIO_CADENCE_DAYS
+                        except (ValueError, TypeError):
+                            due = True
+                    if not due:
+                        continue
+                    await db.visual_metric_events.update_one(
+                        {"user_id": uid, "ticker": tk, "metric": metric, "date": today_iso},
+                        {"$set": {"user_id": uid, "ticker": tk, "metric": metric,
+                                  "date": today_iso, "value": val, "recorded_at": now_iso}},
+                        upsert=True,
+                    )
+                    summary["points"] += 1
+                    wrote = True
             if wrote:
                 summary["users"] += 1
-        logger.info(f"visual snapshots recorded: {summary}")
+        logger.info(f"visual metric events recorded: {summary}")
         return summary
 
     class AlertMetric(BaseModel):
