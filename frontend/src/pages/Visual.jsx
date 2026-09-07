@@ -1011,19 +1011,21 @@ export default function Visual() {
 // ---------- Classic per-company history chart (opened from any of the 5 columns) ----------
 // 4 Y-axes: Score, TAM Score and Coef KPI each get their own (3 qualitative axes), and
 // Ratio Compra/Venta % share a 4th (both are percentages on the same scale).
+// Colors picked to stay legible both on the white chart canvas AND the near-black
+// tooltip background (the original navy/dark-green were unreadable on the latter).
 const VISUAL_METRIC_META = {
-    score: { label: "Score", color: "#052049", fmt: (v) => fmtN(v, 1), axis: "score" },
-    tam: { label: "TAM Score", color: "#1D7044", fmt: (v) => fmtN(v, 2), axis: "tam" },
+    score: { label: "Score", color: "#3B9EFF", fmt: (v) => fmtN(v, 1), axis: "score" },
+    tam: { label: "TAM Score", color: "#2FA86B", fmt: (v) => fmtN(v, 2), axis: "tam" },
     kpi_coef: { label: "Coef KPI", color: "#B8860B", fmt: (v) => fmtN(v, 2), axis: "kpi" },
-    rc: { label: "Ratio Compra %", color: "#2E6F9E", fmt: (v) => fmtPct(v), axis: "ratio" },
+    rc: { label: "Ratio Compra %", color: "#8B5CF6", fmt: (v) => fmtPct(v), axis: "ratio" },
     rv: { label: "Ratio Venta %", color: "#B32A22", fmt: (v) => fmtPct(v), axis: "ratio" },
 };
 const VISUAL_METRIC_ORDER = ["score", "tam", "kpi_coef", "rc", "rv"];
 const VISUAL_AXES = [
-    { id: "score", orientation: "left", color: "#052049", fmt: (v) => v.toFixed(0) },
-    { id: "tam", orientation: "left", color: "#1D7044", fmt: (v) => v.toFixed(2) },
+    { id: "score", orientation: "left", color: "#3B9EFF", fmt: (v) => v.toFixed(0) },
+    { id: "tam", orientation: "left", color: "#2FA86B", fmt: (v) => v.toFixed(2) },
     { id: "kpi", orientation: "right", color: "#B8860B", fmt: (v) => v.toFixed(2) },
-    { id: "ratio", orientation: "right", color: "#2E6F9E", fmt: (v) => `${v.toFixed(0)}%` },
+    { id: "ratio", orientation: "right", color: "#8B5CF6", fmt: (v) => `${v.toFixed(0)}%` },
 ];
 
 // Pad a metric's real min/max so its line doesn't hug the axis edges (and stays
@@ -1069,29 +1071,36 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         return () => { alive = false; };
     }, [ticker]);
 
-    const { rows, domains } = useMemo(() => {
-        if (!data?.series) return { rows: [], domains: {} };
+    // Only metrics with at least one recorded/anchored point get an axis + line. An
+    // axis stacked with a degenerate [0,1] placeholder domain (from a metric with zero
+    // data) was corrupting the neighboring same-side axis's rendering — so metrics
+    // without data are left out entirely instead of rendered empty.
+    const { rows, domains, activeMetrics, emptyMetrics } = useMemo(() => {
+        if (!data?.series) return { rows: [], domains: {}, activeMetrics: [], emptyMetrics: [] };
+        const activeMetrics = VISUAL_METRIC_ORDER.filter((m) => (data.series[m] || []).length > 0);
+        const emptyMetrics = VISUAL_METRIC_ORDER.filter((m) => !(data.series[m] || []).length);
         const dateSet = new Set();
-        for (const m of VISUAL_METRIC_ORDER) for (const p of (data.series[m] || [])) dateSet.add(p.date);
+        for (const m of activeMetrics) for (const p of data.series[m]) dateSet.add(p.date);
         const byDateMetric = {};
-        for (const m of VISUAL_METRIC_ORDER) {
+        for (const m of activeMetrics) {
             byDateMetric[m] = {};
-            for (const p of (data.series[m] || [])) byDateMetric[m][p.date] = p.value;
+            for (const p of data.series[m]) byDateMetric[m][p.date] = p.value;
         }
         const rows = Array.from(dateSet).sort().map((d) => {
             const row = { date: d };
-            for (const m of VISUAL_METRIC_ORDER) row[m] = byDateMetric[m][d] ?? null;
+            for (const m of activeMetrics) row[m] = byDateMetric[m][d] ?? null;
             return row;
         });
         const valsOf = (metrics) => metrics.flatMap((m) => (data.series[m] || []).map((p) => p.value));
-        const domains = {
-            score: paddedDomain(valsOf(["score"])),
-            tam: paddedDomain(valsOf(["tam"])),
-            kpi: paddedDomain(valsOf(["kpi_coef"])),
-            ratio: paddedDomain(valsOf(["rc", "rv"])),
-        };
-        return { rows, domains };
+        const activeAxisIds = new Set(activeMetrics.map((m) => VISUAL_METRIC_META[m].axis));
+        const domains = {};
+        if (activeAxisIds.has("score")) domains.score = paddedDomain(valsOf(["score"]));
+        if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]));
+        if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]));
+        if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]));
+        return { rows, domains, activeMetrics, emptyMetrics };
     }, [data]);
+    const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
 
     const toggle = (m) => setHidden((h) => { const n = new Set(h); n.has(m) ? n.delete(m) : n.add(m); return n; });
 
@@ -1128,15 +1137,15 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                             <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                 <CartesianGrid stroke="#00000010" vertical={false} />
                                 <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
-                                {VISUAL_AXES.map((ax) => (
+                                {activeAxes.map((ax) => (
                                     <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
-                                        domain={domains[ax.id] || ["auto", "auto"]}
+                                        domain={domains[ax.id]}
                                         tick={{ fontSize: 10, fill: ax.color }} axisLine={{ stroke: ax.color }} tickLine={false}
                                         width={44} tickFormatter={ax.fmt} />
                                 ))}
                                 <Tooltip content={<VisualHistoryTip />} />
                                 <Legend onClick={(o) => toggle(o.dataKey)} wrapperStyle={{ fontSize: 11, cursor: "pointer" }} />
-                                {VISUAL_METRIC_ORDER.map((m) => (
+                                {activeMetrics.map((m) => (
                                     <Line key={m} yAxisId={VISUAL_METRIC_META[m].axis} type="monotone" dataKey={m} name={VISUAL_METRIC_META[m].label}
                                         stroke={VISUAL_METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} connectNulls
                                         hide={hidden.has(m)} isAnimationActive={false} />
@@ -1146,6 +1155,11 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                         <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
                             4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian; Ratio Compra/Venta cada 15 días. Haz clic en la leyenda para mostrar/ocultar una serie.
                         </p>
+                        {emptyMetrics.length > 0 && (
+                            <p className="text-[11px] text-[#B8860B] mt-1" data-testid="visual-history-no-data-note">
+                                Aún sin ningún punto registrado: {emptyMetrics.map((m) => VISUAL_METRIC_META[m].label).join(", ")}.
+                            </p>
+                        )}
                     </div>
                 )}
             </div>
