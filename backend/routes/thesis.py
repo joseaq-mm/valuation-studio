@@ -1719,6 +1719,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "next_earnings_date": (earn_map.get(tk) or {}).get("date"),
                 "next_earnings_estimated": (earn_map.get(tk) or {}).get("estimated", False),
                 "last_earnings_date": (earn_map.get(tk) or {}).get("last"),
+                "company_thesis_id": ticker_to_plan_id.get(tk),
             })
         companies.sort(key=lambda c: (c["avg_overall_score"] is None, -(c["avg_overall_score"] or 0)))
 
@@ -1820,6 +1821,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         Each row: {ticker, name, avg_overall_score, sum_tam_score,
                    ratio_compra_pct, ratio_venta_pct, current_price, currency,
+                   company_thesis_id (the company's own "type=company" plan, for linking
+                   to its thesis detail page),
                    trends: [{thesis_id, title, overall_score, tam_score}],
                    trend_count}
         """
@@ -1891,6 +1894,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                 "trends": c.get("trends") or [],
                 "trend_count": c.get("trend_count") or 0,
                 "thesis_updated_at": c.get("updated_at"),
+                "company_thesis_id": c.get("company_thesis_id"),
                 "most_recent_quarter": c.get("most_recent_quarter"),
                 "next_earnings_date": c.get("next_earnings_date"),
                 "next_earnings_estimated": c.get("next_earnings_estimated", False),
