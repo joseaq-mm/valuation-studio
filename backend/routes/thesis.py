@@ -722,14 +722,18 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         except Exception as e:
             logger.warning(f"usage record failed: {e}")
 
-    async def _persist_qual_snapshots(user_id: str, thesis_id: str, thesis: Dict[str, Any]):
+    async def _persist_qual_snapshots(user_id: str, thesis_id: str, thesis: Dict[str, Any]) -> List[str]:
         """Index every company by canonical TICKER so the qualitative view links
-        to the quantitative /company/{ticker} dashboard (and future fusion)."""
+        to the quantitative /company/{ticker} dashboard (and future fusion).
+        Returns the tickers touched, so the caller can record a Visual history
+        point for them immediately (see _record_visual_qual_points)."""
+        touched: List[str] = []
         if thesis.get("type") == "trend":
             for c in thesis.get("companies", []):
                 tk = (c.get("ticker") or "").upper().strip()
                 if not tk:
                     continue
+                touched.append(tk)
                 await db.qual_snapshots.update_one(
                     {"user_id": user_id, "ticker": tk},
                     {"$set": {
@@ -751,6 +755,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
         elif thesis.get("type") == "company":
             tk = (thesis.get("company", {}).get("ticker") or "").upper().strip()
             if tk:
+                touched.append(tk)
                 await db.qual_snapshots.update_one(
                     {"user_id": user_id, "ticker": tk},
                     {"$set": {
@@ -764,6 +769,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     }},
                     upsert=True,
                 )
+        return touched
 
     async def _projected_revenue_usd_busd(ticker: str):
         """Projected 2027 revenue (revenue_2y, same base as POC/POV) converted to
@@ -1017,7 +1023,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         {"id": tid, "user_id": user_id},
                         {"$set": {**thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
                     )
-                    await _persist_qual_snapshots(user_id, tid, thesis)
+                    touched = await _persist_qual_snapshots(user_id, tid, thesis)
+                    await _record_visual_qual_points(user_id, touched)
                     thesis["id"] = tid
                     thesis["saved"] = True
                     if changes:
@@ -1035,7 +1042,8 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         **thesis,
                     }
                     await db.theses.insert_one(doc)
-                    await _persist_qual_snapshots(user_id, tid, thesis)
+                    touched = await _persist_qual_snapshots(user_id, tid, thesis)
+                    await _record_visual_qual_points(user_id, touched)
                     thesis["id"] = tid
                     thesis["saved"] = False
                 # Developing a trend FROM a company core/split → record it on that company
@@ -2034,6 +2042,44 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             return round(r["ratio_venta_pct"], 1) if r.get("ratio_venta_pct") is not None else None
         return None
 
+    async def _record_visual_qual_points(user_id: str, tickers: List[str]):
+        """On-demand counterpart to run_visual_snapshots' qualitative half: called right
+        after a thesis save or a KPI reanalysis so a real value change lands in the Visual
+        history immediately, instead of waiting for the next nightly cron run. Only the
+        change-triggered metrics (score/tam/kpi_coef) are handled here — the ratio metrics
+        keep their fixed 15-day cadence and are only ever recorded by the nightly job."""
+        tks = [tk for tk in {(t or "").upper().strip() for t in (tickers or [])} if tk]
+        if not tks:
+            return
+        try:
+            rows = (await visual_data({"user_id": user_id})).get("rows", [])
+        except Exception as e:
+            logger.warning(f"visual qual point: visual_data failed for {user_id}: {e}")
+            return
+        by_ticker = {r.get("ticker"): r for r in rows if r.get("ticker")}
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for tk in tks:
+            row = by_ticker.get(tk)
+            if not row:
+                continue
+            for metric in VISUAL_QUAL_METRICS:
+                val = _visual_metric_value(row, metric)
+                if val is None:
+                    continue
+                prev = await db.visual_metric_events.find_one(
+                    {"user_id": user_id, "ticker": tk, "metric": metric},
+                    {"_id": 0}, sort=[("date", -1)],
+                )
+                if prev is not None and prev.get("value") == val:
+                    continue  # unchanged → skip, this is the whole point
+                await db.visual_metric_events.update_one(
+                    {"user_id": user_id, "ticker": tk, "metric": metric, "date": today_iso},
+                    {"$set": {"user_id": user_id, "ticker": tk, "metric": metric,
+                              "date": today_iso, "value": val, "recorded_at": now_iso}},
+                    upsert=True,
+                )
+
     def _clamp_ratio(v):
         # Projecting today's POC/POV onto much older (split-adjusted, tiny) prices can
         # yield absurd ratios; clamp to a readable band so the chart axis stays sane.
@@ -2619,6 +2665,7 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             snap["coef_history"] = history[-20:]
             await db.theses.update_one(
                 {"id": company_id, "user_id": user_id}, {"$set": {"kpi_snapshot": snap}})
+            await _record_visual_qual_points(user_id, [ticker])
             await _clear_kpi_stale(company_id, user_id)
             await db.thesis_jobs.update_one(
                 {"id": job_id},
