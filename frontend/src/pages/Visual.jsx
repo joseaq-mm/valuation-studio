@@ -1031,12 +1031,27 @@ const VISUAL_AXES = [
 // Pad a metric's real min/max so its line doesn't hug the axis edges (and stays
 // readable even when flat) — NOT normalized to a shared scale, each axis keeps its
 // own real units; a domain shared by 2 metrics (the ratio axis) is passed pre-merged.
-const paddedDomain = (vals, padFrac = 0.15) => {
+//
+// With a SINGLE point (min === max, span 0 — the common case right after this feature
+// shipped, before any real history piles up), symmetric padding [v-pad, v+pad] always
+// places that point at exactly the 50% vertical mark of ITS OWN domain. Every axis
+// shares the same plot height, so any two single-point series both land on the exact
+// same pixel row regardless of which axis owns them — whichever draws last (Coef KPI)
+// visually sits on top and hides the ones drawn earlier (Score, TAM). `targetFrac`
+// breaks that coincidence by giving each axis a different vertical anchor for the
+// degenerate case; real multi-point data (span > 0) is unaffected and just gets
+// normal symmetric padding.
+const paddedDomain = (vals, targetFrac = 0.5, padFrac = 0.15) => {
     if (!vals.length) return [0, 1];
     const min = Math.min(...vals), max = Math.max(...vals);
     const span = max - min;
-    const pad = span > 0 ? span * padFrac : (Math.abs(max) || 1) * 0.1;
-    return [min - pad, max + pad];
+    if (span > 0) {
+        const pad = span * padFrac;
+        return [min - pad, max + pad];
+    }
+    const v = max;
+    const totalSpan = (Math.abs(v) || 1) * 0.2;
+    return [v - totalSpan * targetFrac, v + totalSpan * (1 - targetFrac)];
 };
 
 const VisualHistoryTip = ({ active, payload, label }) => {
@@ -1110,10 +1125,10 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         const valsOf = (metrics) => metrics.flatMap((m) => effectiveSeries[m].map((p) => p.value));
         const activeAxisIds = new Set(activeMetrics.map((m) => VISUAL_METRIC_META[m].axis));
         const domains = {};
-        if (activeAxisIds.has("score")) domains.score = paddedDomain(valsOf(["score"]));
-        if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]));
-        if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]));
-        if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]));
+        if (activeAxisIds.has("score")) domains.score = paddedDomain(valsOf(["score"]), 0.7);
+        if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
+        if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
+        if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
         return { rows, domains, activeMetrics, emptyMetrics };
     }, [data]);
     const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
