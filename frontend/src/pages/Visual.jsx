@@ -1194,7 +1194,7 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                             </LineChart>
                         </ResponsiveContainer>
                         <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
-                            4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian; Ratio Compra/Venta cada 15 días. Haz clic en la leyenda para mostrar/ocultar una serie.
+                            4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian (al reanalizar tesis/KPI); Ratio Compra/Venta el día 1 y el 15 de cada mes. Haz clic en la leyenda para mostrar/ocultar una serie.
                         </p>
                         {emptyMetrics.length > 0 && (
                             <p className="text-[11px] text-[#B8860B] mt-1" data-testid="visual-history-no-data-note">

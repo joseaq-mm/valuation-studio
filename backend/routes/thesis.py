@@ -2019,15 +2019,15 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     # ---------------------- Visual time dial (evolution over time) ----------------------
     # Metrics tracked as a per-ticker event history (`visual_metric_events`), one document
-    # per (user, ticker, metric, date). Two different cadences, per explicit product
-    # decision: qualitative metrics only get a new point when the value actually CHANGES
-    # (score/tam/kpi_coef move rarely — on reanalysis — so recording every night would
-    # just be noise); the price ratios (rc/rv) get a new point every VISUAL_RATIO_CADENCE_DAYS
-    # regardless of change (prices drift continuously, so "unchanged" isn't meaningful the
-    # same way, and 15 days gives a steady cadence without a point every single day).
+    # per (user, ticker, metric, date/recorded_at). Two different cadences, per explicit
+    # product decision: qualitative metrics only get a new point when the value actually
+    # CHANGES, dated the moment of the manual action that changed it (thesis save / KPI
+    # reanalysis) — score/tam/kpi_coef move rarely, so recording every night would just be
+    # noise; the price ratios (rc/rv) get a new point twice a month, anchored to the 1st and
+    # the 15th, regardless of change (prices drift continuously, so "unchanged" isn't
+    # meaningful the same way, and this is fully automatic — no manual action drives it).
     VISUAL_QUAL_METRICS = ("score", "tam", "kpi_coef")
     VISUAL_RATIO_METRICS = ("rc", "rv")
-    VISUAL_RATIO_CADENCE_DAYS = 15
 
     def _visual_metric_value(r: dict, metric: str):
         if metric == "score":
@@ -2213,10 +2213,14 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
     async def run_visual_snapshots() -> Dict[str, Any]:
         """Nightly: record a new point per (user, ticker, metric) in `visual_metric_events`
-        only when it's real new information — qualitative metrics (score/tam/kpi_coef)
-        only when the value CHANGED since the last recorded point for that metric; price
-        ratios (rc/rv) every VISUAL_RATIO_CADENCE_DAYS regardless of change. Upsert keyed
-        by (user, ticker, metric, date) — idempotent if run more than once the same day."""
+        only when it's real new information. Qualitative metrics (score/tam/kpi_coef) are
+        normally recorded on-demand instead (see _record_visual_qual_points, called right
+        after a thesis save / KPI reanalysis); this loop is their safety net, catching any
+        change that slipped through outside that path — still only when the value CHANGED
+        since the last recorded point. Price ratios (rc/rv) are recorded here only, twice a
+        month anchored to the 1st/15th, regardless of change. Idempotent if run more than
+        once the same day (qualitative: keyed by recorded_at, one write per real change;
+        ratio: keyed by date, at most one point per day)."""
         summary = {"users": 0, "points": 0}
         uids = await db.theses.distinct("user_id")
         today = datetime.now(timezone.utc).date()
@@ -2268,12 +2272,19 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     val = _visual_metric_value(r, metric)
                     if val is None:
                         continue
+                    # Anchored to the 1st/15th of the month (2 points/month), not a rolling
+                    # "N days since last" window — matches the qualitative metrics' own
+                    # dates being whenever they were actually calculated. Due when no point
+                    # has been recorded yet in the current half-month window; if the cron
+                    # missed the exact day (downtime), it still catches up on the next run
+                    # instead of permanently skipping that period.
+                    period_start = today.replace(day=15) if today.day >= 15 else today.replace(day=1)
                     prev = last_seen.get((tk, metric))
                     due = True
                     if prev is not None:
                         try:
                             prev_date = datetime.strptime(prev["date"], "%Y-%m-%d").date()
-                            due = (today - prev_date).days >= VISUAL_RATIO_CADENCE_DAYS
+                            due = prev_date < period_start
                         except (ValueError, TypeError):
                             due = True
                     if not due:
