@@ -1099,8 +1099,8 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
     // done server-side) is used as a fallback: if a metric's series ever comes back
     // empty despite a real live value existing, synthesize today's point from it
     // instead of hiding a metric the user can see has real data.
-    const { rows, domains, activeMetrics, emptyMetrics } = useMemo(() => {
-        if (!data?.series) return { rows: [], domains: {}, activeMetrics: [], emptyMetrics: [] };
+    const { rows, domains, tsDomain, activeMetrics, emptyMetrics } = useMemo(() => {
+        if (!data?.series) return { rows: [], domains: {}, tsDomain: [0, 1], activeMetrics: [], emptyMetrics: [] };
         const today = new Date().toISOString().slice(0, 10);
         const effectiveSeries = {};
         for (const m of VISUAL_METRIC_ORDER) {
@@ -1133,7 +1133,12 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
         if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
         if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
-        return { rows, domains, activeMetrics, emptyMetrics };
+        // Real time-scale X domain: a single point (min === max, common for a ticker with
+        // just one recorded event so far) would otherwise collapse the axis to zero width.
+        const tsVals = rows.map((r) => r.ts);
+        const tsMin = Math.min(...tsVals), tsMax = Math.max(...tsVals);
+        const tsDomain = tsMin === tsMax ? [tsMin - 86400000, tsMax + 86400000] : [tsMin, tsMax];
+        return { rows, domains, tsDomain, activeMetrics, emptyMetrics };
     }, [data]);
     const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
 
@@ -1171,7 +1176,7 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                         <ResponsiveContainer width="100%" height={440}>
                             <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                 <CartesianGrid stroke="#00000010" vertical={false} />
-                                <XAxis dataKey="ts" type="number" domain={["dataMin", "dataMax"]} scale="time"
+                                <XAxis dataKey="ts" type="number" domain={tsDomain}
                                     tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
                                 {activeAxes.map((ax) => (
                                     <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
