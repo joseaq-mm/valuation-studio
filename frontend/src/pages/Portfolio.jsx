@@ -23,7 +23,7 @@ import { PortfolioDonut } from "@/components/PortfolioDonut";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
 
-const PF_NUMERIC_KEYS = new Set(["shares", "buy_price", "invested", "price", "mcap", "now", "pl", "pl_pct", "rc", "rv", "score", "tam", "kpi"]);
+const PF_NUMERIC_KEYS = new Set(["shares", "price", "mcap", "now", "rc", "rv", "score", "tam", "kpi"]);
 
 // Options offered by the card-view sort dropdown (Nivel 1).
 const PF_SORT_OPTIONS = [
@@ -159,18 +159,9 @@ export default function Portfolio() {
         switch (key) {
             case "ticker": return p.ticker;
             case "shares": return p.shares;
-            case "buy_price": return p.buy_price != null ? convToDisplay(p.buy_price, buyCur) : null;
-            case "invested": return (p.shares && p.buy_price) ? convToDisplay(p.shares * p.buy_price, buyCur) : null;
             case "price": return convToDisplay(r.current_price, r.currency || buyCur);
             case "mcap": return convToDisplay(r.market_cap, r.currency || buyCur);
             case "now": return p.shares ? convToDisplay((r.current_price || 0) * p.shares, r.currency || buyCur) : null;
-            case "pl": {
-                if (!p.shares || !p.buy_price) return null;
-                const investedDisp = convToDisplay(p.shares * p.buy_price, buyCur);
-                const nowDisp = convToDisplay((r.current_price || 0) * p.shares, r.currency || buyCur);
-                return (nowDisp != null && investedDisp != null) ? nowDisp - investedDisp : null;
-            }
-            case "pl_pct": return (p.buy_price && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
             case "rc": return r.custom_ratios?.ratio_compra_pct;
             case "rv": return r.custom_ratios?.ratio_venta_pct;
             case "score": return qual[p.ticker]?.score;
@@ -298,7 +289,6 @@ export default function Portfolio() {
                         );
                         const buyCur = p.buy_currency || r.currency || "USD";
                         const showCur = displayCurFor(r.currency || buyCur);
-                        const isComplete = (p.shares != null && p.shares > 0) && (p.buy_price != null && p.buy_price > 0);
                         const cr = r.custom_ratios || {};
                         const q = qual[p.ticker];
                         return (
@@ -316,10 +306,7 @@ export default function Portfolio() {
                                 tam={q?.tam}
                                 kpi={q?.kpi_coef}
                                 nextEarnings={r.next_earnings_date}
-                                badges={<>
-                                    {!isComplete && <span className="overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px]" data-testid={`tracked-${p.ticker}`}>SEG</span>}
-                                    {p.mode === "manual" && <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px]" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>}
-                                </>}
+                                badges={p.mode === "manual" && <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px]" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>}
                                 actions={<>
                                     <AlertToggle enabled={!!p.alert_enabled} onChange={(v) => toggleAlert(p.ticker, v)} testid={p.ticker} />
                                     <div className="flex items-center gap-2">
@@ -340,21 +327,10 @@ export default function Portfolio() {
                         <thead>
                             <tr className="border-b border-black">
                                 <SortableTh label={t("watchlist.col_ticker")} sortKey="ticker" sort={sort} onSort={onSort} align="left" className="sticky left-0 z-20 bg-white" />
-                                <SortableTh label={t("portfolio.col_shares")} sortKey="shares" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh label={t("portfolio.col_buy_price")} sortKey="buy_price" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh label={t("portfolio.col_invested")} sortKey="invested" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh label={t("portfolio.col_now")} sortKey="now" sort={sort} onSort={onSort} align="right" />
-                                <SortableTh sortKey="pl" sort={sort} onSort={onSort} align="right">
-                                    <HoverTip text={t("portfolio.tt_pl")}>
-                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl")}</span>
-                                    </HoverTip>
-                                </SortableTh>
-                                <SortableTh sortKey="pl_pct" sort={sort} onSort={onSort} align="right">
-                                    <HoverTip text={t("portfolio.tt_pl_pct")}>
-                                        <span className="underline decoration-dotted underline-offset-2 cursor-help">{t("portfolio.col_pl_pct")}</span>
-                                    </HoverTip>
-                                </SortableTh>
+                                <th className="overline text-center px-2 py-2">{t("watchlist.col_mode")}</th>
                                 <SortableTh label={t("watchlist.col_price")} sortKey="price" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("portfolio.col_shares")} sortKey="shares" sort={sort} onSort={onSort} align="right" />
+                                <SortableTh label={t("portfolio.col_now")} sortKey="now" sort={sort} onSort={onSort} align="right" />
                                 <SortableTh label={t("watchlist.col_mcap")} sortKey="mcap" sort={sort} onSort={onSort} align="right" />
                                 <th className="overline text-right px-2 py-2">Próx. result.</th>
                                 <SortableTh label={t("watchlist.col_rc")} sortKey="rc" sort={sort} onSort={onSort} align="right" />
@@ -384,13 +360,13 @@ export default function Portfolio() {
                             </tr>
                         </thead>
                         <tbody>
-                            {loading && <tr><td colSpan="19" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
+                            {loading && <tr><td colSpan="16" className="px-3 py-6 text-center text-[#4A4A4A]">{t("common.loading")}</td></tr>}
                             {!loading && sortedRows.map((r, i) => {
                                 const p = r.position;
                                 if (r.error) return (
                                     <tr key={p.ticker} className="border-b border-black/10">
                                         <td className="px-2 py-2 font-mono sticky left-0 z-10 bg-white">{p.ticker}</td>
-                                        <td colSpan="17" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
+                                        <td colSpan="14" className="px-2 py-2 text-[#B32A22] text-xs">{r.error}</td>
                                         <td className="px-2 py-2 text-right">
                                             <button onClick={() => handleRemove(p.ticker)} data-testid={`remove-${p.ticker}`}><Trash2 size={14} /></button>
                                         </td>
@@ -399,41 +375,28 @@ export default function Portfolio() {
                                 const buyCur = p.buy_currency || r.currency || "USD";
                                 const showCur = displayCurFor(r.currency || buyCur);
                                 const hasShares = p.shares != null && p.shares > 0;
-                                const hasBuyPrice = p.buy_price != null && p.buy_price > 0;
-                                const isComplete = hasShares && hasBuyPrice;
-                                const invested = isComplete ? (p.shares * p.buy_price) : null;
-                                const investedDisp = invested == null ? null : convToDisplay(invested, buyCur);
                                 const now = hasShares ? ((r.current_price || 0) * p.shares) : null;
                                 const nowDisp = now == null ? null : convToDisplay(now, r.currency || buyCur);
-                                const buyPriceDisp = hasBuyPrice ? convToDisplay(p.buy_price, buyCur) : null;
                                 const curPriceDisp = convToDisplay(r.current_price, r.currency || buyCur);
-                                const pl = (nowDisp != null && investedDisp != null) ? (nowDisp - investedDisp) : null;
-                                const plPct = (isComplete && r.current_price != null) ? ((r.current_price / p.buy_price) - 1) * 100 : null;
                                 const cr = r.custom_ratios || {};
-                                const trackedTag = !isComplete && (
-                                    <HoverTip text="Seguimiento (sin posición real registrada)">
-                                        <span className="overline ml-2 px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] text-[9px] align-middle cursor-help" data-testid={`tracked-${p.ticker}`}>SEG</span>
-                                    </HoverTip>
-                                );
-                                const manualTag = p.mode === "manual" && (
-                                    <span className="overline ml-2 px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] text-[9px] align-middle" data-testid={`manual-tag-${p.ticker}`}>MANUAL</span>
-                                );
+                                const isManual = p.mode === "manual";
                                 return (
                                     <tr key={p.ticker} className="group border-b border-black/10 hover:bg-[#F5E4D4]" data-testid={`portfolio-row-${p.ticker}`}>
                                         <td className="px-2 py-2 font-mono font-semibold sticky left-0 z-10 bg-white group-hover:bg-[#F5E4D4]">
                                             <Link to={`/company/${p.ticker}`} className="hover:underline">{p.ticker}</Link>
-                                            {trackedTag}
-                                            {manualTag}
                                             {r.name && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5">{r.name}</div>}
                                             {p.note && <div className="text-[10px] text-[#4A4A4A] font-sans mt-0.5 italic">{p.note}</div>}
                                         </td>
-                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{hasShares ? fmtNum(p.shares) : "—"}</td>
-                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{hasBuyPrice ? fmtPrice(buyPriceDisp, showCur) : "—"}</td>
-                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{invested == null ? "—" : fmtPrice(investedDisp, showCur)}</td>
-                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
-                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`} style={{ color: pl == null ? "var(--text-secondary)" : (pl >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{pl == null ? "—" : fmtPrice(pl, showCur)}</td>
-                                        <td className="px-2 py-2 text-right font-mono" style={{ color: plPct == null ? "var(--text-secondary)" : (plPct >= 0 ? "var(--cheap)" : "var(--crimson)") }}>{plPct == null ? "—" : fmtPctSigned(plPct)}</td>
+                                        <td className="px-2 py-2 text-center">
+                                            {isManual ? (
+                                                <span className="overline px-1.5 py-0.5 border border-[#1D7044] text-[#1D7044] bg-white text-[10px]" data-testid={`mode-${p.ticker}`}>MAN</span>
+                                            ) : (
+                                                <span className="overline px-1.5 py-0.5 border border-black/30 text-[#4A4A4A] bg-white text-[10px]" data-testid={`mode-${p.ticker}`}>AUTO</span>
+                                            )}
+                                        </td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtPrice(curPriceDisp, showCur)}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{hasShares ? fmtNum(p.shares) : "—"}</td>
+                                        <td className={`px-2 py-2 text-right font-mono ${moneyCls}`}>{nowDisp == null ? "—" : fmtPrice(nowDisp, showCur)}</td>
                                         <td className="px-2 py-2 text-right font-mono">{fmtNum(convToDisplay(r.market_cap, r.currency || buyCur))}</td>
                                         <td className="px-2 py-2 text-right"><NextEarnings iso={r.next_earnings_date} testid={`pf-earnings-${p.ticker}`} /></td>
                                         <td className="px-2 py-2 text-right font-mono" style={{ color: ratioColor(cr.ratio_compra_pct) }}>{fmtPctSigned(cr.ratio_compra_pct)}</td>
