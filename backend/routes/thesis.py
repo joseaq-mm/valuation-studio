@@ -2141,10 +2141,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         rows = (await visual_data({"user_id": uid})).get("rows", [])
         row = next((r for r in rows if r.get("ticker") == tk), None)
+        live = {m: _visual_metric_value(row, m) for m in series} if row else {}
         if row:
             today = datetime.now(timezone.utc).date().isoformat()
-            for metric in series:
-                val = _visual_metric_value(row, metric)
+            for metric, val in live.items():
                 if val is None:
                     continue
                 pts = series[metric]
@@ -2152,7 +2152,10 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                     pts[-1]["value"] = val  # today's live value always wins
                 else:
                     pts.append({"date": today, "value": val})
-        return {"ticker": tk, "name": row.get("name") if row else tk, "series": series}
+        # `live` is also returned as-is (raw current value per metric, independent of
+        # the anchoring above) so the frontend can fall back to it directly if a metric
+        # somehow has no series point yet, and so a mismatch between the two is visible.
+        return {"ticker": tk, "name": row.get("name") if row else tk, "series": series, "live": live}
 
     async def run_visual_snapshots() -> Dict[str, Any]:
         """Nightly: record a new point per (user, ticker, metric) in `visual_metric_events`

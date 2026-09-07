@@ -1075,23 +1075,39 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
     // axis stacked with a degenerate [0,1] placeholder domain (from a metric with zero
     // data) was corrupting the neighboring same-side axis's rendering — so metrics
     // without data are left out entirely instead of rendered empty.
+    //
+    // `live` (the metric's current value, independent of the events-series anchoring
+    // done server-side) is used as a fallback: if a metric's series ever comes back
+    // empty despite a real live value existing, synthesize today's point from it
+    // instead of hiding a metric the user can see has real data.
     const { rows, domains, activeMetrics, emptyMetrics } = useMemo(() => {
         if (!data?.series) return { rows: [], domains: {}, activeMetrics: [], emptyMetrics: [] };
-        const activeMetrics = VISUAL_METRIC_ORDER.filter((m) => (data.series[m] || []).length > 0);
-        const emptyMetrics = VISUAL_METRIC_ORDER.filter((m) => !(data.series[m] || []).length);
+        const today = new Date().toISOString().slice(0, 10);
+        const effectiveSeries = {};
+        for (const m of VISUAL_METRIC_ORDER) {
+            const pts = data.series[m] || [];
+            const liveVal = data.live?.[m];
+            if (!pts.length && liveVal != null) {
+                effectiveSeries[m] = [{ date: today, value: liveVal }];
+            } else {
+                effectiveSeries[m] = pts;
+            }
+        }
+        const activeMetrics = VISUAL_METRIC_ORDER.filter((m) => effectiveSeries[m].length > 0);
+        const emptyMetrics = VISUAL_METRIC_ORDER.filter((m) => !effectiveSeries[m].length);
         const dateSet = new Set();
-        for (const m of activeMetrics) for (const p of data.series[m]) dateSet.add(p.date);
+        for (const m of activeMetrics) for (const p of effectiveSeries[m]) dateSet.add(p.date);
         const byDateMetric = {};
         for (const m of activeMetrics) {
             byDateMetric[m] = {};
-            for (const p of data.series[m]) byDateMetric[m][p.date] = p.value;
+            for (const p of effectiveSeries[m]) byDateMetric[m][p.date] = p.value;
         }
         const rows = Array.from(dateSet).sort().map((d) => {
             const row = { date: d };
             for (const m of activeMetrics) row[m] = byDateMetric[m][d] ?? null;
             return row;
         });
-        const valsOf = (metrics) => metrics.flatMap((m) => (data.series[m] || []).map((p) => p.value));
+        const valsOf = (metrics) => metrics.flatMap((m) => effectiveSeries[m].map((p) => p.value));
         const activeAxisIds = new Set(activeMetrics.map((m) => VISUAL_METRIC_META[m].axis));
         const domains = {};
         if (activeAxisIds.has("score")) domains.score = paddedDomain(valsOf(["score"]));
