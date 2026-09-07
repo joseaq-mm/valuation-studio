@@ -193,10 +193,12 @@ const monthLabel = (m) => {
 };
 
 // Day-precision label ("5 ene '26") for the per-company classic history chart.
-// Accepts either a bare "YYYY-MM-DD" or a full ISO timestamp (points recorded the same
-// day get distinct timestamps so they don't collapse into one, but still share a label).
-const dayLabel = (iso) => {
-    if (!iso) return "";
+// Accepts a bare "YYYY-MM-DD", a full ISO timestamp, or an epoch-ms number (the chart's
+// real time-scale X axis) — points recorded the same day get distinct timestamps so they
+// don't collapse into one, but still share a label.
+const dayLabel = (v) => {
+    if (v == null || v === "") return "";
+    const iso = typeof v === "number" ? new Date(v).toISOString() : v;
     const [y, mo, d] = iso.slice(0, 10).split("-").map(Number);
     return `${d} ${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
 };
@@ -1120,7 +1122,7 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
             for (const p of effectiveSeries[m]) byDateMetric[m][p.date] = p.value;
         }
         const rows = Array.from(dateSet).sort().map((d) => {
-            const row = { date: d };
+            const row = { date: d, ts: new Date(d).getTime() };
             for (const m of activeMetrics) row[m] = byDateMetric[m][d] ?? null;
             return row;
         });
@@ -1169,7 +1171,8 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                         <ResponsiveContainer width="100%" height={440}>
                             <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                 <CartesianGrid stroke="#00000010" vertical={false} />
-                                <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
+                                <XAxis dataKey="ts" type="number" domain={["dataMin", "dataMax"]} scale="time"
+                                    tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
                                 {activeAxes.map((ax) => (
                                     <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
                                         domain={domains[ax.id]}
