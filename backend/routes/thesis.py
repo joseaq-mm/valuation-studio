@@ -2196,6 +2196,35 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
 
         rows = (await visual_data({"user_id": uid})).get("rows", [])
         row = next((r for r in rows if r.get("ticker") == tk), None)
+
+        # Retroactively backfill Ratio Compra/Venta for months before any real event
+        # exists, projecting today's implied POC/POV onto each month's historical close —
+        # the same technique the bubble timeline uses (services/timeline.py's monthly
+        # close cache). Real recorded events always win; this only fills the gaps, so the
+        # line spans the ticker's actual price history instead of starting empty until
+        # the day-level event tracking began. Qualitative metrics (Score/TAM/Coef KPI)
+        # have no equivalent: they're only knowable at the moment they were calculated,
+        # so there's nothing to retroactively derive for months with no real event.
+        if row and row.get("current_price") and row.get("ratio_compra_pct") is not None \
+                and row.get("ratio_venta_pct") is not None and row["current_price"] > 0:
+            price = row["current_price"]
+            poc = price * (1 + row["ratio_compra_pct"] / 100.0)
+            pov = price * (1 + row["ratio_venta_pct"] / 100.0)
+            cur_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            real_months = {m: {p["date"][:7] for p in series[m]} for m in VISUAL_RATIO_METRICS}
+            closes = await get_monthly_closes_bulk(db, [tk], run_in_threadpool=run_in_threadpool)
+            for p in closes.get(tk, []):
+                c, month = p.get("close"), p.get("d")
+                if not c or c <= 0 or not month or month == cur_month:
+                    continue
+                date = f"{month}-01"
+                if month not in real_months["rc"]:
+                    series["rc"].append({"date": date, "value": _clamp_ratio(round((poc / c - 1) * 100, 1))})
+                if month not in real_months["rv"]:
+                    series["rv"].append({"date": date, "value": _clamp_ratio(round((pov / c - 1) * 100, 1))})
+            series["rc"].sort(key=lambda p: p["date"])
+            series["rv"].sort(key=lambda p: p["date"])
+
         live = {m: _visual_metric_value(row, m) for m in series} if row else {}
         if row:
             now_iso = datetime.now(timezone.utc).isoformat()

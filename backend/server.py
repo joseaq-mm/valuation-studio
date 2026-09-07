@@ -228,6 +228,38 @@ async def admin_run_alerts():
     return {"ok": True, **(await _thesis_router.run_company_alerts())}
 
 
+@api_router.post("/admin/run-visual-backfill")
+async def admin_run_visual_backfill():
+    """One-off migration: convert the OLD monthly `visual_snapshots` bundles (one doc
+    per user+ticker+month, from before this event-based redesign) into the per-metric
+    `visual_metric_events` that now power the Visual bubble timeline and the per-company
+    history chart. Without this, that chart only has data from whenever the new event
+    model started recording (recent), even if `visual_snapshots` holds real months of
+    prior history. Dated the 1st of each month (the old data has no day-level precision).
+    Idempotent — safe to re-run, just upserts the same (user, ticker, metric, date) keys."""
+    metrics = ["score", "tam", "rc", "rv", "kpi_coef"]
+    docs = await db.visual_snapshots.find({}, {"_id": 0}).to_list(length=200000)
+    written = 0
+    for d in docs:
+        uid, tk, month = d.get("user_id"), d.get("ticker"), d.get("month")
+        if not (uid and tk and month):
+            continue
+        date = f"{month}-01"
+        recorded_at = d.get("recorded_at")
+        for metric in metrics:
+            val = d.get(metric)
+            if val is None:
+                continue
+            await db.visual_metric_events.update_one(
+                {"user_id": uid, "ticker": tk, "metric": metric, "date": date},
+                {"$set": {"user_id": uid, "ticker": tk, "metric": metric, "date": date,
+                          "value": val, "recorded_at": recorded_at}},
+                upsert=True,
+            )
+            written += 1
+    return {"ok": True, "old_snapshots": len(docs), "events_written": written}
+
+
 @api_router.post("/admin/preview-radar/{user_id}")
 async def admin_preview_radar_start(user_id: str, send: bool = False):
     """Kick off a radar email PREVIEW job for one user. Returns a job_id; poll

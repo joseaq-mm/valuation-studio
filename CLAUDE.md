@@ -100,6 +100,7 @@ curl -s 'http://127.0.0.1:8000/api/company/AAPL' | head -c 200
 ```bash
 curl -X POST http://127.0.0.1:8000/api/admin/run-screener
 curl -X POST http://127.0.0.1:8000/api/admin/run-radar
+curl -X POST http://127.0.0.1:8000/api/admin/run-visual-backfill  # migra visual_snapshots (viejo) → visual_metric_events
 ```
 
 ## Servicios externos (resumen)
