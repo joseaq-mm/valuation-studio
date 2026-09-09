@@ -2210,12 +2210,21 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
             price = row["current_price"]
             poc = price * (1 + row["ratio_compra_pct"] / 100.0)
             pov = price * (1 + row["ratio_venta_pct"] / 100.0)
-            cur_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            now_dt = datetime.now(timezone.utc)
+            cur_month = now_dt.strftime("%Y-%m")
+            # Cap how far back this goes — the monthly close cache holds a stock's FULL
+            # trading history (back to its IPO for a name like Uber), which would stretch
+            # the X axis for decades just to plot a projected ratio nobody asked for. 24
+            # months gives real context without swamping the actual analysis history.
+            cutoff_ord = now_dt.year * 12 + (now_dt.month - 1) - 24
             real_months = {m: {p["date"][:7] for p in series[m]} for m in VISUAL_RATIO_METRICS}
             closes = await get_monthly_closes_bulk(db, [tk], run_in_threadpool=run_in_threadpool)
             for p in closes.get(tk, []):
                 c, month = p.get("close"), p.get("d")
                 if not c or c <= 0 or not month or month == cur_month:
+                    continue
+                y, mo = int(month[:4]), int(month[5:7])
+                if y * 12 + (mo - 1) < cutoff_ord:
                     continue
                 date = f"{month}-01"
                 if month not in real_months["rc"]:
