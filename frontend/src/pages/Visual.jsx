@@ -1036,26 +1036,26 @@ const VISUAL_AXES = [
 // readable even when flat) — NOT normalized to a shared scale, each axis keeps its
 // own real units; a domain shared by 2 metrics (the ratio axis) is passed pre-merged.
 //
-// With a SINGLE point (min === max, span 0 — the common case right after this feature
-// shipped, before any real history piles up), symmetric padding [v-pad, v+pad] always
-// places that point at exactly the 50% vertical mark of ITS OWN domain. Every axis
-// shares the same plot height, so any two single-point series both land on the exact
-// same pixel row regardless of which axis owns them — whichever draws last (Coef KPI)
-// visually sits on top and hides the ones drawn earlier (Score, TAM). `targetFrac`
-// breaks that coincidence by giving each axis a different vertical anchor for the
-// degenerate case; real multi-point data (span > 0) is unaffected and just gets
-// normal symmetric padding.
+// Every axis shares the same plot height, so with plain symmetric padding [min-pad,
+// max+pad], ANY series (single point OR a straight min→max line, which is exactly what
+// a 2-point series looks like) lands its data at the SAME relative vertical band
+// regardless of which axis owns it or what its real values are — whichever metric draws
+// last (Coef KPI, then the ratios) visually sits on top and hides the ones drawn earlier
+// (Score, TAM), because their lines trace literally the same pixels. `targetFrac` fixes
+// this by anchoring each axis's data at a DIFFERENT vertical fraction of its own domain
+// (0.7 for score, 0.4 for tam, 0.6 for kpi, 0.5 for the shared ratio axis) — applied
+// uniformly whether the series has one point or many, so two metrics never coincide
+// just because they happen to both be flat or both be a simple rise/fall.
 const paddedDomain = (vals, targetFrac = 0.5, padFrac = 0.15) => {
     if (!vals.length) return [0, 1];
     const min = Math.min(...vals), max = Math.max(...vals);
-    const span = max - min;
-    if (span > 0) {
-        const pad = span * padFrac;
-        return [min - pad, max + pad];
-    }
-    const v = max;
-    const totalSpan = (Math.abs(v) || 1) * 0.2;
-    return [v - totalSpan * targetFrac, v + totalSpan * (1 - targetFrac)];
+    const center = (min + max) / 2;
+    const halfSpan = max > min ? (max - min) / 2 : (Math.abs(center) || 1) * 0.1;
+    // k = the tighter of the two margins around targetFrac; H is sized so the real
+    // [min,max] band always fits inside the final domain with padFrac of extra room.
+    const k = Math.min(targetFrac, 1 - targetFrac);
+    const H = (halfSpan / k) * (1 + padFrac);
+    return [center - H * targetFrac, center + H * (1 - targetFrac)];
 };
 
 const VisualHistoryTip = ({ active, payload, label }) => {
@@ -1151,18 +1151,22 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
         if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
         if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
-        // Real time-scale X domain, windowed to [earliest qualitative point, today] when
-        // one exists, so the axis itself reflects that band even when today has no data
-        // point of its own. A single point (min === max) would otherwise collapse the
-        // axis to zero width.
-        let tsDomain;
+        // Real time-scale X domain: [earliest qualitative point, today] when one exists
+        // (data included in the chart is windowed to that same range above), else the
+        // actual data range. A single point (min === max) would otherwise collapse the
+        // axis to zero width. A flat 5% margin on each side is added on top purely for
+        // the axis display, so an edge point never sits flush against the plot border —
+        // it does NOT widen which points get included.
+        let rawMin, rawMax;
         if (qualTs.length) {
-            tsDomain = windowMin === windowMax ? [windowMin - 86400000, windowMax + 86400000] : [windowMin, windowMax];
+            rawMin = windowMin; rawMax = windowMax;
         } else {
             const tsVals = rows.map((r) => r.ts);
-            const tsMin = Math.min(...tsVals), tsMax = Math.max(...tsVals);
-            tsDomain = tsMin === tsMax ? [tsMin - 86400000, tsMax + 86400000] : [tsMin, tsMax];
+            rawMin = Math.min(...tsVals); rawMax = Math.max(...tsVals);
         }
+        const tsSpan = rawMax - rawMin;
+        const tsMargin = tsSpan > 0 ? tsSpan * 0.05 : 86400000;
+        const tsDomain = [rawMin - tsMargin, rawMax + tsMargin];
         return { rows, domains, tsDomain, activeMetrics, emptyMetrics };
     }, [data]);
     const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
