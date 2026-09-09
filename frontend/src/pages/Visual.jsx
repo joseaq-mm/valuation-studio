@@ -1112,6 +1112,24 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                 effectiveSeries[m] = pts;
             }
         }
+        // Window the chart to the qualitative metrics' own span (+1 month), not the full
+        // ratio history: Score/TAM/Coef KPI only exist from real reanalyses, so that span
+        // is what the chart is actually about. Ratio Compra/Venta get backfilled for
+        // up to 24 months of price history (see backend), which would otherwise stretch
+        // the axis far past the real analysis window and squash it into a sliver.
+        const qualTs = ["score", "tam", "kpi_coef"].flatMap((m) => (effectiveSeries[m] || []).map((p) => new Date(p.date).getTime()));
+        const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+        let windowMin = -Infinity, windowMax = Infinity;
+        if (qualTs.length) {
+            windowMin = Math.min(...qualTs);
+            windowMax = Math.max(...qualTs) + ONE_MONTH_MS;
+            for (const m of VISUAL_METRIC_ORDER) {
+                effectiveSeries[m] = (effectiveSeries[m] || []).filter((p) => {
+                    const t = new Date(p.date).getTime();
+                    return t >= windowMin && t <= windowMax;
+                });
+            }
+        }
         const activeMetrics = VISUAL_METRIC_ORDER.filter((m) => effectiveSeries[m].length > 0);
         const emptyMetrics = VISUAL_METRIC_ORDER.filter((m) => !effectiveSeries[m].length);
         const dateSet = new Set();
@@ -1133,11 +1151,19 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
         if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
         if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
-        // Real time-scale X domain: a single point (min === max, common for a ticker with
-        // just one recorded event so far) would otherwise collapse the axis to zero width.
-        const tsVals = rows.map((r) => r.ts);
-        const tsMin = Math.min(...tsVals), tsMax = Math.max(...tsVals);
-        const tsDomain = tsMin === tsMax ? [tsMin - 86400000, tsMax + 86400000] : [tsMin, tsMax];
+        // Real time-scale X domain, windowed to the qualitative span (+1 month) computed
+        // above when one exists, so the axis itself reflects that band even if no data
+        // point happens to sit exactly at its edges. A single point (min === max, common
+        // for a ticker with just one recorded event so far) would otherwise collapse the
+        // axis to zero width.
+        let tsDomain;
+        if (qualTs.length) {
+            tsDomain = windowMin === windowMax ? [windowMin - 86400000, windowMax + 86400000] : [windowMin, windowMax];
+        } else {
+            const tsVals = rows.map((r) => r.ts);
+            const tsMin = Math.min(...tsVals), tsMax = Math.max(...tsVals);
+            tsDomain = tsMin === tsMax ? [tsMin - 86400000, tsMax + 86400000] : [tsMin, tsMax];
+        }
         return { rows, domains, tsDomain, activeMetrics, emptyMetrics };
     }, [data]);
     const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
