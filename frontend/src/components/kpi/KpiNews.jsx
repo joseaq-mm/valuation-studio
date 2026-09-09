@@ -10,8 +10,9 @@ const sentText = (s) => (s === "positivo" ? "Positivo para la tesis" : s === "ne
 const SENT_TIP = "Indicador de sentimiento: cómo afecta la noticia a la tesis. Verde (+) = favorable, rojo (−) = desfavorable, gris (•) = neutral. Matiza los scores al Reanalizar.";
 
 // Qualitative news per company. INFORMS the scores (fed to the judge on Reanalyze),
-// ages out via 45-day decay (max 15), incorporates Radar news, has its own search.
-export default function KpiNews({ companyId, onChanged }) {
+// capped to the 15 most recent (oldest dropped past that), incorporates Radar news,
+// has its own search.
+export default function KpiNews({ companyId, refreshKey, onChanged }) {
     const [news, setNews] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searching, setSearching] = useState(false);
@@ -33,7 +34,8 @@ export default function KpiNews({ companyId, onChanged }) {
         catch { setIrUrls([]); }
     }, [companyId]);
 
-    useEffect(() => { load(); loadIr(); setOpen(false); }, [load, loadIr]);
+    useEffect(() => { setOpen(false); }, [companyId]);
+    useEffect(() => { load(); loadIr(); }, [load, loadIr, refreshKey]);
 
     const saveIr = async (urls) => {
         setIrSaving(true);
@@ -119,7 +121,7 @@ export default function KpiNews({ companyId, onChanged }) {
                 <>
                     <p className="text-[11px] text-[#7A7A7A] mt-2 mb-2">
                         <HoverTip text={SENT_TIP} maxWidth={300}><span className="cursor-help underline decoration-dotted">Contexto cualitativo</span></HoverTip>
-                        {" "}— estas noticias <strong>matizan los scores</strong> al Reanalizar. Las antiguas/poco relevantes se descartan solas (vida media 45 días, máx. 15). Incluye las del Radar.
+                        {" "}— estas noticias <strong>matizan los scores</strong> al Reanalizar. Se guardan hasta 15; al superar ese número se descarta la más antigua. Incluye las del Radar.
                     </p>
 
                     {/* IR (Investor Relations) sources — daily auto-ingest */}

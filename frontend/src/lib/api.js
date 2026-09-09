@@ -201,6 +201,11 @@ export const thesisVisualData = () =>
 export const thesisVisualTimeline = () =>
     api.get(`/thesis/visual-timeline`, { timeout: 120000 }).then(r => r.data);
 
+// Per-company full-resolution history (Score/TAM/Coef KPI/Ratio Compra/Ratio Venta)
+// for the classic line chart opened from any of the 5 Visual table columns.
+export const thesisVisualHistory = (ticker) =>
+    api.get(`/thesis/visual-history/${encodeURIComponent(ticker)}`).then(r => r.data);
+
 // Generic exports store (upload local artifact to object storage → shareable link).
 export const exportUpload = (blob, name, kind = "timeline-clip") => {
     const fd = new FormData();

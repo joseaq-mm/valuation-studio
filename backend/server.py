@@ -228,6 +228,64 @@ async def admin_run_alerts():
     return {"ok": True, **(await _thesis_router.run_company_alerts())}
 
 
+@api_router.post("/admin/run-visual-backfill")
+async def admin_run_visual_backfill():
+    """One-off migration: convert the OLD monthly `visual_snapshots` bundles (one doc
+    per user+ticker+month, from before this event-based redesign) into the per-metric
+    `visual_metric_events` that now power the Visual bubble timeline and the per-company
+    history chart. Without this, that chart only has data from whenever the new event
+    model started recording (recent), even if `visual_snapshots` holds real months of
+    prior history. Dated the 1st of each month (the old data has no day-level precision).
+    Also prunes consecutive same-value qualitative points left over from the old
+    unconditional monthly recording (see below). Idempotent — safe to re-run."""
+    metrics = ["score", "tam", "rc", "rv", "kpi_coef"]
+    snapshots = await db.visual_snapshots.find({}, {"_id": 0}).to_list(length=200000)
+    written = 0
+    for d in snapshots:
+        uid, tk, month = d.get("user_id"), d.get("ticker"), d.get("month")
+        if not (uid and tk and month):
+            continue
+        date = f"{month}-01"
+        recorded_at = d.get("recorded_at")
+        for metric in metrics:
+            val = d.get(metric)
+            if val is None:
+                continue
+            await db.visual_metric_events.update_one(
+                {"user_id": uid, "ticker": tk, "metric": metric, "date": date},
+                {"$set": {"user_id": uid, "ticker": tk, "metric": metric, "date": date,
+                          "value": val, "recorded_at": recorded_at}},
+                upsert=True,
+            )
+            written += 1
+
+    # The old monthly snapshots recorded score/tam/kpi_coef unconditionally every month,
+    # unlike the new "only when it changes" rule — so a ticker whose qualitative value
+    # never actually moved ends up with several months of identical-value points (a flat,
+    # noisy line on the history chart). Collapse consecutive same-value points down to
+    # just the first one per (user, ticker, metric); real oscillation (A→B→A) is untouched
+    # since only back-to-back EQUAL values get pruned.
+    pruned = 0
+    for metric in ("score", "tam", "kpi_coef"):
+        events = await db.visual_metric_events.find(
+            {"metric": metric}, {"_id": 1, "user_id": 1, "ticker": 1, "date": 1, "recorded_at": 1, "value": 1}
+        ).sort([("user_id", 1), ("ticker", 1), ("date", 1), ("recorded_at", 1)]).to_list(length=500000)
+        last_key, last_val, to_delete = None, None, []
+        for e in events:
+            key = (e["user_id"], e["ticker"])
+            if key != last_key:
+                last_key, last_val = key, e["value"]
+                continue
+            if e["value"] == last_val:
+                to_delete.append(e["_id"])
+            else:
+                last_val = e["value"]
+        if to_delete:
+            res = await db.visual_metric_events.delete_many({"_id": {"$in": to_delete}})
+            pruned += res.deleted_count
+    return {"ok": True, "old_snapshots": len(snapshots), "events_written": written, "duplicates_pruned": pruned}
+
+
 @api_router.post("/admin/preview-radar/{user_id}")
 async def admin_preview_radar_start(user_id: str, send: bool = False):
     """Kick off a radar email PREVIEW job for one user. Returns a job_id; poll
@@ -912,6 +970,7 @@ async def _ensure_indexes():
         "community_notifications": [[("user_id", 1), ("read", 1), ("created_at", -1)]],
         "community_mod": [[("status", 1), ("created_at", -1)], [("target_type", 1), ("target_id", 1), ("status", 1)]],
         "community_mod_cache": [[("h", 1)]],
+        "visual_metric_events": [[("user_id", 1), ("ticker", 1), ("metric", 1), ("date", 1)]],
     }
     created = 0
     for coll, keys_list in index_map.items():

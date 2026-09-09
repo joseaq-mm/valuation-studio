@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download } from "lucide-react";
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized, LineChart, Line, Legend } from "recharts";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { thesisVisualData, thesisVisualTimeline, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
+import { thesisVisualData, thesisVisualTimeline, thesisVisualHistory, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
 import ShareMenu from "@/components/ShareMenu";
 import { addMediaItem, countMediaItems, clearMediaItems } from "@/lib/mediaLibrary";
@@ -13,6 +13,7 @@ import { getWatchlistTickers } from "@/lib/storage";
 import HoverTip from "@/components/HoverTip";
 import PinchZoomPane from "@/components/PinchZoomPane";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
+import { freshnessInfo } from "@/lib/freshness";
 import { signalFor } from "@/lib/thresholds";
 import { toast } from "sonner";
 
@@ -191,6 +192,17 @@ const monthLabel = (m) => {
     return `${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
 };
 
+// Day-precision label ("5 ene '26") for the per-company classic history chart.
+// Accepts a bare "YYYY-MM-DD", a full ISO timestamp, or an epoch-ms number (the chart's
+// real time-scale X axis) — points recorded the same day get distinct timestamps so they
+// don't collapse into one, but still share a label.
+const dayLabel = (v) => {
+    if (v == null || v === "") return "";
+    const iso = typeof v === "number" ? new Date(v).toISOString() : v;
+    const [y, mo, d] = iso.slice(0, 10).split("-").map(Number);
+    return `${d} ${MONTHS_ES[mo - 1]} '${String(y).slice(2)}`;
+};
+
 // Trail layer: draws each visible company's path through the quadrant up to the
 // current step. Rendered via recharts <Customized> so we can use the live axis
 // scales (xAxisMap/yAxisMap) to map data coords → pixels.
@@ -257,6 +269,7 @@ export default function Visual() {
     const [kpiMean, setKpiMean] = useState(null);
     const [noKpiCount, setNoKpiCount] = useState(0);
     const [alerts, setAlerts] = useState({});  // ticker -> alert config
+    const [historyRow, setHistoryRow] = useState(null); // {ticker, name} → opens the classic history modal
 
     // --- Timeline (time dial) ---
     const [tlMode, setTlMode] = useState(false);
@@ -918,24 +931,29 @@ export default function Visual() {
                         {sortedRows.map((r) => {
                             const checked = selected.has(r.ticker);
                             const incomplete = r.ratio_compra_pct == null || r.avg_overall_score == null;
+                            const stale = freshnessInfo(r.thesis_updated_at, r.last_earnings_date, r.next_earnings_date)?.stale;
                             return (
                                 <tr key={r.ticker} className={`border-t border-black/10 ${incomplete ? "text-[#9ca3af]" : "hover:bg-[#FAF6EE]"}`} data-testid={`visual-row-${r.ticker}`}>
                                     <td className="p-2 w-[29px] sticky left-0 z-20 bg-white"><input type="checkbox" checked={checked} onChange={() => toggleOne(r.ticker)} className="cursor-pointer" data-testid={`visual-toggle-${r.ticker}`} /></td>
                                     <td className="p-2 font-semibold sticky left-[29px] z-20 bg-white border-r border-black/10"><Link to={`/company/${r.ticker}`} className="hover:underline">{r.ticker}</Link></td>
-                                    <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5"><span>{r.name}</span><AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
-                                    <td className="p-2 text-right"><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} /></td>
+                                    <td className="p-2 font-sans text-xs"><span className="inline-flex items-center gap-1.5">
+                                        {r.company_thesis_id
+                                            ? <Link to={`/thesis/${r.company_thesis_id}`} className="hover:underline" style={stale ? { color: "#B32A22", fontWeight: 700 } : undefined} title="Ver la tesis de la empresa (plan y drivers)" data-testid={`visual-name-link-${r.ticker}`}>{r.name}</Link>
+                                            : <span style={stale ? { color: "#B32A22", fontWeight: 700 } : undefined}>{r.name}</span>}
+                                        <AlertBell ticker={r.ticker} alert={alerts[r.ticker]} onSaved={onAlertSaved} /></span></td>
+                                    <td className="p-2 text-right"><Link to={`/thesis?company=${encodeURIComponent(r.ticker)}`} className="hover:underline" title="Reanalizar / actualizar la tesis" data-testid={`visual-fresh-link-${r.ticker}`}><FreshnessBadge updatedAt={r.thesis_updated_at} lastEarningsDate={r.last_earnings_date} nextEarningsDate={r.next_earnings_date} noun="la última actualización de la tesis" testid={`visual-fresh-${r.ticker}`} className="!cursor-pointer" /></Link></td>
                                     <td className="p-2 text-right"><LastEarningsBadge date={r.last_earnings_date} testid={`visual-last-earnings-${r.ticker}`} /></td>
                                     <td className="p-2 text-right"><EarningsBadge date={r.next_earnings_date} estimated={r.next_earnings_estimated} testid={`visual-earnings-${r.ticker}`} /></td>
-                                    <td className="p-2 text-right">{fmtN(r.avg_overall_score)}</td>
-                                    <td className="p-2 text-right">{fmtN(r.sum_tam_score, 2)}</td>
-                                    <td className="p-2 text-right" data-testid={`visual-kpi-${r.ticker}`}>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-score-${r.ticker}`}>{fmtN(r.avg_overall_score)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-tam-${r.ticker}`}>{fmtN(r.sum_tam_score, 2)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-kpi-${r.ticker}`}>
                                         {typeof r.kpi_coef === "number"
                                             ? <span style={{ color: coefColor(r.kpi_coef) }} className="font-semibold">{r.kpi_coef.toFixed(2)}</span>
                                             : <span className="text-[#9ca3af]">—</span>}
                                     </td>
                                     <td className="p-2 text-right">{(r.combined_qual * 100).toFixed(1)}%</td>
-                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }}>{fmtPct(r.ratio_compra_pct)}</td>
-                                    <td className="p-2 text-right" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }}>{fmtPct(r.ratio_venta_pct)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" style={{ color: signalFor(r.ratio_compra_pct, "compra").color }} title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-rc-${r.ticker}`}>{fmtPct(r.ratio_compra_pct)}</td>
+                                    <td className="p-2 text-right cursor-pointer hover:underline" style={{ color: signalFor(r.ratio_venta_pct, "venta").color }} title="Ver histórico" onClick={() => setHistoryRow({ ticker: r.ticker, name: r.name })} data-testid={`visual-rv-${r.ticker}`}>{fmtPct(r.ratio_venta_pct)}</td>
                                     <td className="p-2 text-right font-semibold">{(r.combined * 100).toFixed(1)}%</td>
                                 </tr>
                             );
@@ -988,9 +1006,236 @@ export default function Visual() {
                     <div className="text-[10px] text-[#7A7A7A] px-4 py-0.5 -mt-1 text-center shrink-0">Pellizca para hacer zoom · arrastra para desplazar · doble toque para restablecer · gira el móvil para más ancho</div>
                 </div>
             )}
+
+            {historyRow && <VisualHistoryModal ticker={historyRow.ticker} name={historyRow.name} onClose={() => setHistoryRow(null)} />}
         </div>
     );
 }
+
+// ---------- Classic per-company history chart (opened from any of the 5 columns) ----------
+// 4 Y-axes: Score, TAM Score and Coef KPI each get their own (3 qualitative axes), and
+// Ratio Compra/Venta % share a 4th (both are percentages on the same scale).
+// Colors picked to stay legible both on the white chart canvas AND the near-black
+// tooltip background (the original navy/dark-green were unreadable on the latter).
+const VISUAL_METRIC_META = {
+    score: { label: "Score", color: "#3B9EFF", fmt: (v) => fmtN(v, 1), axis: "score" },
+    tam: { label: "TAM Score", color: "#2FA86B", fmt: (v) => fmtN(v, 2), axis: "tam" },
+    kpi_coef: { label: "Coef KPI", color: "#B8860B", fmt: (v) => fmtN(v, 2), axis: "kpi" },
+    rc: { label: "Ratio Compra %", color: "#8B5CF6", fmt: (v) => fmtPct(v), axis: "ratio" },
+    rv: { label: "Ratio Venta %", color: "#B32A22", fmt: (v) => fmtPct(v), axis: "ratio" },
+};
+const VISUAL_METRIC_ORDER = ["score", "tam", "kpi_coef", "rc", "rv"];
+const VISUAL_AXES = [
+    { id: "score", orientation: "left", color: "#3B9EFF", fmt: (v) => v.toFixed(0) },
+    { id: "tam", orientation: "left", color: "#2FA86B", fmt: (v) => v.toFixed(2) },
+    { id: "kpi", orientation: "right", color: "#B8860B", fmt: (v) => v.toFixed(2) },
+    { id: "ratio", orientation: "right", color: "#8B5CF6", fmt: (v) => `${v.toFixed(0)}%` },
+];
+
+// Pad a metric's real min/max so its line doesn't hug the axis edges (and stays
+// readable even when flat) — NOT normalized to a shared scale, each axis keeps its
+// own real units; a domain shared by 2 metrics (the ratio axis) is passed pre-merged.
+//
+// Every axis shares the same plot height, so with plain symmetric padding [min-pad,
+// max+pad], ANY series (single point OR a straight min→max line, which is exactly what
+// a 2-point series looks like) lands its data at the SAME relative vertical band
+// regardless of which axis owns it or what its real values are — whichever metric draws
+// last (Coef KPI, then the ratios) visually sits on top and hides the ones drawn earlier
+// (Score, TAM), because their lines trace literally the same pixels. `targetFrac` fixes
+// this by anchoring each axis's data at a DIFFERENT vertical fraction of its own domain
+// (0.7 for score, 0.4 for tam, 0.6 for kpi, 0.5 for the shared ratio axis) — applied
+// uniformly whether the series has one point or many, so two metrics never coincide
+// just because they happen to both be flat or both be a simple rise/fall.
+const paddedDomain = (vals, targetFrac = 0.5, padFrac = 0.15) => {
+    if (!vals.length) return [0, 1];
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const center = (min + max) / 2;
+    const halfSpan = max > min ? (max - min) / 2 : (Math.abs(center) || 1) * 0.1;
+    // k = the tighter of the two margins around targetFrac; H is sized so the real
+    // [min,max] band always fits inside the final domain with padFrac of extra room.
+    const k = Math.min(targetFrac, 1 - targetFrac);
+    const H = (halfSpan / k) * (1 + padFrac);
+    return [center - H * targetFrac, center + H * (1 - targetFrac)];
+};
+
+const VisualHistoryTip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="visual-history-tooltip">
+            <div className="font-semibold mb-1">{dayLabel(label)}</div>
+            {VISUAL_METRIC_ORDER.map((m) => {
+                const v = row[m];
+                if (v == null) return null;
+                const meta = VISUAL_METRIC_META[m];
+                return <div key={m} style={{ color: meta.color }} className="tabular-nums">{meta.label}: {meta.fmt(v)}</div>;
+            })}
+        </div>
+    );
+};
+
+const VisualHistoryModal = ({ ticker, name, onClose }) => {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [hidden, setHidden] = useState(new Set());
+    const [busy, setBusy] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        thesisVisualHistory(ticker).then((d) => { if (alive) setData(d); })
+            .catch(() => { if (alive) setData(null); })
+            .finally(() => { if (alive) setLoading(false); });
+        return () => { alive = false; };
+    }, [ticker]);
+
+    // Only metrics with at least one recorded/anchored point get an axis + line. An
+    // axis stacked with a degenerate [0,1] placeholder domain (from a metric with zero
+    // data) was corrupting the neighboring same-side axis's rendering — so metrics
+    // without data are left out entirely instead of rendered empty.
+    //
+    // `live` (the metric's current value, independent of the events-series anchoring
+    // done server-side) is used as a fallback: if a metric's series ever comes back
+    // empty despite a real live value existing, synthesize today's point from it
+    // instead of hiding a metric the user can see has real data.
+    const { rows, domains, tsDomain, activeMetrics, emptyMetrics } = useMemo(() => {
+        if (!data?.series) return { rows: [], domains: {}, tsDomain: [0, 1], activeMetrics: [], emptyMetrics: [] };
+        const today = new Date().toISOString().slice(0, 10);
+        const effectiveSeries = {};
+        for (const m of VISUAL_METRIC_ORDER) {
+            const pts = data.series[m] || [];
+            const liveVal = data.live?.[m];
+            if (!pts.length && liveVal != null) {
+                effectiveSeries[m] = [{ date: today, value: liveVal }];
+            } else {
+                effectiveSeries[m] = pts;
+            }
+        }
+        // Window the chart to exactly [earliest qualitative point, today] — not the full
+        // ratio history: Score/TAM/Coef KPI only exist from real reanalyses, so that span
+        // is what the chart is actually about. Ratio Compra/Venta get backfilled for up to
+        // 24 months of price history (see backend), which would otherwise stretch the axis
+        // far past the real analysis window and squash it into a sliver.
+        const qualTs = ["score", "tam", "kpi_coef"].flatMap((m) => (effectiveSeries[m] || []).map((p) => new Date(p.date).getTime()));
+        const nowTs = Date.now();
+        let windowMin = -Infinity, windowMax = Infinity;
+        if (qualTs.length) {
+            windowMin = Math.min(...qualTs);
+            windowMax = nowTs;
+            for (const m of VISUAL_METRIC_ORDER) {
+                effectiveSeries[m] = (effectiveSeries[m] || []).filter((p) => {
+                    const t = new Date(p.date).getTime();
+                    return t >= windowMin && t <= windowMax;
+                });
+            }
+        }
+        const activeMetrics = VISUAL_METRIC_ORDER.filter((m) => effectiveSeries[m].length > 0);
+        const emptyMetrics = VISUAL_METRIC_ORDER.filter((m) => !effectiveSeries[m].length);
+        const dateSet = new Set();
+        for (const m of activeMetrics) for (const p of effectiveSeries[m]) dateSet.add(p.date);
+        const byDateMetric = {};
+        for (const m of activeMetrics) {
+            byDateMetric[m] = {};
+            for (const p of effectiveSeries[m]) byDateMetric[m][p.date] = p.value;
+        }
+        const rows = Array.from(dateSet).sort().map((d) => {
+            const row = { date: d, ts: new Date(d).getTime() };
+            for (const m of activeMetrics) row[m] = byDateMetric[m][d] ?? null;
+            return row;
+        });
+        const valsOf = (metrics) => metrics.flatMap((m) => effectiveSeries[m].map((p) => p.value));
+        const activeAxisIds = new Set(activeMetrics.map((m) => VISUAL_METRIC_META[m].axis));
+        const domains = {};
+        if (activeAxisIds.has("score")) domains.score = paddedDomain(valsOf(["score"]), 0.7);
+        if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
+        if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
+        if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
+        // Real time-scale X domain: [earliest qualitative point, today] when one exists
+        // (data included in the chart is windowed to that same range above), else the
+        // actual data range. A single point (min === max) would otherwise collapse the
+        // axis to zero width. A flat 5% margin on each side is added on top purely for
+        // the axis display, so an edge point never sits flush against the plot border —
+        // it does NOT widen which points get included.
+        let rawMin, rawMax;
+        if (qualTs.length) {
+            rawMin = windowMin; rawMax = windowMax;
+        } else {
+            const tsVals = rows.map((r) => r.ts);
+            rawMin = Math.min(...tsVals); rawMax = Math.max(...tsVals);
+        }
+        const tsSpan = rawMax - rawMin;
+        const tsMargin = tsSpan > 0 ? tsSpan * 0.05 : 86400000;
+        const tsDomain = [rawMin - tsMargin, rawMax + tsMargin];
+        return { rows, domains, tsDomain, activeMetrics, emptyMetrics };
+    }, [data]);
+    const activeAxes = VISUAL_AXES.filter((ax) => domains[ax.id]);
+
+    const toggle = (m) => setHidden((h) => { const n = new Set(h); n.has(m) ? n.delete(m) : n.add(m); return n; });
+
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, `historico-${ticker}`); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="visual-history-modal">
+            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <LineChartIcon size={22} className="shrink-0" /> <span className="truncate">{name || ticker} · Histórico</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title={`Histórico ${ticker} · Valuation Studio`} testidPrefix="visual-history-share"
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", `Histórico ${ticker}`)} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="visual-history-download-jpg" title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="visual-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                {loading ? (
+                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A]"><Loader2 className="animate-spin" size={24} /></div>
+                ) : rows.length === 0 ? (
+                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A] text-sm" data-testid="visual-history-empty">Sin histórico todavía para {ticker}.</div>
+                ) : (
+                    <div ref={ref}>
+                        <ResponsiveContainer width="100%" height={440}>
+                            <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                                <CartesianGrid stroke="#00000010" vertical={false} />
+                                <XAxis dataKey="ts" type="number" domain={tsDomain}
+                                    tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
+                                {activeAxes.map((ax) => (
+                                    <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
+                                        domain={domains[ax.id]}
+                                        tick={{ fontSize: 10, fill: ax.color }} axisLine={{ stroke: ax.color }} tickLine={false}
+                                        width={44} tickFormatter={ax.fmt} />
+                                ))}
+                                <Tooltip content={<VisualHistoryTip />} />
+                                <Legend onClick={(o) => toggle(o.dataKey)} wrapperStyle={{ fontSize: 11, cursor: "pointer" }} />
+                                {activeMetrics.map((m) => (
+                                    <Line key={m} yAxisId={VISUAL_METRIC_META[m].axis} type="monotone" dataKey={m} name={VISUAL_METRIC_META[m].label}
+                                        stroke={VISUAL_METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} connectNulls
+                                        hide={hidden.has(m)} isAnimationActive={false} />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                        <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                            4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian (al reanalizar tesis/KPI), así que solo tienen historial real desde la primera vez que se calcularon. Ratio Compra/Venta se completan también hacia atrás proyectando tu objetivo actual sobre el precio histórico mensual, y de aquí en adelante se registran el día 1 y el 15 de cada mes. Haz clic en la leyenda para mostrar/ocultar una serie.
+                        </p>
+                        {emptyMetrics.length > 0 && (
+                            <p className="text-[11px] text-[#B8860B] mt-1" data-testid="visual-history-no-data-note">
+                                Aún sin ningún punto registrado: {emptyMetrics.map((m) => VISUAL_METRIC_META[m].label).join(", ")}.
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 // ---------- Small subcomponents ----------
 const AlertBell = ({ ticker, alert, onSaved }) => {
