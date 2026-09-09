@@ -1112,19 +1112,16 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
                 effectiveSeries[m] = pts;
             }
         }
-        // Window the chart to the qualitative metrics' own span, not the full ratio
-        // history: Score/TAM/Coef KPI only exist from real reanalyses, so that span is
-        // what the chart is actually about. Ratio Compra/Venta get backfilled for up to
-        // 24 months of price history (see backend), which would otherwise stretch the
-        // axis far past the real analysis window and squash it into a sliver. Left edge
-        // gets 1 month of padding before the earliest qualitative point; right edge is
-        // always today, regardless of when the last point actually landed.
+        // Window the chart to exactly [earliest qualitative point, today] — not the full
+        // ratio history: Score/TAM/Coef KPI only exist from real reanalyses, so that span
+        // is what the chart is actually about. Ratio Compra/Venta get backfilled for up to
+        // 24 months of price history (see backend), which would otherwise stretch the axis
+        // far past the real analysis window and squash it into a sliver.
         const qualTs = ["score", "tam", "kpi_coef"].flatMap((m) => (effectiveSeries[m] || []).map((p) => new Date(p.date).getTime()));
-        const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
         const nowTs = Date.now();
         let windowMin = -Infinity, windowMax = Infinity;
         if (qualTs.length) {
-            windowMin = Math.min(...qualTs) - ONE_MONTH_MS;
+            windowMin = Math.min(...qualTs);
             windowMax = nowTs;
             for (const m of VISUAL_METRIC_ORDER) {
                 effectiveSeries[m] = (effectiveSeries[m] || []).filter((p) => {
@@ -1154,10 +1151,9 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
         if (activeAxisIds.has("tam")) domains.tam = paddedDomain(valsOf(["tam"]), 0.4);
         if (activeAxisIds.has("kpi")) domains.kpi = paddedDomain(valsOf(["kpi_coef"]), 0.6);
         if (activeAxisIds.has("ratio")) domains.ratio = paddedDomain(valsOf(["rc", "rv"]), 0.5);
-        // Real time-scale X domain, windowed to [earliest qualitative point - 1 month,
-        // today] when one exists, so the axis itself reflects that band even if no data
-        // point happens to sit exactly at its edges. A single point (min === max, common
-        // for a ticker with just one recorded event so far) would otherwise collapse the
+        // Real time-scale X domain, windowed to [earliest qualitative point, today] when
+        // one exists, so the axis itself reflects that band even when today has no data
+        // point of its own. A single point (min === max) would otherwise collapse the
         // axis to zero width.
         let tsDomain;
         if (qualTs.length) {
