@@ -1023,8 +1023,6 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         {"id": tid, "user_id": user_id},
                         {"$set": {**thesis, "updated_at": datetime.now(timezone.utc).isoformat()}},
                     )
-                    touched = await _persist_qual_snapshots(user_id, tid, thesis)
-                    await _record_visual_qual_points(user_id, touched)
                     thesis["id"] = tid
                     thesis["saved"] = True
                     if changes:
@@ -1042,12 +1040,16 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                         **thesis,
                     }
                     await db.theses.insert_one(doc)
-                    touched = await _persist_qual_snapshots(user_id, tid, thesis)
-                    await _record_visual_qual_points(user_id, touched)
                     thesis["id"] = tid
                     thesis["saved"] = False
                 # Developing a trend FROM a company core/split → record it on that company
                 # thesis so its suggestions page shows the note + remaining split cards.
+                # MUST run before _record_visual_qual_points below: Score/TAM Score only
+                # count a ticker once company_is_complete() is true (every driver
+                # developed), which reads split_dev — recording the point first would
+                # check completeness against the STALE split_dev (missing this driver),
+                # silently skipping the very point that finishing the plan was meant to
+                # produce until some later, unrelated action recomputed it.
                 if kind == "trend" and from_company and core:
                     await _record_split_dev(from_company, core, subject, tid, develop_whole)
                 # Freeze the TAM Score: compute + store it now (from the cache) so it is
@@ -1060,6 +1062,13 @@ def make_router(db: AsyncIOMotorDatabase, auth_required, auth_optional) -> APIRo
                             thesis["companies"] = fresh["companies"]
                     except Exception as e:
                         logger.warning(f"tam freeze after generate failed ({tid}): {e}")
+                # Record the Visual history point LAST, once split_dev (used by
+                # company_is_complete — whether the ticker even shows up in Visual at
+                # all) and the frozen TAM Score are both fully settled. Doing this any
+                # earlier reads a stale state: on the plan's final driver, the ticker
+                # would still look "incomplete" and get silently skipped.
+                touched = await _persist_qual_snapshots(user_id, tid, thesis)
+                await _record_visual_qual_points(user_id, touched)
             else:
                 thesis["id"] = None
             await db.thesis_jobs.update_one(
