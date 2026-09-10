@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, Plus, X, Eye, EyeOff } from "lucide-react";
+import { Trash2, Plus, X, Eye, EyeOff, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { compare, thesisVisualData } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
@@ -73,6 +73,7 @@ export default function Portfolio() {
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [showAdd, setShowAdd] = useState(false);
+    const [showImport, setShowImport] = useState(false);
     const [editing, setEditing] = useState(null);
     const [sort, setSort] = useState(null);
     const [view, setView] = useState(() => localStorage.getItem("vs:portfolio-view") || "table");
@@ -123,6 +124,12 @@ export default function Portfolio() {
         setShowAdd(false);
         setEditing(null);
         toast.success(t("common.save"));
+    };
+
+    const handleImport = (rows) => {
+        for (const r of rows) upsertPosition({ ticker: r.ticker, shares: r.shares, alert_enabled: true });
+        setShowImport(false);
+        toast.success(`${rows.length} posición${rows.length === 1 ? "" : "es"} importada${rows.length === 1 ? "" : "s"}`);
     };
 
     const [confirmDel, setConfirmDel] = useState(null);
@@ -242,6 +249,9 @@ export default function Portfolio() {
                 </div>
                 <div className="flex gap-2 items-center">
                     <ViewToggle view={view} onChange={changeView} testid="portfolio-view-toggle" />
+                    <button onClick={() => setShowImport(true)} className="btn-ghost inline-flex items-center gap-1" data-testid="portfolio-import-open">
+                        <Upload size={14} /> Importar cartera
+                    </button>
                     <button onClick={() => { setEditing(null); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="portfolio-add">
                         <Plus size={14} /> {t("portfolio.add_position")}
                     </button>
@@ -442,6 +452,9 @@ export default function Portfolio() {
                     onSave={handleSave}
                 />
             )}
+            {showImport && (
+                <ImportPortfolioDialog onClose={() => setShowImport(false)} onImport={handleImport} />
+            )}
             <ConfirmDialog
                 open={!!confirmDel}
                 title="¿Eliminar de Nivel 1?"
@@ -541,5 +554,112 @@ function Field({ label, children }) {
             <span className="overline text-[#4A4A4A]">{label}</span>
             <div className="mt-1">{children}</div>
         </label>
+    );
+}
+
+// Bulk import for Nivel 1: paste "TICKER  ACCIONES" one per line (tab/comma/space
+// separated — matches a raw copy from a spreadsheet or a broker's portfolio page).
+// Picks the first alpha token as the ticker and the first positive number as the
+// share count; extra columns (price, P/L, currency…) are ignored.
+function parsePortfolioImport(text) {
+    const lines = (text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const rows = [];
+    const errors = [];
+    for (const line of lines) {
+        // Split on tab / 2+ spaces / comma — but not a comma used as a decimal separator
+        // (digit directly on both sides, e.g. "100,5"), so European-style share counts
+        // survive a plain two-field paste.
+        const split = line.split(/\t|\s{2,}|,(?!\d)|(?<!\d),/).map((p) => p.trim()).filter(Boolean);
+        const tokens = split.length >= 2 ? split : line.split(/\s+/).filter(Boolean);
+        let ticker = null, shares = null;
+        for (const raw of tokens) {
+            if (!ticker && /^[A-Za-z][A-Za-z0-9.\-]{0,9}$/.test(raw)) {
+                ticker = raw.toUpperCase();
+                continue;
+            }
+            if (shares == null) {
+                const num = parseFloat(raw.replace(/[^0-9.,\-]/g, "").replace(",", "."));
+                if (!isNaN(num) && num > 0) shares = num;
+            }
+        }
+        if (ticker && shares != null) rows.push({ ticker, shares });
+        else errors.push(line);
+    }
+    return { rows, errors };
+}
+
+function ImportPortfolioDialog({ onClose, onImport }) {
+    const [text, setText] = useState("");
+    const [removed, setRemoved] = useState(new Set());
+    const { rows, errors } = useMemo(() => parsePortfolioImport(text), [text]);
+    const finalRows = rows.filter((_, i) => !removed.has(i));
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(17,17,17,0.5)" }} data-testid="import-portfolio-dialog">
+            <div className="bg-white border border-black p-6 w-full max-w-lg">
+                <div className="flex items-start justify-between mb-3">
+                    <div>
+                        <div className="overline text-[#B32A22]">Nivel 1</div>
+                        <h2 className="font-serif text-2xl">Importar cartera</h2>
+                    </div>
+                    <button type="button" onClick={onClose}><X size={16} /></button>
+                </div>
+                <p className="text-xs text-[#4A4A4A] mb-2">
+                    Pega una posición por línea — ticker y número de acciones (tabulador, coma o espacio de separador), tal cual sale al copiar de un Excel o del portfolio de tu bróker. Ejemplo:
+                </p>
+                <pre className="text-[10px] bg-[#F5E4D4] p-2 mb-2 whitespace-pre-wrap" data-testid="import-portfolio-example">{"NVDA\t40.5\nMU\t48.6\nAAPL\t12"}</pre>
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    rows={6}
+                    placeholder={"TICKER   ACCIONES\nTICKER   ACCIONES"}
+                    className="input-paper font-mono w-full text-xs"
+                    data-testid="import-portfolio-textarea"
+                />
+                {rows.length > 0 && (
+                    <div className="mt-3 border border-black/20 max-h-56 overflow-y-auto" data-testid="import-portfolio-preview">
+                        <table className="w-full text-xs">
+                            <thead>
+                                <tr className="border-b border-black/20">
+                                    <th className="text-left p-1">Ticker</th>
+                                    <th className="text-right p-1">Acciones</th>
+                                    <th className="w-6"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((r, i) => removed.has(i) ? null : (
+                                    <tr key={i} className="border-b border-black/10">
+                                        <td className="p-1 font-mono font-semibold">{r.ticker}</td>
+                                        <td className="p-1 text-right font-mono">{r.shares}</td>
+                                        <td className="p-1 text-right">
+                                            <button type="button" onClick={() => setRemoved((s) => new Set(s).add(i))} className="text-[#B32A22]" data-testid={`import-remove-${i}`}>
+                                                <X size={12} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {errors.length > 0 && (
+                    <div className="mt-2 text-[11px] text-[#B32A22]" data-testid="import-portfolio-errors">
+                        No se pudo leer {errors.length} línea{errors.length === 1 ? "" : "s"}: {errors.slice(0, 3).join(" · ")}{errors.length > 3 ? "…" : ""}
+                    </div>
+                )}
+                <div className="flex justify-end gap-2 mt-4">
+                    <button type="button" onClick={onClose} className="btn-ghost" data-testid="import-portfolio-cancel">Cancelar</button>
+                    <button
+                        type="button"
+                        onClick={() => finalRows.length && onImport(finalRows)}
+                        disabled={!finalRows.length}
+                        className="btn-primary disabled:opacity-40"
+                        data-testid="import-portfolio-confirm"
+                    >
+                        Importar {finalRows.length || ""} posici{finalRows.length === 1 ? "ón" : "ones"}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
