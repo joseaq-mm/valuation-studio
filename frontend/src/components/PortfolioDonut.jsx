@@ -104,6 +104,14 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
             <div className="overline text-[#B32A22] mb-3">{title}</div>
             <div className="flex flex-col items-center gap-4">
                 <div className="relative w-[300px] h-[300px] shrink-0">
+                    {/* Painted BEFORE the chart in the DOM (same stacking context, no
+                        z-index on either) so the chart — and its hover tooltip, which
+                        can land right over the ring's center — always renders on top of
+                        this label instead of the label bleeding through it. */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <div className="overline text-[9px] text-[#9A9A9A]">Total</div>
+                        <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{fmtPrice(total, currency)}</div>
+                    </div>
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
@@ -126,6 +134,7 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                             </Pie>
                             <Tooltip
                                 formatter={(v, _n, p) => [`${p.payload.pct.toFixed(1)}%`, p.payload.label]}
+                                wrapperStyle={{ zIndex: 30 }}
                                 contentStyle={{
                                     background: "#111111", opacity: 1, border: "1px solid #111",
                                     borderRadius: 0, fontFamily: "monospace", fontSize: 12,
@@ -135,10 +144,6 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                             />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <div className="overline text-[9px] text-[#9A9A9A]">Total</div>
-                        <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{fmtPrice(total, currency)}</div>
-                    </div>
                 </div>
                 {useColumns ? (
                     <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-6" data-testid={`${testid}-legend`}>
