@@ -127,3 +127,12 @@ Toda tarjeta cuyo contenido principal sea un gráfico (Recharts u otro) debe seg
 - **Al ampliar (modal)**: debe ofrecer **compartir** (`ShareMenu`) y **descargar en JPG** (`downloadSvgJpg`/`getSvgJpgBlob`), además de cerrar — igual que `HighYieldSpreadModal`/`DebtModal`/`TrendModal`/`CoefHistoryModal` en `frontend/src/pages/Macro.jsx`.
 
 Esto aplica a tarjetas cuyo contenido principal ES un gráfico (p. ej. spread de high yield, deuda/PIB, evolución 10 años). No aplica a tarjetas sin gráfico (valor simple, dial/slider, desglose en barras) ni a mini-gráficos incrustados como sub-widget dentro de una tarjeta mayor (p. ej. el histórico dentro de la tarjeta del coeficiente), que mantienen su propio patrón anidado salvo que se indique lo contrario.
+
+## Calidad visual y responsive (frontend) — siempre, sin que se pida
+
+Cualquier cambio de UI (nuevo elemento, botón, tarjeta, gráfico, columna de tabla…) debe quedar bien en móvil antes de darse por terminado, no solo en escritorio. En concreto:
+
+- **Nada de anchos/alturas fijos en px** para contenedores que puedan aparecer en pantallas estrechas (p. ej. el ring de un donut, una tarjeta, un modal). Usar `w-full` + `max-w-[...]`, `aspect-square`/`aspect-ratio`, o breakpoints (`sm:`, `md:`) para que encoja en vez de desbordar. Si un gráfico (Recharts) tiene radios/tamaños internos en píxeles atados a ese contenedor, pasarlos también a porcentaje o a la proporción equivalente para que escalen junto con él.
+- **Filas de varios botones/controles en la cabecera de una página** llevan `flex-wrap` (mismo patrón ya usado en Watchlist, Portfolio, etc.) para que se acomoden en varias líneas en vez de forzar scroll horizontal al añadir un control más.
+- Antes de dar un cambio de UI por cerrado, repasar mentalmente (o, si hay forma de comprobarlo, verificarlo de verdad) cómo se ve en un ancho de móvil estrecho (~320-375px), no solo asumir que el layout de escritorio se adapta solo.
+- Esto es un estándar de calidad, no un punto de la lista de tareas del usuario — aplica en todo cambio visual futuro, se haya pedido explícitamente o no.
