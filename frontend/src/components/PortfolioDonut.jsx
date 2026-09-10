@@ -5,6 +5,19 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { brandColor } from "@/lib/brandColors";
 import { fmtPrice } from "@/lib/format";
 
+// Blends a hex color toward white — used for the glossy-highlight stop of each slice's
+// gradient (a faux-3D sheen, purely a fill/shadow trick — never touches geometry, so it
+// can't desync from where Recharts thinks the mouse is, unlike a real perspective tilt).
+const lighten = (hex, amt = 0.45) => {
+    const h = (hex || "#000000").replace("#", "");
+    const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+    const num = parseInt(full, 16) || 0;
+    const r = (num >> 16) & 255, g = (num >> 8) & 255, b = num & 255;
+    const mix = (c) => Math.round(c + (255 - c) * amt);
+    return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+};
+const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, "-");
+
 // Hovered slice pops toward the viewer: the whole wedge shifts outward as one piece
 // along its own bisector angle (the classic "exploded slice" offset — cx/cy move, not
 // just one edge) AND grows a little thicker, with a cast shadow reinforcing the lift.
@@ -120,38 +133,52 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                         <div className="overline text-[9px] text-[#9A9A9A]">Total</div>
                         <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{fmtPrice(total, currency)}</div>
                     </div>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={data}
-                                dataKey="value"
-                                nameKey="label"
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={84}
-                                outerRadius={138}
-                                paddingAngle={data.length > 1 ? 2 : 0}
-                                stroke="#111"
-                                strokeWidth={1}
-                                activeIndex={activeIndex}
-                                activeShape={renderActiveSlice}
-                                onMouseEnter={(_, index) => setActiveIndex(index)}
-                                onMouseLeave={() => setActiveIndex(undefined)}
-                            >
-                                {data.map((d) => <Cell key={d.key} fill={d.color} />)}
-                            </Pie>
-                            <Tooltip
-                                formatter={(v, _n, p) => [`${p.payload.pct.toFixed(1)}%`, p.payload.label]}
-                                wrapperStyle={{ zIndex: 30 }}
-                                contentStyle={{
-                                    background: "#111111", opacity: 1, border: "1px solid #111",
-                                    borderRadius: 0, fontFamily: "monospace", fontSize: 12,
-                                }}
-                                labelStyle={{ color: "#fff" }}
-                                itemStyle={{ color: "#fff" }}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    {/* Shadow scoped to just the chart (not the Total label above) so the
+                        ring reads as a raised disc without a real perspective tilt — that
+                        would desync Recharts' hover math from what's visually under the
+                        cursor, so we fake the depth purely with fill/shadow instead. */}
+                    <div style={{ width: "100%", height: "100%", filter: "drop-shadow(0px 10px 16px rgba(0,0,0,0.28))" }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <defs>
+                                    {data.map((d) => (
+                                        <radialGradient key={d.key} id={`${safeId(testid)}-grad-${safeId(d.key)}`} cx="35%" cy="30%" r="75%">
+                                            <stop offset="0%" stopColor={lighten(d.color)} />
+                                            <stop offset="100%" stopColor={d.color} />
+                                        </radialGradient>
+                                    ))}
+                                </defs>
+                                <Pie
+                                    data={data}
+                                    dataKey="value"
+                                    nameKey="label"
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={84}
+                                    outerRadius={138}
+                                    paddingAngle={data.length > 1 ? 2 : 0}
+                                    stroke="#111"
+                                    strokeWidth={1}
+                                    activeIndex={activeIndex}
+                                    activeShape={renderActiveSlice}
+                                    onMouseEnter={(_, index) => setActiveIndex(index)}
+                                    onMouseLeave={() => setActiveIndex(undefined)}
+                                >
+                                    {data.map((d) => <Cell key={d.key} fill={`url(#${safeId(testid)}-grad-${safeId(d.key)})`} />)}
+                                </Pie>
+                                <Tooltip
+                                    formatter={(v, _n, p) => [`${p.payload.pct.toFixed(1)}%`, p.payload.label]}
+                                    wrapperStyle={{ zIndex: 30 }}
+                                    contentStyle={{
+                                        background: "#111111", opacity: 1, border: "1px solid #111",
+                                        borderRadius: 0, fontFamily: "monospace", fontSize: 12,
+                                    }}
+                                    labelStyle={{ color: "#fff" }}
+                                    itemStyle={{ color: "#fff" }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
                 {useColumns ? (
                     <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-6" data-testid={`${testid}-legend`}>
