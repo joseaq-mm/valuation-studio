@@ -1,9 +1,27 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, Sector, ResponsiveContainer, Tooltip } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { brandColor } from "@/lib/brandColors";
 import { fmtPrice } from "@/lib/format";
+
+// Hovered slice "lifts" outward (bigger outer radius) so it's unambiguous which wedge
+// is being pointed at — Recharts animates the radius change on its own.
+const renderActiveSlice = (props) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+        <Sector
+            cx={cx} cy={cy}
+            innerRadius={innerRadius}
+            outerRadius={outerRadius + 10}
+            startAngle={startAngle}
+            endAngle={endAngle}
+            fill={fill}
+            stroke="#111"
+            strokeWidth={1}
+        />
+    );
+};
 
 // `linkTickers`: the top-level rows are tickers (company donut) rather than sector
 // names, so the label links to the company's ficha (/company/{ticker}). The nested
@@ -59,6 +77,7 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false }) => {
 // ficha — leave false for the sector donut, whose top-level rows are sector names.
 export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1, linkTickers = false }) => {
     const [expanded, setExpanded] = useState(new Set());
+    const [activeIndex, setActiveIndex] = useState(undefined);
     const data = useMemo(() => {
         const clean = (items || []).filter((i) => i.value != null && i.value > 0);
         const total = clean.reduce((s, i) => s + i.value, 0);
@@ -98,12 +117,21 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                                 paddingAngle={data.length > 1 ? 2 : 0}
                                 stroke="#111"
                                 strokeWidth={1}
+                                activeIndex={activeIndex}
+                                activeShape={renderActiveSlice}
+                                onMouseEnter={(_, index) => setActiveIndex(index)}
+                                onMouseLeave={() => setActiveIndex(undefined)}
                             >
                                 {data.map((d) => <Cell key={d.key} fill={d.color} />)}
                             </Pie>
                             <Tooltip
                                 formatter={(v, _n, p) => [`${p.payload.pct.toFixed(1)}%`, p.payload.label]}
-                                contentStyle={{ border: "1px solid #111", borderRadius: 0, fontFamily: "monospace", fontSize: 12 }}
+                                contentStyle={{
+                                    background: "#111111", opacity: 1, border: "1px solid #111",
+                                    borderRadius: 0, fontFamily: "monospace", fontSize: 12,
+                                }}
+                                labelStyle={{ color: "#fff" }}
+                                itemStyle={{ color: "#fff" }}
                             />
                         </PieChart>
                     </ResponsiveContainer>
