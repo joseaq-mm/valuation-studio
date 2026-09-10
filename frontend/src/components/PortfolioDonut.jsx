@@ -124,7 +124,7 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
         <div className="border border-black bg-white p-4" data-testid={testid}>
             <div className="overline text-[#B32A22] mb-3">{title}</div>
             <div className="flex flex-col items-center gap-4">
-                <div className="relative w-[300px] h-[300px] shrink-0">
+                <div className="relative w-[300px] h-[300px] shrink-0 vs-donut-chart">
                     {/* Painted BEFORE the chart in the DOM (same stacking context, no
                         z-index on either) so the chart — and its hover tooltip, which
                         can land right over the ring's center — always renders on top of
