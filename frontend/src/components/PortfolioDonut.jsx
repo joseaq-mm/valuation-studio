@@ -139,7 +139,11 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                         cursor, so we fake the depth purely with fill/shadow instead. */}
                     <div style={{ width: "100%", height: "100%", filter: "drop-shadow(0px 10px 16px rgba(0,0,0,0.28))" }}>
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
+                            {/* overflow: visible — the SVG clips anything drawn past its own
+                                canvas by default, which cut off the hovered slice (and its
+                                shadow) right at the edge once it grew/shifted past the
+                                ring's resting size. */}
+                            <PieChart style={{ overflow: "visible" }}>
                                 <defs>
                                     {data.map((d) => (
                                         <radialGradient key={d.key} id={`${safeId(testid)}-grad-${safeId(d.key)}`} cx="35%" cy="30%" r="75%">
