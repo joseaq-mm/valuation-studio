@@ -330,7 +330,7 @@ export default function Portfolio() {
                     })}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} />
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
                 </div>
                 </>
@@ -444,7 +444,7 @@ export default function Portfolio() {
                     </table>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} />
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
                 </div>
                 </>
