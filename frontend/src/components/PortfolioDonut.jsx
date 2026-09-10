@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PieChart, Pie, Cell, Sector, ResponsiveContainer, Tooltip } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { brandColor } from "@/lib/brandColors";
-import { fmtPrice } from "@/lib/format";
+import { fmtPrice, fmtNum } from "@/lib/format";
 
 // Blends a hex color toward white — used for the glossy-highlight stop of each slice's
 // gradient (a faux-3D sheen, purely a fill/shadow trick — never touches geometry, so it
@@ -96,7 +96,10 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false }) => {
 // `blur` blurs the monetary total (privacy toggle from the header).
 // `linkTickers`: top-level rows are tickers (company donut) and should link to their
 // ficha — leave false for the sector donut, whose top-level rows are sector names.
-export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1, linkTickers = false }) => {
+// `totalCompact`: format the center "Total" in scaled K/M/B/T notation (fmtNum, no
+// currency symbol) instead of full currency — for market-cap donuts, where totals
+// are always large and the app already shows market cap this way everywhere else.
+export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1, linkTickers = false, totalCompact = false }) => {
     const [expanded, setExpanded] = useState(new Set());
     const [activeIndex, setActiveIndex] = useState(undefined);
     const data = useMemo(() => {
@@ -131,7 +134,7 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                         this label instead of the label bleeding through it. */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                         <div className="overline text-[9px] text-[#9A9A9A]">Total</div>
-                        <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{fmtPrice(total, currency)}</div>
+                        <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{totalCompact ? fmtNum(total) : fmtPrice(total, currency)}</div>
                     </div>
                     {/* Shadow scoped to just the chart (not the Total label above) so the
                         ring reads as a raised disc without a real perspective tilt — that

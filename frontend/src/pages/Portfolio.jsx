@@ -187,6 +187,11 @@ export default function Portfolio() {
     const holdingsMap = {};
     const sectorMap = {};
     const sectorCompaniesMap = {};  // sector -> [{ key: ticker, label: ticker, value }]
+    // Same held companies, weighted by market cap instead of invested value — a
+    // separate classification requested alongside (not replacing) the value-based one.
+    const mcapMap = {};
+    const mcapSectorMap = {};
+    const mcapSectorCompaniesMap = {};
     for (const r of rows) {
         const p = r.position || {};
         if (!p.shares || p.shares <= 0 || r.current_price == null) continue;
@@ -198,12 +203,24 @@ export default function Portfolio() {
         sectorMap[sector] = (sectorMap[sector] || 0) + val;
         if (!sectorCompaniesMap[sector]) sectorCompaniesMap[sector] = [];
         sectorCompaniesMap[sector].push({ key: p.ticker, label: p.ticker, value: val });
+
+        if (r.market_cap == null) continue;
+        const mcapVal = toDonut(r.market_cap, cur);
+        if (mcapVal == null || mcapVal <= 0) continue;
+        mcapMap[p.ticker] = mcapVal;
+        mcapSectorMap[sector] = (mcapSectorMap[sector] || 0) + mcapVal;
+        if (!mcapSectorCompaniesMap[sector]) mcapSectorCompaniesMap[sector] = [];
+        mcapSectorCompaniesMap[sector].push({ key: p.ticker, label: p.ticker, value: mcapVal });
     }
     const holdings = Object.entries(holdingsMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
     const sectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({
         key: sector, label: sector, value, companies: sectorCompaniesMap[sector],
     }));
     const totalHoldingsValue = holdings.reduce((s, h) => s + h.value, 0);
+    const mcapHoldings = Object.entries(mcapMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
+    const mcapSectorHoldings = Object.entries(mcapSectorMap).map(([sector, value]) => ({
+        key: sector, label: sector, value, companies: mcapSectorCompaniesMap[sector],
+    }));
 
     const onSort = (key) => setSort((prev) => nextSort(prev, key, PF_NUMERIC_KEYS));
     const sortVal = (key, r) => {
@@ -346,6 +363,8 @@ export default function Portfolio() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-mcap-sector" title="Capitalización por sector" totalCompact />
                 </div>
                 </>
             ) : (
@@ -460,6 +479,8 @@ export default function Portfolio() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-table-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-table-mcap-sector" title="Capitalización por sector" totalCompact />
                 </div>
                 </>
             )}
