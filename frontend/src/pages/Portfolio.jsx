@@ -78,7 +78,10 @@ export default function Portfolio() {
     const [sort, setSort] = useState(null);
     const [view, setView] = useState(() => localStorage.getItem("vs:portfolio-view") || "table");
     const changeView = (v) => { setView(v); localStorage.setItem("vs:portfolio-view", v); };
-    const [hideMoney, setHideMoney] = useState(() => localStorage.getItem("vs:portfolio-hide-money") === "1");
+    // Default ON (hidden) the very first time — no stored preference yet — so a
+    // fresh session doesn't show money amounts until the user opts in. Once they
+    // toggle it, that explicit choice ("0" = shown) persists across navigation.
+    const [hideMoney, setHideMoney] = useState(() => localStorage.getItem("vs:portfolio-hide-money") !== "0");
     const toggleHideMoney = () => setHideMoney((v) => { const n = !v; localStorage.setItem("vs:portfolio-hide-money", n ? "1" : "0"); return n; });
     const moneyCls = hideMoney ? "blur-sm select-none" : "";
     useThresholds();
