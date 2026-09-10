@@ -557,6 +557,12 @@ function Field({ label, children }) {
     );
 }
 
+// Some brokers (eToro) append a ".US" suffix to US-listed tickers (e.g. "TEM.US") that
+// Yahoo Finance — the data source behind Valuation Studio — never uses; real Yahoo
+// Finance suffixes only exist for foreign exchanges (.MC, .DE, .PA…). Safe to strip
+// unconditionally since no genuine Yahoo Finance ticker ends in literal ".US".
+const stripBrokerSuffix = (ticker) => ticker.replace(/\.US$/i, "");
+
 // Bulk import for Nivel 1: paste "TICKER  ACCIONES" one per line (tab/comma/space
 // separated — matches a raw copy from a spreadsheet or a broker's portfolio page).
 // Picks the first alpha token as the ticker and the first positive number as the
@@ -574,7 +580,7 @@ function parsePortfolioImport(text) {
         let ticker = null, shares = null;
         for (const raw of tokens) {
             if (!ticker && /^[A-Za-z][A-Za-z0-9.\-]{0,9}$/.test(raw)) {
-                ticker = raw.toUpperCase();
+                ticker = stripBrokerSuffix(raw.toUpperCase());
                 continue;
             }
             if (shares == null) {
