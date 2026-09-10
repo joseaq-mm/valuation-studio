@@ -335,6 +335,7 @@ export default function Watchlist() {
                 </div>
                 </>
             ) : (
+                <>
                 <div className="border border-black bg-white overflow-x-auto" data-testid="watchlist-table">
                     <table className="w-full text-xs">
                         <thead>
@@ -444,6 +445,7 @@ export default function Watchlist() {
                     <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" />
                 </div>
+                </>
             )}
             {showAdd && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(17,17,17,0.5)" }} data-testid="watchlist-add-dialog" onClick={() => { setShowAdd(false); setAddInput(""); }}>
