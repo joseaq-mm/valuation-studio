@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, Plus, X, Eye, EyeOff, Upload } from "lucide-react";
+import { Trash2, Plus, X, Eye, EyeOff, Upload, PieChart } from "lucide-react";
 import { toast } from "sonner";
 import { compare, thesisVisualData } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
@@ -82,6 +82,8 @@ export default function Portfolio() {
     const toggleHideMoney = () => setHideMoney((v) => { const n = !v; localStorage.setItem("vs:portfolio-hide-money", n ? "1" : "0"); return n; });
     const moneyCls = hideMoney ? "blur-sm select-none" : "";
     useThresholds();
+    const donutRef = useRef(null);
+    const scrollToDonuts = () => donutRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
     useEffect(() => {
@@ -253,6 +255,15 @@ export default function Portfolio() {
                     )}
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
+                    {positions.length > 0 && (
+                        <button
+                            onClick={scrollToDonuts}
+                            className="btn-ghost inline-flex items-center gap-1 mr-3"
+                            data-testid="portfolio-goto-charts"
+                        >
+                            <PieChart size={14} /> Ir a gráfico
+                        </button>
+                    )}
                     <ViewToggle view={view} onChange={changeView} testid="portfolio-view-toggle" />
                     <button onClick={() => setShowImport(true)} className="btn-ghost inline-flex items-center gap-1" data-testid="portfolio-import-open">
                         <Upload size={14} /> Importar cartera
@@ -329,7 +340,7 @@ export default function Portfolio() {
                         );
                     })}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
                 </div>
@@ -443,7 +454,7 @@ export default function Portfolio() {
                         </tbody>
                     </table>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
                 </div>
