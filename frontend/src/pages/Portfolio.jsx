@@ -181,6 +181,7 @@ export default function Portfolio() {
     };
     const holdingsMap = {};
     const sectorMap = {};
+    const sectorCompaniesMap = {};  // sector -> [{ key: ticker, label: ticker, value }]
     for (const r of rows) {
         const p = r.position || {};
         if (!p.shares || p.shares <= 0 || r.current_price == null) continue;
@@ -190,9 +191,13 @@ export default function Portfolio() {
         holdingsMap[p.ticker] = val;
         const sector = r.sector || "Sin clasificar";
         sectorMap[sector] = (sectorMap[sector] || 0) + val;
+        if (!sectorCompaniesMap[sector]) sectorCompaniesMap[sector] = [];
+        sectorCompaniesMap[sector].push({ key: p.ticker, label: p.ticker, value: val });
     }
     const holdings = Object.entries(holdingsMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
-    const sectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({ key: sector, label: sector, value }));
+    const sectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({
+        key: sector, label: sector, value, companies: sectorCompaniesMap[sector],
+    }));
     const totalHoldingsValue = holdings.reduce((s, h) => s + h.value, 0);
 
     const onSort = (key) => setSort((prev) => nextSort(prev, key, PF_NUMERIC_KEYS));
@@ -325,7 +330,7 @@ export default function Portfolio() {
                     })}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" />
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
                 </div>
                 </>
@@ -439,7 +444,7 @@ export default function Portfolio() {
                     </table>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" />
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
                 </div>
                 </>
