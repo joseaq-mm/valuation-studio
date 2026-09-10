@@ -5,20 +5,28 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { brandColor } from "@/lib/brandColors";
 import { fmtPrice } from "@/lib/format";
 
-// Hovered slice "lifts" outward (bigger outer radius) so it's unambiguous which wedge
-// is being pointed at — Recharts animates the radius change on its own.
+// Hovered slice pops toward the viewer: the whole wedge shifts outward as one piece
+// along its own bisector angle (the classic "exploded slice" offset — cx/cy move, not
+// just one edge) AND grows a little thicker, with a cast shadow reinforcing the lift.
+// Recharts animates both the position and radius change on its own.
+const RADIAN = Math.PI / 180;
+const HOVER_SHIFT = 10;
+const HOVER_GROW = 6;
 const renderActiveSlice = (props) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    const { cx, cy, midAngle, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    const dx = Math.cos(-midAngle * RADIAN) * HOVER_SHIFT;
+    const dy = Math.sin(-midAngle * RADIAN) * HOVER_SHIFT;
     return (
         <Sector
-            cx={cx} cy={cy}
+            cx={cx + dx} cy={cy + dy}
             innerRadius={innerRadius}
-            outerRadius={outerRadius + 10}
+            outerRadius={outerRadius + HOVER_GROW}
             startAngle={startAngle}
             endAngle={endAngle}
             fill={fill}
             stroke="#111"
             strokeWidth={1}
+            style={{ filter: "drop-shadow(0px 5px 7px rgba(0,0,0,0.4))" }}
         />
     );
 };
