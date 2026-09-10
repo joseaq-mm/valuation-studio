@@ -252,7 +252,7 @@ export default function Portfolio() {
                         </div>
                     )}
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center flex-wrap">
                     <ViewToggle view={view} onChange={changeView} testid="portfolio-view-toggle" />
                     <button onClick={() => setShowImport(true)} className="btn-ghost inline-flex items-center gap-1" data-testid="portfolio-import-open">
                         <Upload size={14} /> Importar cartera
