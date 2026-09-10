@@ -62,7 +62,7 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                     </div>
                 </div>
                 <div
-                    className={`w-full grid gap-y-1.5 ${columns === 2 ? "grid-cols-1 sm:grid-cols-2 gap-x-6" : "grid-cols-1"}`}
+                    className={`w-full grid gap-y-1.5 ${columns === 2 ? "grid-cols-1 sm:grid-cols-2 gap-x-6 grid-flow-row" : "grid-cols-1"}`}
                     data-testid={`${testid}-legend`}
                 >
                     {data.map((d) => {
