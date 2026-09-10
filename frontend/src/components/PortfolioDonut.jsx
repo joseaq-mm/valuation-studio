@@ -4,12 +4,45 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { brandColor } from "@/lib/brandColors";
 import { fmtPrice } from "@/lib/format";
 
+const LegendRow = ({ d, expanded, toggle, testid }) => {
+    const hasCompanies = Array.isArray(d.companies) && d.companies.length > 0;
+    const isOpen = expanded.has(d.key);
+    const subTotal = hasCompanies ? d.companies.reduce((s, c) => s + c.value, 0) : 0;
+    return (
+        <div data-testid={`${testid}-item-${d.key}`}>
+            <div
+                className={`flex items-center gap-2 text-sm font-mono ${hasCompanies ? "cursor-pointer select-none" : ""}`}
+                onClick={hasCompanies ? () => toggle(d.key) : undefined}
+            >
+                {hasCompanies ? (
+                    isOpen ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />
+                ) : null}
+                <span className="inline-block w-3 h-3 border border-black shrink-0" style={{ background: d.color }} />
+                <span className="font-bold flex-1 truncate">{d.label}</span>
+                <span className="text-right">{d.pct.toFixed(1)}%</span>
+            </div>
+            {hasCompanies && isOpen && (
+                <div className="ml-5 mt-1 mb-1.5 space-y-1" data-testid={`${testid}-item-${d.key}-breakdown`}>
+                    {d.companies.slice().sort((a, b) => b.value - a.value).map((c) => (
+                        <div key={c.key} className="flex items-center gap-2 text-xs font-mono text-[#4A4A4A]">
+                            <span className="flex-1 truncate">{c.label}</span>
+                            <span className="text-right">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // Generic allocation donut used by Nivel 1 (by company and by sector).
 // `items` = [{ key, label, value, companies? }] already expressed in `currency`.
 // `companies` (optional — sector mode) = [{ key, label, value }], the holdings that
 // make up that slice; when present the row becomes clickable and expands into a
 // breakdown of those companies with their % of the slice.
-// `columns` sets the legend grid (2 for the company donut, 1 for sector).
+// `columns` sets the legend layout: 2 splits the ranked list column-major (heaviest
+// half top-to-bottom on the left, lightest half top-to-bottom on the right — read a
+// full column before moving to the next, not row by row); 1 is a single column.
 // `blur` blurs the monetary total (privacy toggle from the header).
 export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1 }) => {
     const [expanded, setExpanded] = useState(new Set());
@@ -28,6 +61,11 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
         n.has(key) ? n.delete(key) : n.add(key);
         return n;
     });
+
+    const useColumns = columns === 2 && data.length > 1;
+    const splitAt = Math.ceil(data.length / 2);
+    const colLeft = useColumns ? data.slice(0, splitAt) : data;
+    const colRight = useColumns ? data.slice(splitAt) : [];
 
     return (
         <div className="border border-black bg-white p-4" data-testid={testid}>
@@ -61,41 +99,20 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                         <div className={`font-mono text-sm ${blur ? "blur-sm select-none" : ""}`}>{fmtPrice(total, currency)}</div>
                     </div>
                 </div>
-                <div
-                    className={`w-full grid gap-y-1.5 ${columns === 2 ? "grid-cols-1 sm:grid-cols-2 gap-x-6 grid-flow-row" : "grid-cols-1"}`}
-                    data-testid={`${testid}-legend`}
-                >
-                    {data.map((d) => {
-                        const hasCompanies = Array.isArray(d.companies) && d.companies.length > 0;
-                        const isOpen = expanded.has(d.key);
-                        const subTotal = hasCompanies ? d.companies.reduce((s, c) => s + c.value, 0) : 0;
-                        return (
-                            <div key={d.key} data-testid={`${testid}-item-${d.key}`}>
-                                <div
-                                    className={`flex items-center gap-2 text-sm font-mono ${hasCompanies ? "cursor-pointer select-none" : ""}`}
-                                    onClick={hasCompanies ? () => toggle(d.key) : undefined}
-                                >
-                                    {hasCompanies ? (
-                                        isOpen ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />
-                                    ) : null}
-                                    <span className="inline-block w-3 h-3 border border-black shrink-0" style={{ background: d.color }} />
-                                    <span className="font-bold flex-1 truncate">{d.label}</span>
-                                    <span className="text-right">{d.pct.toFixed(1)}%</span>
-                                </div>
-                                {hasCompanies && isOpen && (
-                                    <div className="ml-5 mt-1 mb-1.5 space-y-1" data-testid={`${testid}-item-${d.key}-breakdown`}>
-                                        {d.companies.slice().sort((a, b) => b.value - a.value).map((c) => (
-                                            <div key={c.key} className="flex items-center gap-2 text-xs font-mono text-[#4A4A4A]">
-                                                <span className="flex-1 truncate">{c.label}</span>
-                                                <span className="text-right">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
+                {useColumns ? (
+                    <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-6" data-testid={`${testid}-legend`}>
+                        <div className="grid grid-cols-1 gap-y-1.5">
+                            {colLeft.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} />)}
+                        </div>
+                        <div className="grid grid-cols-1 gap-y-1.5">
+                            {colRight.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} />)}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="w-full grid grid-cols-1 gap-y-1.5" data-testid={`${testid}-legend`}>
+                        {data.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} />)}
+                    </div>
+                )}
             </div>
         </div>
     );
