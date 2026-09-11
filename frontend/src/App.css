@@ -2,3 +2,13 @@
     min-height: 100vh;
     background: #FDF1E6;
 }
+
+/* Recharts' <svg> clips anything drawn past its own canvas by default (a `style`
+   prop on the chart component itself doesn't reach the actual <svg>, only its
+   wrapper div) — so a hovered/enlarged shape that grows past the chart's resting
+   bounds (e.g. Nivel 1's donut pop-out slice) gets cut off right at that edge.
+   Scoped to .vs-donut-chart so it doesn't affect other charts that may rely on
+   the default clipping. */
+.vs-donut-chart .recharts-surface {
+    overflow: visible;
+}

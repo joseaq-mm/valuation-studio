@@ -18,10 +18,11 @@ import { CompanyCard } from "@/components/CompanyCard";
 import { NextEarnings, nextEarningsInfo } from "@/components/NextEarnings";
 import { CardSort } from "@/components/CardSort";
 import { SortableTh, makeSorter, nextSort } from "@/components/SortableTh";
-import { Trash2, ArrowRight, Plus } from "lucide-react";
+import { Trash2, ArrowRight, Plus, PieChart } from "lucide-react";
 import { toast } from "sonner";
 import TickerAutocomplete from "@/components/TickerAutocomplete";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { PortfolioDonut } from "@/components/PortfolioDonut";
 
 const WL_NUMERIC_KEYS = new Set(["price", "mcap", "rc", "rv", "score", "tam", "kpi"]);
 const WL_SORT_OPTIONS = [
@@ -76,9 +77,11 @@ export default function Watchlist() {
     const changeView = (v) => { setView(v); localStorage.setItem("vs:watchlist-view", v); };
     const { user } = useAuth();
     const [notify, setNotify] = useState(null);
-    const { display: displayCur, convert: fxConvert } = useFx();
+    const { display: displayCur, convert: fxConvert, rates } = useFx();
     const { t } = useI18n();
     useThresholds(); // re-render on threshold changes
+    const donutRef = useRef(null);
+    const scrollToDonuts = () => donutRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
     useEffect(() => {
@@ -213,6 +216,35 @@ export default function Watchlist() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows, sort, qual]);
 
+    // Composition donuts (by company / by sector): Nivel 2 has no invested amounts,
+    // so weight by market cap instead — normalized to a common currency the same
+    // way Nivel 1 does (display currency when set, otherwise USD via FX rates).
+    const useDisplay = displayCur && displayCur !== "NATIVE";
+    const donutCur = useDisplay ? displayCur : "USD";
+    const toDonut = (v, cur) => {
+        if (v == null || isNaN(v)) return null;
+        if (useDisplay) return fxConvert(v, cur);
+        const rf = rates[String(cur || "USD").toUpperCase()];
+        return rf ? v / rf : v;
+    };
+    const mcapMap = {};
+    const sectorMap = {};
+    const sectorCompaniesMap = {};
+    for (const { data: r } of rows) {
+        if (!r || r.error || r.market_cap == null) continue;
+        const val = toDonut(r.market_cap, r.currency || "USD");
+        if (val == null || val <= 0) continue;
+        mcapMap[r.ticker] = val;
+        const sector = r.sector || "Sin clasificar";
+        sectorMap[sector] = (sectorMap[sector] || 0) + val;
+        if (!sectorCompaniesMap[sector]) sectorCompaniesMap[sector] = [];
+        sectorCompaniesMap[sector].push({ key: r.ticker, label: r.ticker, value: val });
+    }
+    const mcapHoldings = Object.entries(mcapMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
+    const mcapSectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({
+        key: sector, label: sector, value, companies: sectorCompaniesMap[sector],
+    }));
+
     return (
         <div data-testid="watchlist-page">
             <div className="flex justify-between items-end mb-6 gap-3 flex-wrap">
@@ -227,6 +259,11 @@ export default function Watchlist() {
                     )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                    {entries.length > 0 && (
+                        <button onClick={scrollToDonuts} className="btn-ghost inline-flex items-center gap-1 mr-3" data-testid="watchlist-goto-charts">
+                            <PieChart size={14} /> Ir a gráfico
+                        </button>
+                    )}
                     <ViewToggle view={view} onChange={changeView} testid="watchlist-view-toggle" />
                     <button onClick={() => { setAddInput(""); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="watchlist-add-btn">
                         <Plus size={14} /> Añadir
@@ -292,8 +329,13 @@ export default function Watchlist() {
                         );
                     })}
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-sector" title="Capitalización por sector" totalCompact />
+                </div>
                 </>
             ) : (
+                <>
                 <div className="border border-black bg-white overflow-x-auto" data-testid="watchlist-table">
                     <table className="w-full text-xs">
                         <thead>
@@ -399,6 +441,11 @@ export default function Watchlist() {
                         </tbody>
                     </table>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" totalCompact />
+                </div>
+                </>
             )}
             {showAdd && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(17,17,17,0.5)" }} data-testid="watchlist-add-dialog" onClick={() => { setShowAdd(false); setAddInput(""); }}>

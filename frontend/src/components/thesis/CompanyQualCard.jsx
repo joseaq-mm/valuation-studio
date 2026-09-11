@@ -260,7 +260,9 @@ export default function CompanyQualCard({ ticker, hideEmpty = false, refreshKey 
                 <>
                     {/* Column headers */}
                     <div className={`grid ${COLS} gap-x-4 items-end pb-1.5 border-b border-black`}>
-                        <div className="overline text-[#4A4A4A]">Tesis</div>
+                        <Link to={`/thesis/${profile.plan_id}`} className="overline text-[#1E7D45] text-[0.8rem] hover:underline w-fit" data-testid="qual-header-plan-link">
+                            Tesis · {ticker}
+                        </Link>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">Score global tesis</div>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">TAM Score</div>
                         <div className="overline text-[#4A4A4A] text-center leading-tight">Coef KPI</div>

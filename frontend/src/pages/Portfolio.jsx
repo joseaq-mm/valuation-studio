@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Trash2, Plus, X, Eye, EyeOff } from "lucide-react";
+import { Trash2, Plus, X, Eye, EyeOff, Upload, PieChart } from "lucide-react";
 import { toast } from "sonner";
 import { compare, thesisVisualData } from "@/lib/api";
 import { getPortfolio, upsertPosition, removePosition, setPositionAlert, setAllPositionAlerts } from "@/lib/portfolio";
@@ -73,14 +73,20 @@ export default function Portfolio() {
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
     const [loading, setLoading] = useState(false);
     const [showAdd, setShowAdd] = useState(false);
+    const [showImport, setShowImport] = useState(false);
     const [editing, setEditing] = useState(null);
     const [sort, setSort] = useState(null);
     const [view, setView] = useState(() => localStorage.getItem("vs:portfolio-view") || "table");
     const changeView = (v) => { setView(v); localStorage.setItem("vs:portfolio-view", v); };
-    const [hideMoney, setHideMoney] = useState(() => localStorage.getItem("vs:portfolio-hide-money") === "1");
+    // Default ON (hidden) the very first time — no stored preference yet — so a
+    // fresh session doesn't show money amounts until the user opts in. Once they
+    // toggle it, that explicit choice ("0" = shown) persists across navigation.
+    const [hideMoney, setHideMoney] = useState(() => localStorage.getItem("vs:portfolio-hide-money") !== "0");
     const toggleHideMoney = () => setHideMoney((v) => { const n = !v; localStorage.setItem("vs:portfolio-hide-money", n ? "1" : "0"); return n; });
     const moneyCls = hideMoney ? "blur-sm select-none" : "";
     useThresholds();
+    const donutRef = useRef(null);
+    const scrollToDonuts = () => donutRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Qualitative layer (score / TAM / coef KPI) from the user's theses, by ticker.
     useEffect(() => {
@@ -123,6 +129,12 @@ export default function Portfolio() {
         setShowAdd(false);
         setEditing(null);
         toast.success(t("common.save"));
+    };
+
+    const handleImport = (rows) => {
+        for (const r of rows) upsertPosition({ ticker: r.ticker, shares: r.shares, alert_enabled: true });
+        setShowImport(false);
+        toast.success(`${rows.length} posición${rows.length === 1 ? "" : "es"} importada${rows.length === 1 ? "" : "s"}`);
     };
 
     const [confirmDel, setConfirmDel] = useState(null);
@@ -174,6 +186,12 @@ export default function Portfolio() {
     };
     const holdingsMap = {};
     const sectorMap = {};
+    const sectorCompaniesMap = {};  // sector -> [{ key: ticker, label: ticker, value }]
+    // Same held companies, weighted by market cap instead of invested value — a
+    // separate classification requested alongside (not replacing) the value-based one.
+    const mcapMap = {};
+    const mcapSectorMap = {};
+    const mcapSectorCompaniesMap = {};
     for (const r of rows) {
         const p = r.position || {};
         if (!p.shares || p.shares <= 0 || r.current_price == null) continue;
@@ -183,10 +201,26 @@ export default function Portfolio() {
         holdingsMap[p.ticker] = val;
         const sector = r.sector || "Sin clasificar";
         sectorMap[sector] = (sectorMap[sector] || 0) + val;
+        if (!sectorCompaniesMap[sector]) sectorCompaniesMap[sector] = [];
+        sectorCompaniesMap[sector].push({ key: p.ticker, label: p.ticker, value: val });
+
+        if (r.market_cap == null) continue;
+        const mcapVal = toDonut(r.market_cap, cur);
+        if (mcapVal == null || mcapVal <= 0) continue;
+        mcapMap[p.ticker] = mcapVal;
+        mcapSectorMap[sector] = (mcapSectorMap[sector] || 0) + mcapVal;
+        if (!mcapSectorCompaniesMap[sector]) mcapSectorCompaniesMap[sector] = [];
+        mcapSectorCompaniesMap[sector].push({ key: p.ticker, label: p.ticker, value: mcapVal });
     }
     const holdings = Object.entries(holdingsMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
-    const sectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({ key: sector, label: sector, value }));
+    const sectorHoldings = Object.entries(sectorMap).map(([sector, value]) => ({
+        key: sector, label: sector, value, companies: sectorCompaniesMap[sector],
+    }));
     const totalHoldingsValue = holdings.reduce((s, h) => s + h.value, 0);
+    const mcapHoldings = Object.entries(mcapMap).map(([ticker, value]) => ({ key: ticker, label: ticker, value }));
+    const mcapSectorHoldings = Object.entries(mcapSectorMap).map(([sector, value]) => ({
+        key: sector, label: sector, value, companies: mcapSectorCompaniesMap[sector],
+    }));
 
     const onSort = (key) => setSort((prev) => nextSort(prev, key, PF_NUMERIC_KEYS));
     const sortVal = (key, r) => {
@@ -240,8 +274,20 @@ export default function Portfolio() {
                         </div>
                     )}
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center flex-wrap">
+                    {positions.length > 0 && (
+                        <button
+                            onClick={scrollToDonuts}
+                            className="btn-ghost inline-flex items-center gap-1 mr-3"
+                            data-testid="portfolio-goto-charts"
+                        >
+                            <PieChart size={14} /> Ir a gráfico
+                        </button>
+                    )}
                     <ViewToggle view={view} onChange={changeView} testid="portfolio-view-toggle" />
+                    <button onClick={() => setShowImport(true)} className="btn-ghost inline-flex items-center gap-1" data-testid="portfolio-import-open">
+                        <Upload size={14} /> Importar cartera
+                    </button>
                     <button onClick={() => { setEditing(null); setShowAdd(true); }} className="btn-primary inline-flex items-center gap-1" data-testid="portfolio-add">
                         <Plus size={14} /> {t("portfolio.add_position")}
                     </button>
@@ -314,9 +360,11 @@ export default function Portfolio() {
                         );
                     })}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-mcap-sector" title="Capitalización por sector" totalCompact />
                 </div>
                 </>
             ) : (
@@ -428,9 +476,11 @@ export default function Portfolio() {
                         </tbody>
                     </table>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
+                    <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-table-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-table-mcap-sector" title="Capitalización por sector" totalCompact />
                 </div>
                 </>
             )}
@@ -441,6 +491,9 @@ export default function Portfolio() {
                     onClose={() => { setShowAdd(false); setEditing(null); }}
                     onSave={handleSave}
                 />
+            )}
+            {showImport && (
+                <ImportPortfolioDialog onClose={() => setShowImport(false)} onImport={handleImport} />
             )}
             <ConfirmDialog
                 open={!!confirmDel}
@@ -541,5 +594,118 @@ function Field({ label, children }) {
             <span className="overline text-[#4A4A4A]">{label}</span>
             <div className="mt-1">{children}</div>
         </label>
+    );
+}
+
+// Some brokers (eToro) append a ".US" suffix to US-listed tickers (e.g. "TEM.US") that
+// Yahoo Finance — the data source behind Valuation Studio — never uses; real Yahoo
+// Finance suffixes only exist for foreign exchanges (.MC, .DE, .PA…). Safe to strip
+// unconditionally since no genuine Yahoo Finance ticker ends in literal ".US".
+const stripBrokerSuffix = (ticker) => ticker.replace(/\.US$/i, "");
+
+// Bulk import for Nivel 1: paste "TICKER  ACCIONES" one per line (tab/comma/space
+// separated — matches a raw copy from a spreadsheet or a broker's portfolio page).
+// Picks the first alpha token as the ticker and the first positive number as the
+// share count; extra columns (price, P/L, currency…) are ignored.
+function parsePortfolioImport(text) {
+    const lines = (text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const rows = [];
+    const errors = [];
+    for (const line of lines) {
+        // Split on tab / 2+ spaces / comma — but not a comma used as a decimal separator
+        // (digit directly on both sides, e.g. "100,5"), so European-style share counts
+        // survive a plain two-field paste.
+        const split = line.split(/\t|\s{2,}|,(?!\d)|(?<!\d),/).map((p) => p.trim()).filter(Boolean);
+        const tokens = split.length >= 2 ? split : line.split(/\s+/).filter(Boolean);
+        let ticker = null, shares = null;
+        for (const raw of tokens) {
+            if (!ticker && /^[A-Za-z][A-Za-z0-9.\-]{0,9}$/.test(raw)) {
+                ticker = stripBrokerSuffix(raw.toUpperCase());
+                continue;
+            }
+            if (shares == null) {
+                const num = parseFloat(raw.replace(/[^0-9.,\-]/g, "").replace(",", "."));
+                if (!isNaN(num) && num > 0) shares = num;
+            }
+        }
+        if (ticker && shares != null) rows.push({ ticker, shares });
+        else errors.push(line);
+    }
+    return { rows, errors };
+}
+
+function ImportPortfolioDialog({ onClose, onImport }) {
+    const [text, setText] = useState("");
+    const [removed, setRemoved] = useState(new Set());
+    const { rows, errors } = useMemo(() => parsePortfolioImport(text), [text]);
+    const finalRows = rows.filter((_, i) => !removed.has(i));
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(17,17,17,0.5)" }} data-testid="import-portfolio-dialog">
+            <div className="bg-white border border-black p-6 w-full max-w-lg">
+                <div className="flex items-start justify-between mb-3">
+                    <div>
+                        <div className="overline text-[#B32A22]">Nivel 1</div>
+                        <h2 className="font-serif text-2xl">Importar cartera</h2>
+                    </div>
+                    <button type="button" onClick={onClose}><X size={16} /></button>
+                </div>
+                <p className="text-xs text-[#4A4A4A] mb-2">
+                    Pega una posición por línea — ticker y número de acciones (tabulador, coma o espacio de separador), tal cual sale al copiar de un Excel o del portfolio de tu bróker. Ejemplo:
+                </p>
+                <pre className="text-[10px] bg-[#F5E4D4] p-2 mb-2 whitespace-pre-wrap" data-testid="import-portfolio-example">{"NVDA\t40.5\nMU\t48.6\nAAPL\t12"}</pre>
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    rows={6}
+                    placeholder={"TICKER   ACCIONES\nTICKER   ACCIONES"}
+                    className="input-paper font-mono w-full text-xs"
+                    data-testid="import-portfolio-textarea"
+                />
+                {rows.length > 0 && (
+                    <div className="mt-3 border border-black/20 max-h-56 overflow-y-auto" data-testid="import-portfolio-preview">
+                        <table className="w-full text-xs">
+                            <thead>
+                                <tr className="border-b border-black/20">
+                                    <th className="text-left p-1">Ticker</th>
+                                    <th className="text-right p-1">Acciones</th>
+                                    <th className="w-6"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((r, i) => removed.has(i) ? null : (
+                                    <tr key={i} className="border-b border-black/10">
+                                        <td className="p-1 font-mono font-semibold">{r.ticker}</td>
+                                        <td className="p-1 text-right font-mono">{r.shares}</td>
+                                        <td className="p-1 text-right">
+                                            <button type="button" onClick={() => setRemoved((s) => new Set(s).add(i))} className="text-[#B32A22]" data-testid={`import-remove-${i}`}>
+                                                <X size={12} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {errors.length > 0 && (
+                    <div className="mt-2 text-[11px] text-[#B32A22]" data-testid="import-portfolio-errors">
+                        No se pudo leer {errors.length} línea{errors.length === 1 ? "" : "s"}: {errors.slice(0, 3).join(" · ")}{errors.length > 3 ? "…" : ""}
+                    </div>
+                )}
+                <div className="flex justify-end gap-2 mt-4">
+                    <button type="button" onClick={onClose} className="btn-ghost" data-testid="import-portfolio-cancel">Cancelar</button>
+                    <button
+                        type="button"
+                        onClick={() => finalRows.length && onImport(finalRows)}
+                        disabled={!finalRows.length}
+                        className="btn-primary disabled:opacity-40"
+                        data-testid="import-portfolio-confirm"
+                    >
+                        Importar {finalRows.length || ""} posici{finalRows.length === 1 ? "ón" : "ones"}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }

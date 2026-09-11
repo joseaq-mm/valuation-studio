@@ -8,6 +8,7 @@ import AuthButton from "./AuthButton";
 import LanguageToggle from "./LanguageToggle";
 import HelpChat from "./HelpChat";
 import BackButton from "./BackButton";
+import ScrollRestoration from "./ScrollRestoration";
 import LoginNudge from "./LoginNudge";
 import PageExportButton from "./PageExportButton";
 import FeedbackControls from "./feedback/FeedbackControls";
@@ -117,6 +118,7 @@ export default function Layout({ children }) {
 
     return (
         <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-base)" }}>
+            <ScrollRestoration />
             <header className="border-b border-black sticky top-0 z-40" style={{ background: "var(--bg-base)" }}>
                 <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
                     {/* Row 1: Logo · Search · Auth (wraps on mobile) */}
