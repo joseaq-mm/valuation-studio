@@ -12,3 +12,18 @@
 .vs-donut-chart .recharts-surface {
     overflow: visible;
 }
+
+/* Recharts' accessibility layer makes every shape (a pie sector, a line's dot…)
+   focusable for keyboard nav. On mobile, tapping a shape focuses it, and with no
+   focus styling of its own the browser draws its default outline instead — a
+   thick black box around the shape's bounding box — instead of the chart's own
+   active/highlighted state (the donut slice popping out, the line's active dot).
+   Applies to every Recharts chart in the app, not just the donuts. */
+.recharts-wrapper *:focus,
+.recharts-surface *:focus {
+    outline: none;
+}
+.recharts-wrapper *,
+.recharts-surface * {
+    -webkit-tap-highlight-color: transparent;
+}
