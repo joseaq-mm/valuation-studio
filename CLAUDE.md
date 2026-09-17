@@ -136,3 +136,11 @@ Cualquier cambio de UI (nuevo elemento, botón, tarjeta, gráfico, columna de ta
 - **Filas de varios botones/controles en la cabecera de una página** llevan `flex-wrap` (mismo patrón ya usado en Watchlist, Portfolio, etc.) para que se acomoden en varias líneas en vez de forzar scroll horizontal al añadir un control más.
 - Antes de dar un cambio de UI por cerrado, repasar mentalmente (o, si hay forma de comprobarlo, verificarlo de verdad) cómo se ve en un ancho de móvil estrecho (~320-375px), no solo asumir que el layout de escritorio se adapta solo.
 - Esto es un estándar de calidad, no un punto de la lista de tareas del usuario — aplica en todo cambio visual futuro, se haya pedido explícitamente o no.
+
+## Divisa de precio vs. divisa de los fundamentales (backend)
+
+Yahoo Finance NO convierte los estados financieros a la divisa de cotización: para un ticker cuyo precio cotiza en una divisa (`info.currency`, p. ej. USD por ser un ADR estadounidense) pero cuyos estados financieros se reportan en otra (`info.financialCurrency`, p. ej. KRW para una empresa coreana como SK Hynix), Yahoo devuelve el precio en una divisa y revenue/FCF/EBITDA/deuda/caja/balance en la otra, sin avisar. Mezclarlos sin convertir dispara cualquier ratio derivado (Ratio Compra/Venta, POC/POV) a valores absurdos.
+
+`backend/services/valuation.py::fetch_fundamentals_sync` ya resuelve esto automáticamente: detecta `currency` vs `financialCurrency`, y si difieren, convierte con `fx.convert_sync` (en `backend/fx.py`) TODO lo que venga de estados financieros (`fin`/`cf`/`balance_sheet`, `total_debt`, `cash`, `fcf_ttm`, `ebitda_ttm`, `revenue_plus1y`, `eps_plus1y`, `total_revenue_ttm`) a la divisa del precio, antes de combinarlo con `market_cap`/`current_price` (que ya están en la divisa correcta y NO se tocan). Los márgenes/CAGRs/intensidades siguen siendo ratios internos al mismo estado financiero y no les afecta la conversión.
+
+**Al tocar `fetch_fundamentals_sync` o añadir un nuevo campo monetario ahí**: si el valor nuevo viene de `info`, `t.financials`, `t.cashflow` o `t.balance_sheet` (no de `currentPrice`/`marketCap`/`sharesOutstanding`, que ya están en la divisa de cotización), aplícale `fx_mult` igual que a los demás antes de que se combine con precio/capitalización — si no, se reintroduce el mismo bug para el próximo ticker con esta desconexión.
