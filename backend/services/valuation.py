@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import yfinance as yf
 import pandas as pd
+import fx
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +222,30 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     if market_cap is None and shares and current_price:
         market_cap = shares * current_price
 
+    # Price currency vs. financial-statement currency: a foreign company listed as a
+    # US/European ADR (e.g. an OTC ADR that trades in USD but reports in KRW/JPY/etc.)
+    # has these differ. Yahoo does NOT convert the financial statements to the quote's
+    # currency, so combining them unconverted with `current_price`/`market_cap` (which
+    # ARE in the quote currency) would silently mangle every ratio derived from them —
+    # ridiculously high or low P/S, P/E-equivalents, etc. Convert every
+    # financial-statement-derived figure to the price's currency once, right here,
+    # so everything downstream (margins/CAGRs are ratios and unaffected either way,
+    # but the absolute figures combined with price/market_cap) stays consistent.
+    price_currency = (info.get("currency") or "USD").upper()
+    financial_currency = (info.get("financialCurrency") or price_currency).upper()
+    fx_mult = 1.0
+    if financial_currency != price_currency:
+        conv = fx.convert_sync(1.0, financial_currency, price_currency)
+        if conv is not None:
+            fx_mult = conv
+        else:
+            logger.warning(f"{ticker}: could not convert {financial_currency}->{price_currency}; financial figures may be inconsistent with price")
+
     total_debt = _safe_float(info.get("totalDebt"))
     cash = _safe_float(info.get("totalCash")) or _safe_float(info.get("cash"))
+    if fx_mult != 1.0:
+        total_debt = total_debt * fx_mult if total_debt is not None else None
+        cash = cash * fx_mult if cash is not None else None
     net_debt = None
     if total_debt is not None and cash is not None:
         net_debt = total_debt - cash
@@ -232,10 +255,14 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     # Financial statements
     try:
         fin = t.financials
+        if fx_mult != 1.0 and fin is not None and not fin.empty:
+            fin = fin * fx_mult
     except Exception:
         fin = pd.DataFrame()
     try:
         cf = t.cashflow
+        if fx_mult != 1.0 and cf is not None and not cf.empty:
+            cf = cf * fx_mult
     except Exception:
         cf = pd.DataFrame()
 
@@ -273,6 +300,9 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     fcf_ttm = _safe_float(info.get("freeCashflow"))
     # EBITDA for the leverage gate (net_debt / EBITDA)
     ebitda_ttm = _safe_float(info.get("ebitda"))
+    if fx_mult != 1.0:
+        fcf_ttm = fcf_ttm * fx_mult if fcf_ttm is not None else None
+        ebitda_ttm = ebitda_ttm * fx_mult if ebitda_ttm is not None else None
 
     # Margins (most recent)
     gross_margin = _safe_float(info.get("grossMargins"))
@@ -320,6 +350,10 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
                     break
     except Exception as e:
         logger.info(f"earnings_estimate not available: {e}")
+
+    if fx_mult != 1.0:
+        revenue_plus1y = revenue_plus1y * fx_mult if revenue_plus1y is not None else None
+        eps_plus1y = eps_plus1y * fx_mult if eps_plus1y is not None else None
 
     ni_plus1y = None
     if eps_plus1y is not None and shares and shares > 0:
@@ -412,6 +446,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     revenue_2y_annual = revenue_2y
     revenue_2y_ttm = None
     total_revenue_ttm = _safe_float(info.get("totalRevenue"))
+    if fx_mult != 1.0 and total_revenue_ttm is not None:
+        total_revenue_ttm = total_revenue_ttm * fx_mult
     if total_revenue_ttm and total_revenue_ttm > 0 and rev_growth_fwd is not None:
         revenue_2y_ttm = total_revenue_ttm * (1 + rev_growth_fwd) ** 2
 
@@ -767,6 +803,8 @@ def fetch_fundamentals_sync(ticker: str) -> Dict[str, Any]:
     #        Invested Capital = Total Equity + Total Debt − Cash
     try:
         bs = t.balance_sheet
+        if fx_mult != 1.0 and bs is not None and not bs.empty:
+            bs = bs * fx_mult
     except Exception:
         bs = pd.DataFrame()
 

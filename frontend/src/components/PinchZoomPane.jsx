@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 /**
@@ -9,13 +9,24 @@ import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
  *  - One finger while zoomed → pan. (At scale 1, single taps pass through so
  *    treemap cells / chart bubbles stay tappable.)
  *  - Double-tap → reset.
- *  - Buttons (+ / − / reset) for desktop and accessibility.
+ *  - Buttons (+ / − / reset) for desktop and accessibility, unless `hideControls`
+ *    is set — pass a ref to drive zoom/reset from elsewhere instead (e.g. a
+ *    header toolbar, so the floating buttons don't sit over the chart's own
+ *    axis labels).
+ *
+ * Gesture handlers are registered on the CAPTURE phase, not bubble: Recharts
+ * attaches its own touch handling to the SVG content for its tooltip tracking
+ * and calls stopPropagation, which would otherwise reach the target before a
+ * bubble-phase listener on this wrapper ever sees the second touch point of a
+ * pinch. Capture fires top-down before that, so we see every pointer event
+ * regardless — and since we never call stopPropagation ourselves, Recharts
+ * still gets the event afterward for its own single-finger tooltip handling.
  */
 const MIN = 1;
 const MAX = 6;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-export default function PinchZoomPane({ children, className = "", onZoom }) {
+const PinchZoomPane = forwardRef(function PinchZoomPane({ children, className = "", onZoom, hideControls = false }, ref) {
     const wrapRef = useRef(null);
     const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
     const tRef = useRef(t);
@@ -41,7 +52,14 @@ export default function PinchZoomPane({ children, className = "", onZoom }) {
         apply({ scale, x: px - (px - cur.x) * k, y: py - (py - cur.y) * k });
     }, []);
 
-    const reset = () => { setT({ scale: 1, x: 0, y: 0 }); onZoom?.(1); };
+    const reset = useCallback(() => { setT({ scale: 1, x: 0, y: 0 }); onZoom?.(1); }, []);
+
+    useImperativeHandle(ref, () => ({
+        zoomIn: () => zoomAt(1.3),
+        zoomOut: () => zoomAt(1 / 1.3),
+        reset,
+        get scale() { return tRef.current.scale; },
+    }), [zoomAt, reset]);
 
     const onPointerDown = (e) => {
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -96,21 +114,25 @@ export default function PinchZoomPane({ children, className = "", onZoom }) {
                 ref={wrapRef}
                 className="w-full h-full"
                 style={{ touchAction: zoomed ? "none" : "pan-y", cursor: zoomed ? "grab" : "default" }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={endPointer}
-                onPointerCancel={endPointer}
+                onPointerDownCapture={onPointerDown}
+                onPointerMoveCapture={onPointerMove}
+                onPointerUpCapture={endPointer}
+                onPointerCancelCapture={endPointer}
                 onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); } }}
             >
                 <div style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`, transformOrigin: "0 0", width: "100%", height: "100%" }} data-testid="pinch-zoom-content">
                     {children}
                 </div>
             </div>
-            <div className="absolute bottom-3 right-3 flex flex-col gap-1.5 z-10" data-testid="pinch-zoom-controls">
-                <button onClick={reset} disabled={!zoomed} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow disabled:opacity-40" title="Restablecer" data-testid="pinch-zoom-reset"><RotateCcw size={16} /></button>
-                <button onClick={() => zoomAt(1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Acercar" data-testid="pinch-zoom-in"><ZoomIn size={16} /></button>
-                <button onClick={() => zoomAt(1 / 1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Alejar" data-testid="pinch-zoom-out"><ZoomOut size={16} /></button>
-            </div>
+            {!hideControls && (
+                <div className="absolute bottom-3 right-3 flex flex-col gap-1.5 z-10" data-testid="pinch-zoom-controls">
+                    <button onClick={reset} disabled={!zoomed} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow disabled:opacity-40" title="Restablecer" data-testid="pinch-zoom-reset"><RotateCcw size={16} /></button>
+                    <button onClick={() => zoomAt(1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Acercar" data-testid="pinch-zoom-in"><ZoomIn size={16} /></button>
+                    <button onClick={() => zoomAt(1 / 1.3)} className="w-9 h-9 flex items-center justify-center bg-white border border-black hover:bg-black hover:text-white transition-colors shadow" title="Alejar" data-testid="pinch-zoom-out"><ZoomOut size={16} /></button>
+                </div>
+            )}
         </div>
     );
-}
+});
+
+export default PinchZoomPane;

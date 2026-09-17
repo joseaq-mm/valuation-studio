@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ZAxis, Customized, LineChart, Line, Legend } from "recharts";
-import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download, LineChart as LineChartIcon } from "lucide-react";
+import { Loader2, RotateCcw, ArrowUp, ArrowDown, Bell, BellRing, Play, Pause, Clock, Circle, Square, FolderOpen, Trash2, Maximize2, X, Download, LineChart as LineChartIcon, Info, ZoomIn, ZoomOut } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { thesisVisualData, thesisVisualTimeline, thesisVisualHistory, alertsGet, alertSave, alertDelete, shareUpload } from "@/lib/api";
 import { downloadSvgJpg, getSvgJpgBlob } from "@/lib/chartExport";
@@ -1080,6 +1080,7 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
     const [hidden, setHidden] = useState(new Set());
     const [busy, setBusy] = useState(false);
     const ref = useRef(null);
+    const pinchRef = useRef(null);
 
     useEffect(() => {
         let alive = true;
@@ -1181,58 +1182,77 @@ const VisualHistoryModal = ({ ticker, name, onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid="visual-history-modal">
-            <div className="bg-white border-2 border-[#052049] w-full max-w-5xl p-5" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between gap-2 mb-3">
-                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
-                        <LineChartIcon size={22} className="shrink-0" /> <span className="truncate">{name || ticker} · Histórico</span>
-                    </h2>
-                    <div className="flex items-center gap-3 shrink-0">
-                        <ShareMenu size="md" title={`Histórico ${ticker} · Valuation Studio`} testidPrefix="visual-history-share"
-                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", `Histórico ${ticker}`)} />
-                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="visual-history-download-jpg" title="Descargar en JPG">
-                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
-                        </button>
-                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="visual-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
-                    </div>
+        <div className="fixed inset-0 z-50 bg-white flex flex-col" data-testid="visual-history-modal" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-black shrink-0">
+                <h2 className="font-serif text-base sm:text-2xl text-[#052049] flex items-center gap-1.5 min-w-0">
+                    <LineChartIcon size={20} className="shrink-0" /> <span className="truncate">{name || ticker} · Histórico</span>
+                    {rows.length > 0 && (
+                        <HoverTip text={`4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian (al reanalizar tesis/KPI), así que solo tienen historial real desde la primera vez que se calcularon. Ratio Compra/Venta se completan también hacia atrás proyectando tu objetivo actual sobre el precio histórico mensual, y de aquí en adelante se registran el día 1 y el 15 de cada mes. Haz clic en la leyenda para mostrar/ocultar una serie.`} maxWidth={320}>
+                            <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="visual-history-info" aria-label="Más información"><Info size={15} /></button>
+                        </HoverTip>
+                    )}
+                </h2>
+                <div className="flex items-center gap-3 shrink-0">
+                    {rows.length > 0 && (
+                        <div className="hidden sm:flex items-center gap-2 border-r border-black/10 pr-3 mr-0.5">
+                            <button onClick={() => pinchRef.current?.zoomOut()} className="text-[#7A7A7A] hover:text-[#052049]" title="Alejar" data-testid="visual-history-zoom-out"><ZoomOut size={16} /></button>
+                            <button onClick={() => pinchRef.current?.zoomIn()} className="text-[#7A7A7A] hover:text-[#052049]" title="Acercar" data-testid="visual-history-zoom-in"><ZoomIn size={16} /></button>
+                            <button onClick={() => pinchRef.current?.reset()} className="text-[#7A7A7A] hover:text-[#052049]" title="Restablecer zoom" data-testid="visual-history-zoom-reset"><RotateCcw size={16} /></button>
+                        </div>
+                    )}
+                    <ShareMenu size="md" title={`Histórico ${ticker} · Valuation Studio`} testidPrefix="visual-history-share"
+                        createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", `Histórico ${ticker}`)} />
+                    <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid="visual-history-download-jpg" title="Descargar en JPG">
+                        {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                    </button>
+                    <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid="visual-history-modal-close" aria-label="Cerrar"><X size={20} /></button>
                 </div>
-                {loading ? (
-                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A]"><Loader2 className="animate-spin" size={24} /></div>
-                ) : rows.length === 0 ? (
-                    <div className="h-[420px] flex items-center justify-center text-[#9A9A9A] text-sm" data-testid="visual-history-empty">Sin histórico todavía para {ticker}.</div>
-                ) : (
-                    <div ref={ref}>
-                        <ResponsiveContainer width="100%" height={440}>
-                            <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                                <CartesianGrid stroke="#00000010" vertical={false} />
-                                <XAxis dataKey="ts" type="number" domain={tsDomain}
-                                    tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
-                                {activeAxes.map((ax) => (
-                                    <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
-                                        domain={domains[ax.id]}
-                                        tick={{ fontSize: 10, fill: ax.color }} axisLine={{ stroke: ax.color }} tickLine={false}
-                                        width={44} tickFormatter={ax.fmt} />
-                                ))}
-                                <Tooltip content={<VisualHistoryTip />} />
-                                <Legend onClick={(o) => toggle(o.dataKey)} wrapperStyle={{ fontSize: 11, cursor: "pointer" }} />
-                                {activeMetrics.map((m) => (
-                                    <Line key={m} yAxisId={VISUAL_METRIC_META[m].axis} type="monotone" dataKey={m} name={VISUAL_METRIC_META[m].label}
-                                        stroke={VISUAL_METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} connectNulls
-                                        hide={hidden.has(m)} isAnimationActive={false} />
-                                ))}
-                            </LineChart>
-                        </ResponsiveContainer>
-                        <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
-                            4 ejes Y, cada uno con su color: Score y TAM Score a la izquierda, Coef KPI y Ratio Compra/Venta % (comparten eje, misma unidad) a la derecha. Cada eje se ajusta automáticamente al rango real de sus datos para que las líneas ocupen un espacio similar y sean legibles. Score/TAM/Coef KPI se registran solo cuando cambian (al reanalizar tesis/KPI), así que solo tienen historial real desde la primera vez que se calcularon. Ratio Compra/Venta se completan también hacia atrás proyectando tu objetivo actual sobre el precio histórico mensual, y de aquí en adelante se registran el día 1 y el 15 de cada mes. Haz clic en la leyenda para mostrar/ocultar una serie.
-                        </p>
-                        {emptyMetrics.length > 0 && (
-                            <p className="text-[11px] text-[#B8860B] mt-1" data-testid="visual-history-no-data-note">
-                                Aún sin ningún punto registrado: {emptyMetrics.map((m) => VISUAL_METRIC_META[m].label).join(", ")}.
-                            </p>
-                        )}
-                    </div>
-                )}
             </div>
+            {rows.length > 0 && (
+                <div className="flex sm:hidden items-center justify-center gap-4 px-4 py-1 border-b border-black/10 shrink-0">
+                    <button onClick={() => pinchRef.current?.zoomOut()} className="text-[#7A7A7A] hover:text-[#052049]" title="Alejar" data-testid="visual-history-zoom-out-mobile"><ZoomOut size={16} /></button>
+                    <button onClick={() => pinchRef.current?.zoomIn()} className="text-[#7A7A7A] hover:text-[#052049]" title="Acercar" data-testid="visual-history-zoom-in-mobile"><ZoomIn size={16} /></button>
+                    <button onClick={() => pinchRef.current?.reset()} className="text-[#7A7A7A] hover:text-[#052049]" title="Restablecer zoom" data-testid="visual-history-zoom-reset-mobile"><RotateCcw size={16} /></button>
+                </div>
+            )}
+            {loading ? (
+                <div className="flex-1 flex items-center justify-center text-[#9A9A9A]"><Loader2 className="animate-spin" size={24} /></div>
+            ) : rows.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-[#9A9A9A] text-sm" data-testid="visual-history-empty">Sin histórico todavía para {ticker}.</div>
+            ) : (
+                <>
+                    <div ref={ref} className="flex-1 min-h-0 px-1 sm:px-2 pt-2">
+                        <PinchZoomPane className="w-full h-full" ref={pinchRef} hideControls>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                                    <CartesianGrid stroke="#00000010" vertical={false} />
+                                    <XAxis dataKey="ts" type="number" domain={tsDomain}
+                                        tickFormatter={dayLabel} tick={{ fontSize: 11, fill: "#7A7A7A" }} minTickGap={40} />
+                                    {activeAxes.map((ax) => (
+                                        <YAxis key={ax.id} yAxisId={ax.id} orientation={ax.orientation}
+                                            domain={domains[ax.id]}
+                                            tick={{ fontSize: 10, fill: ax.color }} axisLine={{ stroke: ax.color }} tickLine={false}
+                                            width={44} tickFormatter={ax.fmt} />
+                                    ))}
+                                    <Tooltip content={<VisualHistoryTip />} />
+                                    <Legend onClick={(o) => toggle(o.dataKey)} wrapperStyle={{ fontSize: 11, cursor: "pointer" }} />
+                                    {activeMetrics.map((m) => (
+                                        <Line key={m} yAxisId={VISUAL_METRIC_META[m].axis} type="monotone" dataKey={m} name={VISUAL_METRIC_META[m].label}
+                                            stroke={VISUAL_METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} connectNulls
+                                            hide={hidden.has(m)} isAnimationActive={false} />
+                                    ))}
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </PinchZoomPane>
+                    </div>
+                    {emptyMetrics.length > 0 && (
+                        <p className="text-[11px] text-[#B8860B] px-4 py-1 border-t border-black/10 shrink-0" data-testid="visual-history-no-data-note">
+                            Aún sin ningún punto registrado: {emptyMetrics.map((m) => VISUAL_METRIC_META[m].label).join(", ")}.
+                        </p>
+                    )}
+                    <div className="text-[10px] text-[#7A7A7A] px-4 py-0.5 text-center shrink-0 border-t border-black/10">Pellizca o usa los botones para hacer zoom · arrastra para desplazar · doble toque para restablecer</div>
+                </>
+            )}
         </div>
     );
 };
