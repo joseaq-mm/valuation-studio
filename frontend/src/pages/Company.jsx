@@ -12,6 +12,7 @@ import { useThresholds } from "@/lib/useThresholds";
 import { useFx } from "@/lib/fx";
 import { useAuth } from "@/lib/auth";
 import HoverTip from "@/components/HoverTip";
+import CurrencySelector from "@/components/CurrencySelector";
 import CompanyQualCard from "@/components/thesis/CompanyQualCard";
 import { Star, RefreshCw, AlertCircle, Save, X, Briefcase, Maximize2, ArrowLeftRight, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -924,6 +925,11 @@ export default function Company() {
                         <div className="overline text-[#4A4A4A]">Precio actual</div>
                         <div className="font-mono text-4xl sm:text-5xl font-medium" data-testid="company-price">{fmtPrice(convertCur(data.current_price), cur)}</div>
                         <div className="text-xs text-[#4A4A4A] font-mono mt-1">MCap {fmtNum(convertCur(data.market_cap))} {cur !== nativeCur && <span className="text-[10px]">({cur})</span>}</div>
+                        {nativeCur !== "USD" && (
+                            <div className="mt-1.5 flex justify-end">
+                                <CurrencySelector />
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="flex gap-2 mt-4 flex-wrap items-center">

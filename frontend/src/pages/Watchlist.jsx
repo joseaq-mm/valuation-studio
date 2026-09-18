@@ -323,8 +323,8 @@ export default function Watchlist() {
                     })}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             ) : (
@@ -435,8 +435,8 @@ export default function Watchlist() {
                     </table>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             )}

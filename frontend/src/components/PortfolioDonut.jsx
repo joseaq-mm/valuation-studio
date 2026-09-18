@@ -48,10 +48,11 @@ const renderActiveSlice = (props) => {
 // names, so the label links to the company's ficha (/company/{ticker}). The nested
 // per-company breakdown (sector donut, expanded) is always tickers regardless, so it
 // always links.
-const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false }) => {
+const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false, showValue = false, currency, totalCompact }) => {
     const hasCompanies = Array.isArray(d.companies) && d.companies.length > 0;
     const isOpen = expanded.has(d.key);
     const subTotal = hasCompanies ? d.companies.reduce((s, c) => s + c.value, 0) : 0;
+    const fmtVal = (v) => (totalCompact ? fmtNum(v) : fmtPrice(v, currency));
     return (
         <div data-testid={`${testid}-item-${d.key}`}>
             <div
@@ -69,14 +70,28 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false }) => {
                 ) : (
                     <span className="font-bold flex-1 truncate">{d.label}</span>
                 )}
-                <span className="text-right">{d.pct.toFixed(1)}%</span>
+                {showValue ? (
+                    <span className="text-right shrink-0 leading-tight">
+                        <div>{fmtVal(d.value)}</div>
+                        <div className="text-[10px] text-[#4A4A4A] font-normal">{d.pct.toFixed(1)}%</div>
+                    </span>
+                ) : (
+                    <span className="text-right">{d.pct.toFixed(1)}%</span>
+                )}
             </div>
             {hasCompanies && isOpen && (
                 <div className="ml-5 mt-1 mb-1.5 space-y-1" data-testid={`${testid}-item-${d.key}-breakdown`}>
                     {d.companies.slice().sort((a, b) => b.value - a.value).map((c) => (
                         <div key={c.key} className="flex items-center gap-2 text-xs font-mono text-[#4A4A4A]">
                             <Link to={`/company/${c.key}`} className="flex-1 truncate hover:underline">{c.label}</Link>
-                            <span className="text-right">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</span>
+                            {showValue ? (
+                                <span className="text-right shrink-0 leading-tight">
+                                    <div>{fmtVal(c.value)}</div>
+                                    <div className="text-[10px]">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</div>
+                                </span>
+                            ) : (
+                                <span className="text-right">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</span>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -99,7 +114,9 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false }) => {
 // `totalCompact`: format the center "Total" in scaled K/M/B/T notation (fmtNum, no
 // currency symbol) instead of full currency — for market-cap donuts, where totals
 // are always large and the app already shows market cap this way everywhere else.
-export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1, linkTickers = false, totalCompact = false }) => {
+// `showValue`: show each row's own value (same K/M/B/T-or-currency formatting as
+// the Total, per `totalCompact`) above its percentage, instead of just the percentage.
+export const PortfolioDonut = ({ items, currency = "USD", title = "Composición de la cartera", testid = "portfolio-donut", blur = false, columns = 1, linkTickers = false, totalCompact = false, showValue = false }) => {
     const [expanded, setExpanded] = useState(new Set());
     const [activeIndex, setActiveIndex] = useState(undefined);
     const data = useMemo(() => {
@@ -190,15 +207,15 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                 {useColumns ? (
                     <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-6" data-testid={`${testid}-legend`}>
                         <div className="grid grid-cols-1 gap-y-1.5">
-                            {colLeft.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} />)}
+                            {colLeft.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} showValue={showValue} currency={currency} totalCompact={totalCompact} />)}
                         </div>
                         <div className="grid grid-cols-1 gap-y-1.5">
-                            {colRight.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} />)}
+                            {colRight.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} showValue={showValue} currency={currency} totalCompact={totalCompact} />)}
                         </div>
                     </div>
                 ) : (
                     <div className="w-full grid grid-cols-1 gap-y-1.5" data-testid={`${testid}-legend`}>
-                        {data.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} />)}
+                        {data.map((d) => <LegendRow key={d.key} d={d} expanded={expanded} toggle={toggle} testid={testid} linkTickers={linkTickers} showValue={showValue} currency={currency} totalCompact={totalCompact} />)}
                     </div>
                 )}
             </div>
