@@ -114,10 +114,8 @@ const extraLine = (ind) => {
 // Generic per-indicator 10y evolution chart — the mini-chart on a card + Maximize2
 // expand + modal with share/download, same convention as HighYieldSpreadCard/
 // DebtCard/OilAverageCard. Used by any card whose indicator carries its own
-// `history` but doesn't already have a dedicated chart component.
-// `showDots` marks each stored point as a real reading (per CLAUDE.md: connect them
-// with a line, which is itself the estimate) — off only for m3_proxy, whose entire
-// history is a modeled extrapolation with no ground-truth points at all.
+// `history` but doesn't already have a dedicated chart component. Line only, no
+// dots, matching every other chart on this page.
 const IndHistoryTip = ({ active, payload, unit }) => {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload;
@@ -129,7 +127,7 @@ const IndHistoryTip = ({ active, payload, unit }) => {
     );
 };
 
-const IndHistoryChart = ({ history, unit, height, small, showDots = true, tickFormatter = qLabel }) => {
+const IndHistoryChart = ({ history, unit, height, small, tickFormatter = qLabel }) => {
     if (!history?.length) return null;
     return (
         <ResponsiveContainer width="100%" height={height}>
@@ -138,7 +136,7 @@ const IndHistoryChart = ({ history, unit, height, small, showDots = true, tickFo
                 <XAxis dataKey="date" tickFormatter={tickFormatter} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
                 <YAxis tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 30 : 46} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
                 <RTooltip content={<IndHistoryTip unit={unit} />} />
-                <Line type="monotone" dataKey="value" stroke="var(--chart-blue)" strokeWidth={2} dot={showDots ? { r: small ? 1.5 : 2.5, fill: "var(--chart-blue)" } : false} activeDot={{ r: small ? 3 : 4 }} isAnimationActive={false} connectNulls />
+                <Line type="monotone" dataKey="value" stroke="var(--chart-blue)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
             </LineChart>
         </ResponsiveContainer>
     );
@@ -150,7 +148,6 @@ const IndHistoryModal = ({ ind, onClose }) => {
     const ref = React.useRef(null);
     const [busy, setBusy] = useState(false);
     const history = ind.history || [];
-    const showDots = ind.key !== "m3_proxy";
     const Icon = ICONS[ind.key] || Globe2;
     const dl = async () => {
         setBusy(true);
@@ -175,11 +172,11 @@ const IndHistoryModal = ({ ind, onClose }) => {
                     </div>
                 </div>
                 <div ref={ref}>
-                    <IndHistoryChart history={history} unit={ind.unit} height={420} showDots={showDots} tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
+                    <IndHistoryChart history={history} unit={ind.unit} height={420} tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
                 </div>
                 <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
                     {ind.description} Fuente: {ind.source} · {ind.frequency}.
-                    {ind.key === "m3_proxy" && " El histórico es una reconstrucción estimada (no hay dato real de fondos institucionales anterior a hoy), por eso la línea no marca puntos individuales."}
+                    {ind.key === "m3_proxy" && " El histórico es una reconstrucción estimada (no hay dato real de fondos institucionales anterior a hoy)."}
                 </p>
             </div>
         </div>
@@ -222,7 +219,7 @@ const MacroCard = ({ ind }) => {
             {history.length > 1 && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
                     <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
-                    <IndHistoryChart history={history} unit={ind.unit} height={90} small showDots={ind.key !== "m3_proxy"} tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
+                    <IndHistoryChart history={history} unit={ind.unit} height={90} small tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
                 </div>
             )}
 
