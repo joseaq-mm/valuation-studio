@@ -355,6 +355,7 @@ const OilAverageCard = ({ ind, years, onYearsChange }) => {
     const dial = ind.dial || { min: 1, max: 20, default: 4 };
     const history = ind.history || [];
     const current = ind.value;
+    const [histOpen, setHistOpen] = useState(false);
 
     const avg = React.useMemo(() => oilAverage(history, years), [history, years]);
 
@@ -369,12 +370,17 @@ const OilAverageCard = ({ ind, years, onYearsChange }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Icon size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
+                {history.length > 1 && (
+                    <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-expand-${ind.key}`} aria-label="Ampliar histórico" title="Ampliar">
+                        <Maximize2 size={14} />
                     </button>
-                </HoverTip>
+                )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -383,6 +389,13 @@ const OilAverageCard = ({ ind, years, onYearsChange }) => {
                 </span>
                 <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit} · actual</span>
             </div>
+
+            {history.length > 1 && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
+                    <IndHistoryChart history={history} unit={ind.unit} height={90} small />
+                </div>
+            )}
 
             <div className="mt-3 border-t border-black/10 pt-2.5">
                 <div className="flex items-center justify-between mb-1.5">
@@ -413,6 +426,7 @@ const OilAverageCard = ({ ind, years, onYearsChange }) => {
                 <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
                 <span className="tabular-nums text-[#052049] font-semibold">Dato: {fmtDate(ind.as_of)}</span>
             </div>
+            {histOpen && <IndHistoryModal ind={ind} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
