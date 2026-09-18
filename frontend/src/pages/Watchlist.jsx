@@ -6,7 +6,7 @@ import { computeCustomRatios, autoInputsFromData } from "@/lib/customRatios";
 import { fmtPrice, fmtNum, fmtPctSigned, ratioColor, signalLabel } from "@/lib/format";
 import { useThresholds } from "@/lib/useThresholds";
 import { useAuth } from "@/lib/auth";
-import { useFx } from "@/lib/fx";
+import { useFx, useDonutFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import { notifyGet, notifyPut } from "@/lib/api";
 import AlertToggle from "@/components/AlertToggle";
@@ -77,7 +77,8 @@ export default function Watchlist() {
     const changeView = (v) => { setView(v); localStorage.setItem("vs:watchlist-view", v); };
     const { user } = useAuth();
     const [notify, setNotify] = useState(null);
-    const { display: displayCur, convert: fxConvert, rates } = useFx();
+    const { display: displayCur, convert: fxConvert } = useFx();
+    const { donutCur, toDonut } = useDonutFx();
     const { t } = useI18n();
     useThresholds(); // re-render on threshold changes
     const donutRef = useRef(null);
@@ -217,16 +218,8 @@ export default function Watchlist() {
     }, [rows, sort, qual]);
 
     // Composition donuts (by company / by sector): Nivel 2 has no invested amounts,
-    // so weight by market cap instead — normalized to a common currency the same
-    // way Nivel 1 does (display currency when set, otherwise USD via FX rates).
-    const useDisplay = displayCur && displayCur !== "NATIVE";
-    const donutCur = useDisplay ? displayCur : "USD";
-    const toDonut = (v, cur) => {
-        if (v == null || isNaN(v)) return null;
-        if (useDisplay) return fxConvert(v, cur);
-        const rf = rates[String(cur || "USD").toUpperCase()];
-        return rf ? v / rf : v;
-    };
+    // so weight by market cap instead — normalized to a common currency (see
+    // useDonutFx — never mixes currencies silently).
     const mcapMap = {};
     const sectorMap = {};
     const sectorCompaniesMap = {};
@@ -330,8 +323,8 @@ export default function Watchlist() {
                     })}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             ) : (
@@ -442,8 +435,8 @@ export default function Watchlist() {
                     </table>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="watchlist-donut-table" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="watchlist-donut-table-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             )}

@@ -8,7 +8,7 @@ import { fmtPrice, fmtNum, fmtPctSigned, fmtPctRaw, ratioColor, signalLabel } fr
 import { computeCustomRatios } from "@/lib/customRatios";
 import { useThresholds } from "@/lib/useThresholds";
 import { useAuth } from "@/lib/auth";
-import { useFx } from "@/lib/fx";
+import { useFx, useDonutFx } from "@/lib/fx";
 import { useI18n } from "@/lib/i18n";
 import AlertToggle from "@/components/AlertToggle";
 import AlertInfoBanner from "@/components/AlertInfoBanner";
@@ -67,7 +67,8 @@ const enrichRow = (companyData, position) => {
 export default function Portfolio() {
     const { t } = useI18n();
     const { user } = useAuth();
-    const { display: displayCur, convert: fxConvert, rates } = useFx();
+    const { display: displayCur, convert: fxConvert } = useFx();
+    const { donutCur, toDonut } = useDonutFx();
     const [positions, setPositions] = useState([]);
     const [rows, setRows] = useState([]);
     const [qual, setQual] = useState({});  // ticker → { score, tam, kpi_coef }
@@ -174,16 +175,8 @@ export default function Portfolio() {
     const trackedOnly = rows.length - completeCount;
 
     // Portfolio composition (donuts): current market value per holding in a common
-    // currency, grouped by ticker and by sector. Uses display currency when set,
-    // otherwise normalizes to USD. Independent of buy_price (works even for positions
-    // with no purchase data recorded).
-    const donutCur = useDisplay ? displayCur : "USD";
-    const toDonut = (v, cur) => {
-        if (v == null || isNaN(v)) return null;
-        if (useDisplay) return fxConvert(v, cur);
-        const rf = rates[String(cur || "USD").toUpperCase()];
-        return rf ? v / rf : v;
-    };
+    // currency (see useDonutFx — never mixes currencies silently), grouped by ticker
+    // and by sector. Independent of buy_price (works even for tracking-only positions).
     const holdingsMap = {};
     const sectorMap = {};
     const sectorCompaniesMap = {};  // sector -> [{ key: ticker, label: ticker, value }]
@@ -363,8 +356,8 @@ export default function Portfolio() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-sector" title="Composición por sector" />
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-mcap-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-mcap-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             ) : (
@@ -479,8 +472,8 @@ export default function Portfolio() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6" ref={donutRef}>
                     <PortfolioDonut items={holdings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table" title="Composición por empresa" columns={2} linkTickers />
                     <PortfolioDonut items={sectorHoldings} currency={donutCur} blur={hideMoney} testid="portfolio-donut-table-sector" title="Composición por sector" />
-                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-table-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact />
-                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-table-mcap-sector" title="Capitalización por sector" totalCompact />
+                    <PortfolioDonut items={mcapHoldings} currency={donutCur} testid="portfolio-donut-table-mcap" title="Capitalización por empresa" columns={2} linkTickers totalCompact showValue />
+                    <PortfolioDonut items={mcapSectorHoldings} currency={donutCur} testid="portfolio-donut-table-mcap-sector" title="Capitalización por sector" totalCompact showValue />
                 </div>
                 </>
             )}

@@ -55,3 +55,28 @@ export function FxProvider({ children }) {
 }
 
 export const useFx = () => useContext(FxContext);
+
+// For any UI that RANKS or SUMS money across tickers that may be in different
+// native currencies (e.g. a donut comparing market cap across companies) —
+// unlike `convert()` above (used for a single displayed value, where silently
+// falling back to the native amount is an acceptable degrade), a silent
+// fallback here would corrupt the comparison itself: an unconverted KRW/JPY
+// figure mixed in with USD ones reads as a wildly wrong ranking (e.g. a ~0.7
+// KRW/USD-scale mismatch made a single foreign holding look like the biggest
+// position by two orders of magnitude). So `toDonut` returns null — excluding
+// that item — whenever the rate needed isn't available, instead of ever
+// returning a value in the wrong currency.
+export function useDonutFx() {
+    const { display, rates } = useFx();
+    const donutCur = display && display !== "NATIVE" ? display : "USD";
+    const toDonut = useCallback((v, cur) => {
+        if (v == null || isNaN(v)) return null;
+        const from = String(cur || "USD").toUpperCase();
+        const to = donutCur;
+        if (from === to) return v;
+        const usd = from === "USD" ? v : (rates[from] ? v / rates[from] : null);
+        if (usd == null) return null;
+        return to === "USD" ? usd : (rates[to] ? usd * rates[to] : null);
+    }, [donutCur, rates]);
+    return { donutCur, toDonut };
+}
