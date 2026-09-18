@@ -191,7 +191,12 @@ export const PortfolioDonut = ({ items, currency = "USD", title = "Composición 
                                     {data.map((d) => <Cell key={d.key} fill={`url(#${safeId(testid)}-grad-${safeId(d.key)})`} />)}
                                 </Pie>
                                 <Tooltip
-                                    formatter={(v, _n, p) => [`${p.payload.pct.toFixed(1)}%`, p.payload.label]}
+                                    formatter={(v, _n, p) => [
+                                        showValue
+                                            ? `${totalCompact ? fmtNum(p.payload.value) : fmtPrice(p.payload.value, currency)} · ${p.payload.pct.toFixed(1)}%`
+                                            : `${p.payload.pct.toFixed(1)}%`,
+                                        p.payload.label,
+                                    ]}
                                     wrapperStyle={{ zIndex: 30 }}
                                     contentStyle={{
                                         background: "#111111", opacity: 1, border: "1px solid #111",
