@@ -53,10 +53,11 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false, showValue
     const isOpen = expanded.has(d.key);
     const subTotal = hasCompanies ? d.companies.reduce((s, c) => s + c.value, 0) : 0;
     const fmtVal = (v) => (totalCompact ? fmtNum(v) : fmtPrice(v, currency));
+    const rowTextCls = showValue ? "text-xs" : "text-sm";
     return (
         <div data-testid={`${testid}-item-${d.key}`}>
             <div
-                className={`flex items-center gap-2 text-sm font-mono ${hasCompanies ? "cursor-pointer select-none" : ""}`}
+                className={`flex items-center gap-2 ${rowTextCls} font-mono ${hasCompanies ? "cursor-pointer select-none" : ""}`}
                 onClick={hasCompanies ? () => toggle(d.key) : undefined}
             >
                 {hasCompanies ? (
@@ -70,27 +71,31 @@ const LegendRow = ({ d, expanded, toggle, testid, linkTickers = false, showValue
                 ) : (
                     <span className="font-bold flex-1 truncate">{d.label}</span>
                 )}
-                {showValue ? (
-                    <span className="text-right shrink-0 leading-tight">
-                        <div>{fmtVal(d.value)}</div>
-                        <div className="text-[10px] text-[#4A4A4A] font-normal">{d.pct.toFixed(1)}%</div>
-                    </span>
-                ) : (
-                    <span className="text-right">{d.pct.toFixed(1)}%</span>
-                )}
+                {/* Value sits on the same line as the ticker (same font-size, same
+                    baseline) so it reads as clearly tied to it; the percentage is a
+                    smaller line right underneath instead of sharing this line, so the
+                    value stays visually dominant over the percentage. */}
+                <span className="text-right shrink-0">{showValue ? fmtVal(d.value) : `${d.pct.toFixed(1)}%`}</span>
             </div>
+            {showValue && (
+                <div className="text-right text-[11px] text-[#4A4A4A] font-mono -mt-0.5" data-testid={`${testid}-item-${d.key}-pct`}>
+                    {d.pct.toFixed(1)}%
+                </div>
+            )}
             {hasCompanies && isOpen && (
                 <div className="ml-5 mt-1 mb-1.5 space-y-1" data-testid={`${testid}-item-${d.key}-breakdown`}>
                     {d.companies.slice().sort((a, b) => b.value - a.value).map((c) => (
-                        <div key={c.key} className="flex items-center gap-2 text-xs font-mono text-[#4A4A4A]">
-                            <Link to={`/company/${c.key}`} className="flex-1 truncate hover:underline">{c.label}</Link>
-                            {showValue ? (
-                                <span className="text-right shrink-0 leading-tight">
-                                    <div>{fmtVal(c.value)}</div>
-                                    <div className="text-[10px]">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</div>
+                        <div key={c.key}>
+                            <div className="flex items-center gap-2 text-xs font-mono text-[#4A4A4A]">
+                                <Link to={`/company/${c.key}`} className="flex-1 truncate hover:underline">{c.label}</Link>
+                                <span className="text-right shrink-0">
+                                    {showValue ? fmtVal(c.value) : `${subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%`}
                                 </span>
-                            ) : (
-                                <span className="text-right">{subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%</span>
+                            </div>
+                            {showValue && (
+                                <div className="text-right text-[11px] -mt-0.5">
+                                    {subTotal > 0 ? ((c.value / subTotal) * 100).toFixed(1) : "0.0"}%
+                                </div>
                             )}
                         </div>
                     ))}
