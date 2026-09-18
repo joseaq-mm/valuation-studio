@@ -230,6 +230,7 @@ const MacroCard = ({ ind }) => {
                         <div key={c.series} className="flex items-center justify-between text-[11px] tabular-nums py-0.5">
                             <span className="text-[#4A4A4A]">
                                 {c.label}
+                                {c.as_of && <span className="text-[#9A9A9A] ml-1">({fmtDate(c.as_of)})</span>}
                                 {c.frozen && <span className="text-[#B8860B] not-italic ml-1" title="Congelado: última lectura válida">⚠ congelado</span>}
                             </span>
                             <span className="text-[#052049] font-medium">{fmtVal(c.value)}</span>
@@ -438,7 +439,7 @@ const EnergyMixCard = ({ ind }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Zap size={13} className="text-[#052049]" /> {ind.label}
-                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}${ind.note ? `\n\n${ind.note}` : ""}`}>
                         <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-energy_mix" aria-label="Más información">
                             <Info size={13} />
                         </button>

@@ -389,6 +389,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "interpretation": "↑ dinero caro (restrictivo) · ↓ dinero barato (expansivo)",
         "extra": {},
         "source": "FRED · FEDFUNDS",
+        "note": "FEDFUNDS es la media mensual del tipo efectivo; la Fed la publica ~2-4 semanas después de cerrar el mes, así que el dato mostrado va siempre con ese desfase respecto a hoy (es normal, no un fallo).",
     })
 
     # 3) Inflation (CPI YoY) — 12 monthly periods back
@@ -422,6 +423,7 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "interpretation": "↑ economía más eficiente (positivo)",
         "extra": {"yoy_pct": prod_yoy},
         "source": "FRED · OPHNFB",
+        "note": "El BLS publica la productividad trimestral con ~5-6 semanas de retraso tras cerrar el trimestre (y la revisa más adelante), así que el dato más reciente disponible corresponde casi siempre al trimestre anterior al actual, no al que está en curso.",
     })
 
     # M2 se consulta para el M3 proxy pero ya no se muestra como ficha propia.
@@ -490,7 +492,11 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "interpretation": "↑ más liquidez amplia (suele inflar activos) · ↓ contracción",
         "extra": {"yoy_pct": m3p_yoy},
         "source": "FRED (M2SL + LTDACBW027SBOG + COMPOUT) + ICI (institucionales)",
-        "note": "Proxy: no incluye repos ni eurodólares (no disponibles limpios); es una aproximación del M3, no la cifra oficial. El crecimiento interanual se calcula sobre M2 + depósitos a plazo + papel comercial.",
+        "note": ("Proxy: no incluye repos ni eurodólares (no disponibles limpios); es una aproximación del M3, no la cifra oficial. "
+                 "El crecimiento interanual se calcula sobre M2 + depósitos a plazo + papel comercial. "
+                 "La fecha del dato es la MÁS ANTIGUA de sus componentes: normalmente M2 (FRED la publica ~3-7 semanas tras cerrar "
+                 "el mes), mientras que depósitos a plazo, papel comercial y fondos institucionales son semanales y suelen ir más "
+                 "al día — su fecha real se ve en el desglose de cada uno."),
     })
 
     # 6) Oil (WTI) — current price is shown inside the "oil_avg" card (below), so no
@@ -530,6 +536,9 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             "components": energy["components"],
             "total_twh": energy["total_twh"],
             "source": "Our World in Data · Energy Institute",
+            "note": ("Estadística MUNDIAL anual: compilar el consumo de energía de todos los países tarda, así que el último "
+                     "año 'World' publicado suele ir 1-2 años por detrás de hoy. Es un desfase estructural de la fuente — "
+                     "no existe una alternativa pública gratuita con el mismo alcance global y más frecuencia."),
         })
 
     # 9) High yield credit spread (informational; not part of the market coefficient).
