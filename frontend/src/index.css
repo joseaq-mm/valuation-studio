@@ -19,6 +19,11 @@
     --cheap: #1D7044;
     --neutral: #D97706;
     --expensive: #B32A22;
+    /* Chart-data blue: for any line/point/tooltip-text color that must read on a
+       fixed-black custom tooltip (bg-[#111111], used throughout Macro/Company charts)
+       regardless of app theme. --brand (#052049 in light mode) is too dark for that —
+       use this instead, never --brand, for a chart's own blue/neutral data series. */
+    --chart-blue: #3B9EFF;
 }
 
 html[data-theme="dark"] {
@@ -36,6 +41,7 @@ html[data-theme="dark"] {
     --cheap: #2FA86B;
     --neutral: #E69238;
     --expensive: #E8675E;
+    --chart-blue: #3B9EFF;
 }
 
 /* Dark theme overrides for hardcoded Tailwind arbitrary-value classes used across pages. */

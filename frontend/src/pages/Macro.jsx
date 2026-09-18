@@ -111,20 +111,102 @@ const extraLine = (ind) => {
     }
 };
 
+// Generic per-indicator 10y evolution chart — the mini-chart on a card + Maximize2
+// expand + modal with share/download, same convention as HighYieldSpreadCard/
+// DebtCard/OilAverageCard. Used by any card whose indicator carries its own
+// `history` but doesn't already have a dedicated chart component.
+// `showDots` marks each stored point as a real reading (per CLAUDE.md: connect them
+// with a line, which is itself the estimate) — off only for m3_proxy, whose entire
+// history is a modeled extrapolation with no ground-truth points at all.
+const IndHistoryTip = ({ active, payload, unit }) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload;
+    return (
+        <div className="bg-[#111111] text-white text-[11px] p-2 border border-black" data-testid="ind-history-tooltip">
+            <div className="font-semibold">{dLabel(p.date, { full: true })}</div>
+            <div className="tabular-nums">{nf.format(p.value)} {unit}</div>
+        </div>
+    );
+};
+
+const IndHistoryChart = ({ history, unit, height, small, showDots = true, tickFormatter = qLabel }) => {
+    if (!history?.length) return null;
+    return (
+        <ResponsiveContainer width="100%" height={height}>
+            <LineChart data={history} margin={{ top: 4, right: small ? 4 : 40, left: small ? -22 : 0, bottom: 0 }}>
+                <CartesianGrid stroke="#00000010" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={tickFormatter} tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} interval={Math.max(0, Math.ceil(history.length / (small ? 4 : 10)) - 1)} axisLine={{ stroke: "#00000022" }} tickLine={false} minTickGap={small ? 12 : 20} />
+                <YAxis tick={{ fontSize: small ? 8 : 11, fill: "#7A7A7A" }} width={small ? 30 : 46} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => nf.format(v)} />
+                <RTooltip content={<IndHistoryTip unit={unit} />} />
+                <Line type="monotone" dataKey="value" stroke="var(--chart-blue)" strokeWidth={2} dot={showDots ? { r: small ? 1.5 : 2.5, fill: "var(--chart-blue)" } : false} activeDot={{ r: small ? 3 : 4 }} isAnimationActive={false} connectNulls />
+            </LineChart>
+        </ResponsiveContainer>
+    );
+};
+
+const yearLabel = (iso) => (iso || "").slice(0, 4);
+
+const IndHistoryModal = ({ ind, onClose }) => {
+    const ref = React.useRef(null);
+    const [busy, setBusy] = useState(false);
+    const history = ind.history || [];
+    const showDots = ind.key !== "m3_proxy";
+    const Icon = ICONS[ind.key] || Globe2;
+    const dl = async () => {
+        setBusy(true);
+        try { await downloadSvgJpg(ref.current, `${ind.key}-evolucion`); }
+        catch { toast.error("No se pudo exportar el gráfico"); }
+        finally { setBusy(false); }
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose} data-testid={`ind-history-modal-${ind.key}`}>
+            <div className="bg-white border-2 border-[#052049] w-full max-w-4xl p-5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                    <h2 className="font-serif text-lg sm:text-2xl text-[#052049] flex items-center gap-2 min-w-0">
+                        <Icon size={22} className="shrink-0" /> <span className="truncate">{ind.label} · Evolución</span>
+                    </h2>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <ShareMenu size="md" title={`${ind.label} · Valuation Studio`} testidPrefix={`ind-history-share-${ind.key}`}
+                            createShare={async () => shareUpload(await getSvgJpgBlob(ref.current), "jpg", ind.label)} />
+                        <button onClick={dl} disabled={busy} className="text-[#7A7A7A] hover:text-[#052049] inline-flex items-center gap-1 text-xs uppercase tracking-wide disabled:opacity-50" data-testid={`ind-history-download-jpg-${ind.key}`} title="Descargar en JPG">
+                            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} JPG
+                        </button>
+                        <button onClick={onClose} className="text-[#7A7A7A] hover:text-[#052049]" data-testid={`ind-history-modal-close-${ind.key}`} aria-label="Cerrar"><X size={20} /></button>
+                    </div>
+                </div>
+                <div ref={ref}>
+                    <IndHistoryChart history={history} unit={ind.unit} height={420} showDots={showDots} tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
+                </div>
+                <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
+                    {ind.description} Fuente: {ind.source} · {ind.frequency}.
+                    {ind.key === "m3_proxy" && " El histórico es una reconstrucción estimada (no hay dato real de fondos institucionales anterior a hoy), por eso la línea no marca puntos individuales."}
+                </p>
+            </div>
+        </div>
+    );
+};
+
 const MacroCard = ({ ind }) => {
     const Icon = ICONS[ind.key] || Globe2;
     const extra = extraLine(ind);
+    const history = ind.history || [];
+    const [histOpen, setHistOpen] = useState(false);
     return (
         <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid={`macro-card-${ind.key}`}>
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Icon size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}${ind.note ? `\n\n${ind.note}` : ""}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}${ind.note ? `\n\n${ind.note}` : ""}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
+                {history.length > 1 && (
+                    <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-expand-${ind.key}`} aria-label="Ampliar histórico" title="Ampliar">
+                        <Maximize2 size={14} />
                     </button>
-                </HoverTip>
+                )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -136,6 +218,13 @@ const MacroCard = ({ ind }) => {
 
             <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
             {extra && <div className="text-[11px] text-[#9A9A9A] mt-1 tabular-nums">{extra}</div>}
+
+            {history.length > 1 && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
+                    <IndHistoryChart history={history} unit={ind.unit} height={90} small showDots={ind.key !== "m3_proxy"} tickFormatter={ind.key === "energy_mix" ? yearLabel : qLabel} />
+                </div>
+            )}
 
             {ind.components && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-breakdown-${ind.key}`}>
@@ -173,6 +262,7 @@ const MacroCard = ({ ind }) => {
                     <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
                 )}
             </div>
+            {histOpen && <IndHistoryModal ind={ind} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
@@ -185,6 +275,8 @@ const LiveIndicatorCard = ({ ind, selectedIndex, onIndexChange }) => {
     const liveVal = isEquities ? (byIndex[selectedIndex]?.value ?? null) : (live?.value ?? null);
     const est = isEquities ? byIndex[selectedIndex] : live;
     const hasLive = liveVal != null;
+    const history = ind.history || [];
+    const [histOpen, setHistOpen] = useState(false);
 
     const tip = isEquities
         ? `${ind.description}\n\nEstimación EN VIVO: se toma el último valor oficial (${fmtDate(ind.as_of)}) y se ajusta por la variación del índice ${est?.label || selectedIndex} desde esa fecha (${est ? signedPct(est.growth_pct) : "—"}). Índice: ${est ? `${nf.format(est.index_ref)} → ${nf.format(est.index_now)}` : "—"}.\n\nFuente: ${ind.source} · ${ind.frequency}`
@@ -195,12 +287,17 @@ const LiveIndicatorCard = ({ ind, selectedIndex, onIndexChange }) => {
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Icon size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={tip}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={tip}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-info-${ind.key}`} aria-label="Más información">
-                        <Info size={14} />
+                {history.length > 1 && (
+                    <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid={`macro-expand-${ind.key}`} aria-label="Ampliar histórico" title="Ampliar">
+                        <Maximize2 size={14} />
                     </button>
-                </HoverTip>
+                )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -235,12 +332,20 @@ const LiveIndicatorCard = ({ ind, selectedIndex, onIndexChange }) => {
 
             <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
 
+            {history.length > 1 && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
+                    <IndHistoryChart history={history} unit={ind.unit} height={90} small />
+                </div>
+            )}
+
             <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px]">
                 <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
                 <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>
                     {hasLive ? "Estimado: hoy" : `Dato: ${fmtDate(ind.as_of)}`}
                 </span>
             </div>
+            {histOpen && <IndHistoryModal ind={ind} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
@@ -315,17 +420,24 @@ const OilAverageCard = ({ ind, years, onYearsChange }) => {
 const EnergyMixCard = ({ ind }) => {
     const comps = ind.components || [];
     const maxPct = comps.length ? Math.max(...comps.map((c) => c.pct)) : 100;
+    const history = ind.history || [];
+    const [histOpen, setHistOpen] = useState(false);
     return (
         <div className="border border-black/20 bg-white p-3 flex flex-col" data-testid="macro-card-energy_mix">
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="overline text-[#4A4A4A] flex items-center gap-1.5">
                     <Zap size={13} className="text-[#052049]" /> {ind.label}
+                    <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
+                        <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-energy_mix" aria-label="Más información">
+                            <Info size={13} />
+                        </button>
+                    </HoverTip>
                 </div>
-                <HoverTip text={`${ind.description}\n\n${ind.interpretation}\n\nFuente: ${ind.source} · ${ind.frequency}`}>
-                    <button className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-info-energy_mix" aria-label="Más información">
-                        <Info size={14} />
+                {history.length > 1 && (
+                    <button onClick={() => setHistOpen(true)} className="text-[#9A9A9A] hover:text-[#052049] shrink-0" data-testid="macro-expand-energy_mix" aria-label="Ampliar histórico" title="Ampliar">
+                        <Maximize2 size={14} />
                     </button>
-                </HoverTip>
+                )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -333,6 +445,13 @@ const EnergyMixCard = ({ ind }) => {
                 <span className="text-xs text-[#4A4A4A] font-medium">% petróleo + gas</span>
             </div>
             <div className="text-[11px] text-[#7A7A7A] mt-1.5">Cuota de petróleo + gas natural sobre el total de energía primaria</div>
+
+            {history.length > 1 && (
+                <div className="mt-3 border-t border-black/10 pt-2" data-testid="macro-history-energy_mix">
+                    <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Evolución</div>
+                    <IndHistoryChart history={history} unit={ind.unit} height={90} small tickFormatter={yearLabel} />
+                </div>
+            )}
 
             <div className="mt-3 border-t border-black/10 pt-2 space-y-1" data-testid="macro-breakdown-energy_mix">
                 <div className="text-[10px] uppercase tracking-wide text-[#9A9A9A] mb-1">Desglose por fuente</div>
@@ -351,6 +470,7 @@ const EnergyMixCard = ({ ind }) => {
                 <span className="uppercase tracking-wide text-[#7A7A7A] font-medium">{ind.frequency}</span>
                 <span className="tabular-nums text-[#052049] font-semibold">Datos: {ind.as_of}</span>
             </div>
+            {histOpen && <IndHistoryModal ind={ind} onClose={() => setHistOpen(false)} />}
         </div>
     );
 };
@@ -464,7 +584,7 @@ const HighYieldSpreadCard = ({ ind }) => {
 const DEBT_SERIES = [
     { key: "debt", label: "Deuda pública", color: "#B32A22", axis: "left" },
     { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
-    { key: "ratio", label: "Deuda/PIB", color: "var(--brand)", axis: "right" },
+    { key: "ratio", label: "Deuda/PIB", color: "var(--chart-blue)", axis: "right" },
 ];
 
 const DebtTip = ({ active, payload, label }) => {
@@ -488,7 +608,7 @@ const DebtChart = ({ data, height, small }) => (
             <CartesianGrid stroke="#00000010" vertical={false} />
             <XAxis dataKey="date" tickFormatter={qLabel} tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} interval={small ? 6 : 3} axisLine={{ stroke: "#00000022" }} tickLine={false} />
             <YAxis yAxisId="left" tick={{ fontSize: small ? 9 : 11, fill: "#7A7A7A" }} width={small ? 32 : 48} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "var(--brand)" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: small ? 9 : 11, fill: "var(--chart-blue)" }} width={small ? 30 : 44} axisLine={false} tickLine={false} domain={["auto", "auto"]} tickFormatter={(v) => `${nf.format(v)}%`} />
             <RTooltip content={<DebtTip />} />
             {!small && <Legend wrapperStyle={{ fontSize: 12 }} />}
             {DEBT_SERIES.map((s) => (
@@ -799,7 +919,7 @@ const qLabel = (iso) => {
 };
 
 const TREND_SERIES = [
-    { key: "equities", label: "Renta variable", color: "var(--brand)", axis: "left" },
+    { key: "equities", label: "Renta variable", color: "var(--chart-blue)", axis: "left" },
     { key: "gdp", label: "PIB", color: "#1F7A3D", axis: "left" },
     { key: "diff", label: "RV − PIB", color: "#B8860B", axis: "left" },
     { key: "productivity", label: "Productividad", color: "#B32A22", axis: "right" },

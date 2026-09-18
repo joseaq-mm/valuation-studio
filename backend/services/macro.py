@@ -263,21 +263,25 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     """Fetch + derive all indicators concurrently. Raises on network/HTTP error."""
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
+        # Fed/CPI/M2/LTD/CP limits are sized for the per-card 10y history charts (not
+        # just the latest reading): monthly series need ~132 (11y, some margin), weekly
+        # ~530 (~10y), CPI needs +12 months beyond 10y so the oldest point can still get
+        # a YoY anchor. hy_spread bumped to match the one-off backfill's own fetch size.
         equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread, debt = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 44),
             _observations(client, "GDP", 44),
-            _observations(client, "FEDFUNDS", 16),
-            _observations(client, "CPIAUCSL", 16),
+            _observations(client, "FEDFUNDS", 132),
+            _observations(client, "CPIAUCSL", 145),
             _observations(client, "OPHNFB", 44),
-            _observations(client, "M2SL", 16),
-            _observations(client, "LTDACBW027SBOG", 56),
-            _observations(client, "COMPOUT", 56),
+            _observations(client, "M2SL", 132),
+            _observations(client, "LTDACBW027SBOG", 530),
+            _observations(client, "COMPOUT", 530),
             _observations(client, "DCOILWTICO", 40),
             _observations(client, "MCOILWTICO", 252),
             _observations(client, "SP500", 400),
             _observations(client, "NASDAQ100", 400),
             _observations(client, "DJIA", 400),
-            _observations(client, "BAMLH0A0HYM2", 1300),
+            _observations(client, "BAMLH0A0HYM2", 2800),
             _observations(client, "GFDEBTN", 44),
         )
 
@@ -564,11 +568,113 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "source": "FRED · GFDEBTN / GDP",
     })
 
+    # Per-card 10y evolution charts for the indicators that don't already have their
+    # own `history` (oil_avg/high_yield_spread/debt_to_gdp already do, set above) —
+    # exactly the value that feeds the market-coefficient formula for each, at that
+    # indicator's own native cadence, independently capped to whatever span its own
+    # source actually supports (never more than 10y, sometimes less).
+    weight_now = (inst_now / proxy_now) if (inst_now is not None and proxy_now) else None
+    try:
+        energy_hist_by_year = await fetch_owid_energy_history()
+    except Exception as e:
+        logger.warning(f"energy_mix history fetch failed: {e}")
+        energy_hist_by_year = {}
+
+    history_by_key = {
+        "equities": _obs_to_history(equities, scale=0.001),
+        "gdp": _obs_to_history(gdp),
+        "productivity": _obs_to_history(prod),
+        "fed_rate": _obs_to_history(fed, round_to=2),
+        "inflation": _inflation_history(cpi),
+        "m3_proxy": _m3_proxy_history(m2, ltd, cp, weight_now),
+        "energy_mix": [{"date": f"{y}-12-31", "value": v} for y, v in sorted(energy_hist_by_year.items())],
+    }
+    # Extend equities/gdp to today with the LIVE estimate — the value that actually
+    # feeds the formula right now, not just the last official quarterly print.
+    if equities_live and history_by_key["equities"]:
+        live_v = equities_live["by_index"].get("SP500", {}).get("value")
+        if live_v is not None:
+            history_by_key["equities"].append({"date": datetime.now(timezone.utc).date().isoformat(), "value": live_v})
+    if gdp_live and history_by_key["gdp"]:
+        history_by_key["gdp"].append({"date": gdp_live["as_of"], "value": gdp_live["value"]})
+
+    for ind in indicators:
+        if ind["key"] in history_by_key and "history" not in ind:
+            ind["history"] = history_by_key[ind["key"]]
+        if ind.get("history"):
+            # Also re-caps oil_avg/high_yield_spread/debt_to_gdp's own pre-existing
+            # `history` (built with a longer fetch limit than 10y needs) — "10 años
+            # es como máximo" applies uniformly, not just to the newly-added ones.
+            ind["history"] = _cap_years_asc(ind["history"])
+
     return {
         "indicators": indicators,
         "trend": _build_trend(equities, gdp, prod),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _cap_years_asc(points: list, years: int = 10) -> list:
+    """Points (ascending, {"date": iso, ...}) trimmed to the last `years` years from
+    today. Capped per-indicator independently — one indicator's shorter native history
+    (e.g. a source that only goes back 5y) never truncates another's."""
+    if not points:
+        return points
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=365 * years)).date().isoformat()
+    return [p for p in points if p["date"] >= cutoff]
+
+
+def _obs_to_history(obs: list, scale: float = 1.0, round_to: int = 1) -> list:
+    """FRED `_observations()` output (descending) → ascending {"date","value"} list —
+    the same real reading used elsewhere for that indicator's live value, just kept
+    at every date instead of only the latest one."""
+    return [{"date": o["date"], "value": round(o["value"] * scale, round_to)} for o in reversed(obs)]
+
+
+def _inflation_history(cpi_obs: list) -> list:
+    """YoY CPI at every month that has a 12-month-prior anchor available (`cpi_obs`
+    is descending, FRED default)."""
+    out = []
+    for i, o in enumerate(cpi_obs):
+        if i + 12 >= len(cpi_obs):
+            break
+        prior = cpi_obs[i + 12]["value"]
+        if prior:
+            out.append({"date": o["date"], "value": round((o["value"] - prior) / prior * 100, 2)})
+    return list(reversed(out))
+
+
+def _m3_proxy_history(m2_obs: list, ltd_obs: list, cp_obs: list, weight_now: float | None) -> list:
+    """Monthly M3 proxy reconstruction — same method as `_backfill_coef_history_10y`'s
+    m72: M2 (native monthly cadence) + as-of LTD/CP + an assumed institutional-MMF
+    weight extrapolated backward from `weight_now` at INST_WEIGHT_ANNUAL_GROWTH/year
+    (see that constant's comment). No point here is a real historical reading of the
+    institutional component — the whole series is a modeled estimate, which is exactly
+    why the frontend never marks individual "real" points on this one."""
+    if not m2_obs:
+        return []
+    ltd_asc = list(reversed(ltd_obs))
+    cp_asc = list(reversed(cp_obs))
+    today = datetime.now(timezone.utc).date()
+    out = []
+    for o in reversed(m2_obs):
+        d = o["date"]
+        ltd_h = _asof(ltd_asc, d, ascending=True)
+        cp_h = _asof(cp_asc, d, ascending=True)
+        if ltd_h is None or cp_h is None:
+            continue
+        core_h = o["value"] + ltd_h + cp_h
+        if weight_now is not None:
+            try:
+                years_back = max(0.0, (today - datetime.strptime(d, "%Y-%m-%d").date()).days / 365.25)
+            except ValueError:
+                years_back = 0.0
+            weight_h = weight_now * (1 - INST_WEIGHT_ANNUAL_GROWTH) ** years_back
+            value = core_h + (weight_h * core_h / (1 - weight_h) if weight_h < 1 else 0.0)
+        else:
+            value = core_h
+        out.append({"date": d, "value": round(value, 1)})
+    return out
 
 
 def _build_trend(equities: list, gdp: list, prod: list) -> dict:

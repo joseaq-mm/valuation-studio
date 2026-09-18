@@ -144,3 +144,11 @@ Yahoo Finance NO convierte los estados financieros a la divisa de cotización: p
 `backend/services/valuation.py::fetch_fundamentals_sync` ya resuelve esto automáticamente: detecta `currency` vs `financialCurrency`, y si difieren, convierte con `fx.convert_sync` (en `backend/fx.py`) TODO lo que venga de estados financieros (`fin`/`cf`/`balance_sheet`, `total_debt`, `cash`, `fcf_ttm`, `ebitda_ttm`, `revenue_plus1y`, `eps_plus1y`, `total_revenue_ttm`) a la divisa del precio, antes de combinarlo con `market_cap`/`current_price` (que ya están en la divisa correcta y NO se tocan). Los márgenes/CAGRs/intensidades siguen siendo ratios internos al mismo estado financiero y no les afecta la conversión.
 
 **Al tocar `fetch_fundamentals_sync` o añadir un nuevo campo monetario ahí**: si el valor nuevo viene de `info`, `t.financials`, `t.cashflow` o `t.balance_sheet` (no de `currentPrice`/`marketCap`/`sharesOutstanding`, que ya están en la divisa de cotización), aplícale `fx_mult` igual que a los demás antes de que se combine con precio/capitalización — si no, se reintroduce el mismo bug para el próximo ticker con esta desconexión.
+
+## Color de datos en gráficos: nunca `--brand`/`#052049` (frontend)
+
+`--brand` (`#052049` en modo claro) es el azul marino de marca para texto/iconos/bordes de UI sobre el fondo claro de la app — se adapta bien al modo oscuro (pasa a `#3B9EFF`) para esos usos porque hay una regla CSS que sobreescribe las clases Tailwind (`text-[#052049]`, `border-[#052049]`, etc.) en `html[data-theme="dark"]`.
+
+Esa regla **no cubre** un color pasado directamente a un gráfico (`stroke`, `fill`, `style={{ color: ... }}` dentro de un tooltip custom) — ahí `var(--brand)`/`#052049` se queda oscuro en modo claro, que además es ilegible sobre los tooltips de fondo negro (`bg-[#111111]`) usados en todo el proyecto (`DebtTip`, `TrendTip`, `CoefHistTip`, `HYSpreadTip`, tooltips de `PortfolioDonut`, etc.) — un tooltip de fondo negro no cambia con el tema de la app, así que ese contraste falla siempre, no solo en modo oscuro.
+
+**Usa `var(--chart-blue)`** (definida en `index.css`, mismo valor `#3B9EFF` en ambos temas) para cualquier línea/punto/texto de dato "azul o neutro" en un gráfico — se lee bien en tooltips de fondo negro y en ambos modos de la app. `--brand` sigue siendo correcto para todo lo que NO sea un color de dato de gráfico.

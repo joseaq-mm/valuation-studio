@@ -1863,7 +1863,7 @@ function RatioHistoryTooltip({ active, payload, label, currency }) {
             <div className="text-[#4A4A4A] mb-1">{label}</div>
             <div>POC: <span style={{ color: "#B32A22" }}>{fmtPrice(row.poc, currency)}</span></div>
             <div>POV: <span style={{ color: "#1D7044" }}>{fmtPrice(row.pov, currency)}</span></div>
-            <div className="mt-1">Precio cierre: <span style={{ color: "#052049" }}>{fmtPrice(row.price, currency)}</span></div>
+            <div className="mt-1">Precio cierre: <span style={{ color: "var(--chart-blue)" }}>{fmtPrice(row.price, currency)}</span></div>
             {row.kind === "approx" && (
                 <div className="mt-1 text-[10px] text-[#4A4A4A]">TTM aproximado (interpolado de datos anuales)</div>
             )}
@@ -1945,7 +1945,7 @@ function RatioHistoryChart({ series, qSeries, qLoading, onRequestQuarterly, curr
                     <Legend height={big ? 22 : 18} wrapperStyle={{ fontSize: big ? 12 : 10, fontFamily: "IBM Plex Mono", paddingTop: 0 }} />
                     <Line type="monotone" dataKey="poc" name="POC (objetivo compra)" stroke="#B32A22" strokeWidth={2} dot={isTTM ? mkDot("#B32A22") : { r: dotBig, fill: "#B32A22", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
                     <Line type="monotone" dataKey="pov" name="POV (objetivo venta)" stroke="#1D7044" strokeWidth={2} strokeDasharray="4 3" dot={isTTM ? mkDot("#1D7044") : { r: dotBig, fill: "#1D7044", stroke: "white", strokeWidth: 1 }} connectNulls isAnimationActive={false} />
-                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="#052049" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : dotBig - 1, fill: "#052049" }} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="price" name="Precio cierre" stroke="var(--chart-blue)" strokeWidth={2.5} dot={{ r: isTTM ? 2.5 : dotBig - 1, fill: "var(--chart-blue)" }} isAnimationActive={false} />
                 </ComposedChart>
             </ResponsiveContainer>
         );
