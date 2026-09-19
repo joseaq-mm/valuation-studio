@@ -8,7 +8,8 @@ Series chosen (all free, official, public domain):
   - Buffett indicator (proxy): NCBEILQ027S (Nonfinancial corporate equities, $M)
     / GDP ($B) × 100. Wilshire 5000 is no longer on FRED (licence withdrawn 2023),
     so this corporate-equities-to-GDP ratio is the standard FRED proxy.
-  - Fed funds effective rate: FEDFUNDS (%)
+  - Fed funds effective rate (daily): DFF (%). Switched from the monthly-average
+    FEDFUNDS so the reading is at most ~1 business day old instead of ~2-4 weeks.
   - Inflation (CPI YoY): CPIAUCSL → year-over-year % change
   - Labor productivity: OPHNFB (index 2017=100) + YoY %
   - M2 money supply: M2SL ($B) → YoY %
@@ -21,7 +22,7 @@ import logging
 import math
 import os
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -191,6 +192,67 @@ def _yoy(obs: list, periods: int) -> tuple:
     return latest["value"], latest["date"], yoy
 
 
+def _quarter_start(d: date) -> date:
+    m = ((d.month - 1) // 3) * 3 + 1
+    return d.replace(month=m, day=1)
+
+
+def _shift_quarters(d: date, n: int) -> date:
+    total = d.year * 12 + (d.month - 1) + n * 3
+    y, m = divmod(total, 12)
+    return date(y, m + 1, 1)
+
+
+def _extrapolate_productivity(prod: list) -> dict:
+    """OPHNFB (labor productivity) is quarterly, and the BLS typically publishes it
+    ~5-6 weeks after quarter close. Per product decision, productivity should never
+    lag the present by more than one quarter: if FRED's latest point is already older
+    than the most recently COMPLETED quarter (the publication is late, or simply
+    hasn't been picked up on this refresh), project forward one quarter at a time
+    using the trailing average QoQ growth until it catches up to that quarter — this
+    projected value (not the older real one) is what feeds the market coefficient.
+    `prod` is descending (FRED's `_observations()` order). Returns the current
+    value/date/yoy to use plus the list of any synthetic quarters added (ascending,
+    for extending the history line — never marked with a dot, just a continuation)."""
+    if not prod:
+        return {"value": None, "date": None, "yoy_pct": None, "estimated": False, "points": []}
+    today = datetime.now(timezone.utc).date()
+    last_completed_q = _shift_quarters(_quarter_start(today), -1)
+    try:
+        qstart = datetime.strptime(prod[0]["date"], "%Y-%m-%d").date()
+    except ValueError:
+        qstart = None
+
+    value = prod[0]["value"]
+    est_points = []
+    if qstart is not None and qstart < last_completed_q:
+        steps = []
+        for i in range(min(4, len(prod) - 1)):
+            cur, nxt = prod[i]["value"], prod[i + 1]["value"]
+            if nxt:
+                steps.append((cur - nxt) / nxt)
+        qoq = sum(steps) / len(steps) if steps else 0.0
+        while qstart < last_completed_q:
+            qstart = _shift_quarters(qstart, 1)
+            value = value * (1 + qoq)
+            est_points.append({"date": qstart.isoformat(), "value": round(value, 1)})
+
+    by_date = {o["date"]: o["value"] for o in prod}
+    yoy = None
+    if qstart is not None:
+        base_val = by_date.get(_shift_quarters(qstart, -4).isoformat())
+        if base_val:
+            yoy = round((value - base_val) / base_val * 100, 2)
+
+    return {
+        "value": round(value, 1),
+        "date": qstart.isoformat() if qstart else prod[0]["date"],
+        "yoy_pct": yoy,
+        "estimated": bool(est_points),
+        "points": est_points,
+    }
+
+
 ICI_INST_TNA_COL = 14  # 0-based col: INSTITUTIONAL block → TOTAL → TNA (millions of $)
 
 
@@ -264,13 +326,14 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
     async with httpx.AsyncClient(timeout=20) as client:
         import asyncio
         # Fed/CPI/M2/LTD/CP limits are sized for the per-card 10y history charts (not
-        # just the latest reading): monthly series need ~132 (11y, some margin), weekly
-        # ~530 (~10y), CPI needs +12 months beyond 10y so the oldest point can still get
-        # a YoY anchor. hy_spread bumped to match the one-off backfill's own fetch size.
+        # just the latest reading): DFF is daily (~3700 for 10y + margin, like hy_spread),
+        # other monthly series need ~132 (11y, some margin), weekly ~530 (~10y), CPI needs
+        # +12 months beyond 10y so the oldest point can still get a YoY anchor. hy_spread
+        # bumped to match the one-off backfill's own fetch size.
         equities, gdp, fed, cpi, prod, m2, ltd, cp, oil, oil_m, sp500, ndx, djia, hy_spread, debt = await asyncio.gather(
             _observations(client, "NCBEILQ027S", 44),
             _observations(client, "GDP", 44),
-            _observations(client, "FEDFUNDS", 132),
+            _observations(client, "DFF", 3700),
             _observations(client, "CPIAUCSL", 145),
             _observations(client, "OPHNFB", 44),
             _observations(client, "M2SL", 132),
@@ -382,14 +445,14 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "value": fed[0]["value"] if fed else None,
         "unit": "% anual",
         "as_of": fed[0]["date"] if fed else None,
-        "frequency": "Mensual",
-        "description": ("Tipo de interés efectivo de los fondos federales que fija la Reserva Federal de EEUU. "
+        "frequency": "Diaria",
+        "description": ("Tipo de interés efectivo diario de los fondos federales que fija la Reserva Federal de EEUU. "
                         "Es el 'precio del dinero': cuando sube, encarece el crédito y suele enfriar la economía y la bolsa; "
                         "cuando baja, estimula."),
         "interpretation": "↑ dinero caro (restrictivo) · ↓ dinero barato (expansivo)",
         "extra": {},
-        "source": "FRED · FEDFUNDS",
-        "note": "FEDFUNDS es la media mensual del tipo efectivo; la Fed la publica ~2-4 semanas después de cerrar el mes, así que el dato mostrado va siempre con ese desfase respecto a hoy (es normal, no un fallo).",
+        "source": "FRED · DFF",
+        "note": "DFF es el tipo efectivo diario (no la media mensual); la Fed lo publica con ~1 día hábil de retraso, así que el dato mostrado va prácticamente al día.",
     })
 
     # 3) Inflation (CPI YoY) — 12 monthly periods back
@@ -408,22 +471,28 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
         "source": "FRED · CPIAUCSL",
     })
 
-    # 4) Labor productivity (index level, YoY as context) — quarterly, 4 periods back
-    prod_val, prod_date, prod_yoy = _yoy(prod, 4)
+    # 4) Labor productivity (index level, YoY as context) — quarterly. Kept to at most
+    # one quarter of lag: extrapolated forward if the official print is still missing
+    # for the most recently completed quarter (see _extrapolate_productivity).
+    prod_est = _extrapolate_productivity(prod)
     indicators.append({
         "key": "productivity",
         "label": "Productividad (output por hora)",
-        "value": round(prod_val, 1) if prod_val is not None else None,
+        "value": prod_est["value"],
         "unit": "índice (2017=100)",
-        "as_of": prod_date,
+        "as_of": prod_est["date"],
         "frequency": "Trimestral",
+        "estimated": prod_est["estimated"],
         "description": ("Productividad laboral del sector empresarial no agrícola de EEUU (producción por hora "
                         "trabajada), como índice (base 2017=100). Más productividad permite crecer sin inflación y "
                         "sostiene los márgenes empresariales; es un viento de cola estructural para la bolsa."),
         "interpretation": "↑ economía más eficiente (positivo)",
-        "extra": {"yoy_pct": prod_yoy},
+        "extra": {"yoy_pct": prod_est["yoy_pct"]},
         "source": "FRED · OPHNFB",
-        "note": "El BLS publica la productividad trimestral con ~5-6 semanas de retraso tras cerrar el trimestre (y la revisa más adelante), así que el dato más reciente disponible corresponde casi siempre al trimestre anterior al actual, no al que está en curso.",
+        "note": ("El BLS publica la productividad trimestral con ~5-6 semanas de retraso tras cerrar el trimestre "
+                 "(y la revisa más adelante). Para no acumular más de un trimestre de retraso, si el dato oficial del "
+                 "último trimestre cerrado aún no está publicado, se extrapola con el crecimiento intertrimestral "
+                 "medio reciente — ese valor extrapolado (marcado como estimado) es el que se usa en el coeficiente."),
     })
 
     # M2 se consulta para el M3 proxy pero ya no se muestra como ficha propia.
@@ -606,6 +675,8 @@ async def fetch_macro_indicators(ici_inst: dict = None, energy: dict = None) -> 
             history_by_key["equities"].append({"date": datetime.now(timezone.utc).date().isoformat(), "value": live_v})
     if gdp_live and history_by_key["gdp"]:
         history_by_key["gdp"].append({"date": gdp_live["as_of"], "value": gdp_live["value"]})
+    if prod_est["points"] and history_by_key["productivity"]:
+        history_by_key["productivity"].extend(prod_est["points"])
 
     for ind in indicators:
         if ind["key"] in history_by_key and "history" not in ind:
@@ -879,14 +950,15 @@ INST_WEIGHT_ANNUAL_GROWTH = 0.05
 # Bump this whenever `_backfill_coef_history_10y`'s formula/inputs change, so a stale
 # backfill (written by a since-fixed/changed version) gets recomputed automatically
 # instead of silently sticking around just because it "looks" like a full 10y backfill.
-COEF_BACKFILL_VERSION = 2
+# v3: fed-rate term switched from monthly FEDFUNDS to daily DFF.
+COEF_BACKFILL_VERSION = 3
 
 
 async def _fetch_coef_backfill_series(client: httpx.AsyncClient) -> dict:
     """Extra FRED history (only needed for the one-off 10y coefficient backfill —
     not part of the regular 6h live refresh)."""
     fed, cpi, m2, ltd, cp, hy = await asyncio.gather(
-        _observations(client, "FEDFUNDS", 150),
+        _observations(client, "DFF", 4400),
         _observations(client, "CPIAUCSL", 165),
         _observations(client, "M2SL", 150),
         _observations(client, "LTDACBW027SBOG", 600),

@@ -177,6 +177,7 @@ const IndHistoryModal = ({ ind, onClose }) => {
                 <p className="text-[11px] text-[#7A7A7A] mt-3 leading-relaxed">
                     {ind.description} Fuente: {ind.source} · {ind.frequency}.
                     {ind.key === "m3_proxy" && " El histórico es una reconstrucción estimada (no hay dato real de fondos institucionales anterior a hoy)."}
+                    {ind.key === "productivity" && ind.estimated && " El último punto es una extrapolación (el dato oficial de ese trimestre aún no se ha publicado)."}
                 </p>
             </div>
         </div>
@@ -210,11 +211,16 @@ const MacroCard = ({ ind }) => {
                 <span className="font-serif tabular-nums text-3xl text-[#052049] leading-none" data-testid={`macro-value-${ind.key}`}>
                     {fmtVal(ind.value)}
                 </span>
-                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}</span>
+                <span className="text-xs text-[#4A4A4A] font-medium">{ind.unit}{ind.estimated ? " · est." : ""}</span>
             </div>
 
             <div className="text-[11px] text-[#7A7A7A] mt-1.5">{ind.interpretation}</div>
             {extra && <div className="text-[11px] text-[#9A9A9A] mt-1 tabular-nums">{extra}</div>}
+            {ind.estimated && (
+                <div className="text-[11px] text-[#B8860B] mt-1 font-medium" data-testid={`macro-estimated-${ind.key}`}>
+                    Estimado: el dato oficial de este trimestre aún no se ha publicado.
+                </div>
+            )}
 
             {history.length > 1 && (
                 <div className="mt-3 border-t border-black/10 pt-2" data-testid={`macro-history-${ind.key}`}>
@@ -256,6 +262,8 @@ const MacroCard = ({ ind }) => {
                     <span className="inline-flex items-center gap-1 text-[#B8860B] font-semibold" data-testid={`macro-stale-${ind.key}`} title="La fuente ya no actualiza esta serie; es el último dato disponible">
                         <AlertTriangle size={12} /> Desactualizada · {fmtDate(ind.as_of)}
                     </span>
+                ) : ind.estimated ? (
+                    <span className="tabular-nums text-[#B8860B] font-semibold" data-testid={`macro-asof-${ind.key}`}>Estimado: {fmtDate(ind.as_of)}</span>
                 ) : (
                     <span className="tabular-nums text-[#052049] font-semibold" data-testid={`macro-asof-${ind.key}`}>Dato: {fmtDate(ind.as_of)}</span>
                 )}
